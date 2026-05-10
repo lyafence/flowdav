@@ -83,9 +83,9 @@ Flowdav is an independent implementation; the original project does not specify 
   - `internal/logger`: 3 tests (SetLevel, logging levels) ✅
 
   - **Refactoring**:
-  - Add worker pool in `engine.pollLoop` to limit goroutines (HIGH-2 — DONE).
-  - Deep copy of Envelope.Payload in session.rxQueue (HIGH-4 — DONE).
-  - Replace `select{}` with proper signal handling (DONE in fixes).
+  - Add worker pool in `engine.pollLoop` to limit goroutines (HIGH-2) ✅
+  - Deep copy of Envelope.Payload in session.rxQueue (HIGH-4) ✅
+  - Replace `select{}` with proper signal handling ✅
 
 - **Documentation**:
   - Clarify port differences (1080 default vs 11080 in docker-compose).
