@@ -45,41 +45,9 @@ func main() {
 		logger.SetLevel(logLevel)
 	}
 
-	var backend storage.Backend
-	if appCfg.WebDAV == nil {
-		log.Fatalf("WebDAV configuration missing in config file")
-	}
-
-	// Unified config: check for backends array
-	if len(appCfg.WebDAV.Backends) > 0 {
-		// Multi-backend mode
-		backends := make([]storage.Backend, len(appCfg.WebDAV.Backends))
-		for i, beCfg := range appCfg.WebDAV.Backends {
-			backends[i], err = storage.NewWebDAVBackend(
-				beCfg.Provider,
-				beCfg.Login,
-				beCfg.Token,
-				beCfg.BasePath,
-				beCfg.URL,
-			)
-			if err != nil {
-				log.Fatalf("Failed to init WebDAV backend[%d]: %v", i, err)
-			}
-		}
-		backend = storage.NewMultiBackend(backends)
-		logger.Info("Using MultiBackend with %d providers", len(backends))
-	} else {
-		// Single backend mode (legacy format)
-		backend, err = storage.NewWebDAVBackend(
-			appCfg.WebDAV.Provider,
-			appCfg.WebDAV.Login,
-			appCfg.WebDAV.Token,
-			appCfg.WebDAV.BasePath,
-			appCfg.WebDAV.URL,
-		)
-		if err != nil {
-			log.Fatalf("Failed to init WebDAV storage: %v", err)
-		}
+	backend, _, err := storage.NewBackendFromConfig(appCfg.WebDAV)
+	if err != nil {
+		log.Fatalf("Failed to init WebDAV storage: %v", err)
 	}
 	if err := backend.Login(ctx); err != nil {
 		log.Fatalf("Backend login failed: %v", err)

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"strconv"
 	"strings"
 	"sync"
@@ -62,6 +61,9 @@ type Engine struct {
 
 	// MaxSessions limits the total number of concurrent sessions (0 = unlimited)
 	MaxSessions int
+
+	// downloadPool limits goroutines in pollLoop
+	downloadPool *DownloadWorkerPool
 }
 
 func NewEngine(backend storage.Backend, isClient bool, clientID string, cryptoCfg *CryptoConfig) *Engine {
@@ -86,6 +88,7 @@ func NewEngine(backend storage.Backend, isClient bool, clientID string, cryptoCf
 	}
 	e.sem = make(chan struct{}, 8)
 	e.downloadSem = make(chan struct{}, 16)
+	e.downloadPool = NewDownloadWorkerPool(e, 16)
 	return e
 }
 
@@ -121,6 +124,7 @@ func (e *Engine) Start(ctx context.Context) {
 		defer e.wg.Done()
 		e.cleanupLoop(ctx)
 	}()
+	e.downloadPool.Start(ctx, e.stopCh)
 }
 
 // Stop gracefully shuts down all engine goroutines
@@ -135,6 +139,7 @@ func (e *Engine) Stop() {
 	e.wgMu.Unlock()
 
 	e.wg.Wait()
+	e.downloadPool.Stop()
 }
 
 func (e *Engine) GetSession(id string) *Session {
@@ -334,8 +339,6 @@ func (e *Engine) pollLoop(ctx context.Context) {
 
 			currentPollInterval = e.pollTicker
 
-			// Concurrency control for download goroutines in pollLoop
-			var wg sync.WaitGroup
 			for _, entry := range files {
 				fname := strings.TrimSuffix(entry.Filename, ".bin")
 				backendIdx := entry.BackendIdx
@@ -359,104 +362,12 @@ func (e *Engine) pollLoop(ctx context.Context) {
 				e.processed[entry.Filename] = time.Now()
 				e.processedMu.Unlock()
 
-				wg.Add(1)
-				go func(fname, fileClientID string, backendIdx uint8) {
-					defer wg.Done()
-					defer func() {
-						if r := recover(); r != nil {
-							logger.Info("download panic %s: %v", fname, r)
-						}
-					}()
-
-					e.downloadSem <- struct{}{}
-					defer func() { <-e.downloadSem }()
-
-					e.sem <- struct{}{}
-					defer func() { <-e.sem }()
-
-					select {
-					case <-ctx.Done():
-						return
-					case <-e.stopCh:
-						return
-					default:
-					}
-
-					rc, err := e.backend.DownloadByIndex(ctx, fname, backendIdx)
-					if err != nil {
-						if rc != nil {
-							rc.Close()
-						}
-						logger.Info("download error %s (backend %d): %v", fname, backendIdx, err)
-						return
-					}
-					defer rc.Close()
-
-					for {
-						var env Envelope
-						if e.cryptoCfg != nil {
-							decodedEnv, err := DecodeEnvelopeWithCrypto(rc, e.cryptoCfg)
-							if err != nil {
-								if err != io.EOF && err != io.ErrUnexpectedEOF {
-									logger.Info("mux crypto decode error %s: %v", fname, err)
-								}
-								break
-							}
-							env = *decodedEnv
-						} else {
-							if err := env.Decode(rc); err != nil {
-								if err != io.EOF && err != io.ErrUnexpectedEOF {
-									logger.Info("mux decode error %s: %v", fname, err)
-								}
-								break
-							}
-						}
-
-						e.closedSessionsMu.Lock()
-						if _, exists := e.closedSessions[env.SessionID]; exists {
-							e.closedSessionsMu.Unlock()
-							continue
-						}
-						e.closedSessionsMu.Unlock()
-
-						e.sessionMu.Lock()
-						s, exists := e.sessions[env.SessionID]
-						if !exists && e.myDir == DirRes && e.OnNewSession != nil {
-							if e.MaxSessions > 0 && len(e.sessions) >= e.MaxSessions {
-								e.sessionMu.Unlock()
-								logger.Info("Engine: session limit reached (%d), dropping new session %s", e.MaxSessions, env.SessionID)
-								continue
-							}
-							s = NewSession(env.SessionID)
-							s.ClientID = fileClientID
-							s.BackendIdx = env.BackendIdx
-							e.sessions[env.SessionID] = s
-							sessionID := env.SessionID
-							targetAddr := env.TargetAddr
-							clientID := fileClientID
-							backendIdx := env.BackendIdx
-							e.sessionMu.Unlock()
-							logger.Info("Engine: Triggering new session %s for Client %s (backend %d)", sessionID, clientID, backendIdx)
-							e.OnNewSession(sessionID, targetAddr, s)
-						} else {
-							e.sessionMu.Unlock()
-						}
-
-						if s != nil {
-							envCopy := env
-							s.ProcessRx(&envCopy)
-						}
-					}
-
-					e.backend.Delete(ctx, fname)
-
-					e.processedMu.Lock()
-					delete(e.processed, fname)
-					e.processedMu.Unlock()
-				}(entry.Filename, fileClientID, backendIdx)
+				e.downloadPool.Submit(downloadJob{
+					filename:    entry.Filename,
+					fileClientID: fileClientID,
+					backendIdx:  backendIdx,
+				}, e.stopCh)
 			}
-
-			wg.Wait()
 
 			if !backoffTimer.Stop() {
 				select {
