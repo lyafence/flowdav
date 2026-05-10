@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"net/url"
 	"path"
 	"strings"
@@ -51,6 +52,12 @@ func NewWebDAVBackend(provider, login, token, basePath, url string) (*WebDAVBack
 	rootURL := url
 	// Connect directly to the rootURL (rclone serve webdav /data makes /data the root)
 	client := gowebdav.NewClient(rootURL, login, token)
+	transport := &http.Transport{
+		MaxIdleConnsPerHost: 64,
+		IdleConnTimeout:     90 * time.Second,
+		DisableCompression:  true,
+	}
+	client.SetTransport(transport)
 	backend := &WebDAVBackend{
 		client:  client,
 		token:   token,

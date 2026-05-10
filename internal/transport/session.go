@@ -105,6 +105,30 @@ func (s *Session) EnqueueTxCtx(ctx context.Context, data []byte) {
 	s.lastActivity = time.Now()
 }
 
+// ExtractTxBatch atomically reads and clears the tx buffer under lock.
+// Returns the buffered data, sequence number, close flag, and whether
+// there is anything to send.
+func (s *Session) ExtractTxBatch(isClient bool) (payload []byte, seq uint64, closed bool, ok bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if time.Since(s.lastActivity) > 10*time.Second {
+		s.closed = true
+	}
+
+	shouldSend := len(s.txBuf) > 0 || (s.txSeq == 0 && isClient) || s.closed
+	if !shouldSend {
+		return nil, 0, false, false
+	}
+
+	payload = s.txBuf
+	s.txBuf = nil
+	seq = s.txSeq
+	s.txSeq++
+	closed = s.closed
+	return payload, seq, closed, true
+}
+
 func (s *Session) ClearTx() {
 	s.mu.Lock()
 	s.txBuf = nil
@@ -182,8 +206,8 @@ func (s *Session) ProcessRx(env *Envelope) {
 	for _, payload := range payloadsToSend {
 		select {
 		case s.RxChan <- payload:
-		default:
-			logger.Info("Session %s: RxChan full, dropping payload", s.ID)
+		case <-time.After(30 * time.Second):
+			logger.Warn("Session %s: RxChan blocked for 30s, dropping payload", s.ID)
 		}
 	}
 	if closeChannel {

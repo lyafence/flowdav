@@ -56,7 +56,6 @@ type Engine struct {
 	// Graceful shutdown support
 	stopCh   chan struct{}
 	wg       sync.WaitGroup
-	uploadWg sync.WaitGroup // tracks in-flight upload goroutines from flushAll
 	wgMu     sync.Mutex
 	stopped  bool
 
@@ -65,6 +64,15 @@ type Engine struct {
 
 	// downloadPool limits goroutines in pollLoop
 	downloadPool *DownloadWorkerPool
+
+	// uploadJobs feeds a fixed pool of upload workers
+	uploadJobs chan uploadJob
+}
+
+type uploadJob struct {
+	filename   string
+	buf        bytes.Buffer
+	backendIdx uint8
 }
 
 func NewEngine(backend storage.Backend, isClient bool, clientID string, cryptoCfg *CryptoConfig) *Engine {
@@ -90,6 +98,7 @@ func NewEngine(backend storage.Backend, isClient bool, clientID string, cryptoCf
 	e.sem = make(chan struct{}, 8)
 	e.downloadSem = make(chan struct{}, 16)
 	e.downloadPool = NewDownloadWorkerPool(e, 16)
+	e.uploadJobs = make(chan uploadJob, 16)
 	return e
 }
 
@@ -112,7 +121,8 @@ func (e *Engine) SetMaxSessions(max int) {
 }
 
 func (e *Engine) Start(ctx context.Context) {
-	e.wg.Add(3)
+	numWorkers := cap(e.sem)
+	e.wg.Add(3 + numWorkers)
 	go func() {
 		defer e.wg.Done()
 		e.flushLoop(ctx)
@@ -125,6 +135,12 @@ func (e *Engine) Start(ctx context.Context) {
 		defer e.wg.Done()
 		e.gcLoop(ctx)
 	}()
+	for i := 0; i < numWorkers; i++ {
+		go func() {
+			defer e.wg.Done()
+			e.uploadWorker(ctx)
+		}()
+	}
 	e.downloadPool.Start(ctx, e.stopCh)
 }
 
@@ -140,7 +156,6 @@ func (e *Engine) Stop() {
 	e.wgMu.Unlock()
 
 	e.wg.Wait()
-	e.uploadWg.Wait()
 	e.downloadPool.Stop()
 }
 
@@ -191,21 +206,10 @@ func (e *Engine) flushAll(ctx context.Context) {
 	var sessionsToWake []*Session
 
 	for _, s := range sessions {
-		s.mu.Lock()
-
-		if time.Since(s.lastActivity) > 10*time.Second {
-			s.closed = true
-		}
-
-		shouldSend := len(s.txBuf) > 0 || (s.txSeq == 0 && e.myDir == DirReq) || s.closed
-
-		if !shouldSend {
-			s.mu.Unlock()
+		payload, seq, closed, ok := s.ExtractTxBatch(e.myDir == DirReq)
+		if !ok {
 			continue
 		}
-
-		payload := s.txBuf
-		s.txBuf = nil
 		sessionsToWake = append(sessionsToWake, s)
 
 		cid := s.ClientID
@@ -215,21 +219,19 @@ func (e *Engine) flushAll(ctx context.Context) {
 
 		env := Envelope{
 			SessionID:  s.ID,
-			Seq:        s.txSeq,
+			Seq:        seq,
 			Payload:    payload,
-			Close:      s.closed,
+			Close:      closed,
 			TargetAddr: s.TargetAddr,
 			BackendIdx: s.BackendIdx,
 		}
 
-		s.txSeq++
-		if s.closed {
+		if closed {
 			closedSessionIDs = append(closedSessionIDs, s.ID)
 		}
 
 		key := muxKey{CID: cid, BackendIdx: s.BackendIdx}
 		muxes[key] = append(muxes[key], env)
-		s.mu.Unlock()
 	}
 
 	for _, s := range sessionsToWake {
@@ -242,38 +244,27 @@ func (e *Engine) flushAll(ctx context.Context) {
 			fnameCID = "unknown"
 		}
 		filename := fmt.Sprintf("%s-%s-%d.bin", e.myDir, fnameCID, time.Now().UnixNano())
-		backendIdx := key.BackendIdx
+
+		var buf bytes.Buffer
+		for _, env := range mux {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+			if err := env.EncodeWithCrypto(&buf, e.cryptoCfg); err != nil {
+				logger.Info("mux encode error: %v", err)
+				return
+			}
+		}
 
 		e.inFlight.Store(filename, struct{}{})
-		e.uploadWg.Add(1)
-		go func(fname string, m []Envelope, bIdx uint8) {
-			defer e.uploadWg.Done()
-			defer e.inFlight.Delete(fname)
-			defer func() {
-				if r := recover(); r != nil {
-					logger.Info("upload panic %s: %v", fname, r)
-				}
-			}()
-			e.sem <- struct{}{}
-			defer func() { <-e.sem }()
-
-			var buf bytes.Buffer
-			for _, env := range m {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-				}
-				if err := env.EncodeWithCrypto(&buf, e.cryptoCfg); err != nil {
-					logger.Info("mux encode error: %v", err)
-					return
-				}
-			}
-
-			if err := e.backend.UploadByIndex(ctx, fname, &buf, bIdx); err != nil {
-				logger.Info("upload error %s (backend %d): %v", fname, bIdx, err)
-			}
-		}(filename, mux, backendIdx)
+		select {
+		case e.uploadJobs <- uploadJob{filename: filename, buf: buf, backendIdx: key.BackendIdx}:
+		case <-ctx.Done():
+			e.inFlight.Delete(filename)
+			return
+		}
 	}
 
 	for _, id := range closedSessionIDs {
@@ -448,6 +439,34 @@ func (e *Engine) gcLoop(ctx context.Context) {
 				}
 			}
 			e.processedMu.Unlock()
+		}
+	}
+}
+
+// uploadWorker is a fixed goroutine that processes upload jobs from flushAll.
+func (e *Engine) uploadWorker(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-e.stopCh:
+			return
+		case job, ok := <-e.uploadJobs:
+			if !ok {
+				return
+			}
+			e.inFlight.Store(job.filename, struct{}{})
+			func() {
+				defer e.inFlight.Delete(job.filename)
+				defer func() {
+					if r := recover(); r != nil {
+						logger.Info("upload panic %s: %v", job.filename, r)
+					}
+				}()
+				if err := e.backend.UploadByIndex(ctx, job.filename, &job.buf, job.backendIdx); err != nil {
+					logger.Info("upload error %s (backend %d): %v", job.filename, job.backendIdx, err)
+				}
+			}()
 		}
 	}
 }
