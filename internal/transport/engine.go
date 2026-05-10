@@ -122,7 +122,7 @@ func (e *Engine) Start(ctx context.Context) {
 	}()
 	go func() {
 		defer e.wg.Done()
-		e.cleanupLoop(ctx)
+		e.gcLoop(ctx)
 	}()
 	e.downloadPool.Start(ctx, e.stopCh)
 }
@@ -412,8 +412,8 @@ func (e *Engine) RemoveSession(id string) {
 	}
 }
 
-func (e *Engine) cleanupLoop(ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Second)
+func (e *Engine) gcLoop(ctx context.Context) {
+	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -423,7 +423,6 @@ func (e *Engine) cleanupLoop(ctx context.Context) {
 		case <-e.stopCh:
 			return
 		case <-ticker.C:
-			// Cleanup old tombstones (older than 30s)
 			e.closedSessionsMu.Lock()
 			for id, t := range e.closedSessions {
 				if time.Since(t) > 30*time.Second {
@@ -432,7 +431,6 @@ func (e *Engine) cleanupLoop(ctx context.Context) {
 			}
 			e.closedSessionsMu.Unlock()
 
-			// Periodically clear old processed entries by TTL (5 min)
 			e.processedMu.Lock()
 			for key, ts := range e.processed {
 				if time.Since(ts) > 5*time.Minute {
@@ -440,41 +438,6 @@ func (e *Engine) cleanupLoop(ctx context.Context) {
 				}
 			}
 			e.processedMu.Unlock()
-
-			// ZERO-TRAFFIC CLIENT OPTIMIZATION:
-			if e.myDir == DirReq {
-				e.sessionMu.RLock()
-				count := len(e.sessions)
-				e.sessionMu.RUnlock()
-				if count == 0 {
-					continue
-				}
-			}
-
-			files, err := e.backend.ListQuery(ctx, string(e.myDir)+"-")
-			if err != nil {
-				logger.Info("cleanupLoop ListQuery error: %v", err)
-				continue
-			}
-			for _, entry := range files {
-				// Пропускаем файлы, которые ещё загружаются
-				if _, inflight := e.inFlight.Load(entry.Filename); inflight {
-					continue
-				}
-				fname := strings.TrimSuffix(entry.Filename, ".bin")
-				parts := strings.Split(fname, "-")
-				if len(parts) < 3 {
-					continue
-				}
-				tsStr := parts[len(parts)-1]
-				ts, err := strconv.ParseInt(tsStr, 10, 64)
-				if err == nil {
-					t := time.Unix(0, ts)
-					if time.Since(t) > 10*time.Second {
-						e.backend.Delete(ctx, entry.Filename)
-					}
-				}
-			}
 		}
 	}
 }

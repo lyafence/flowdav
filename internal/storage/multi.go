@@ -6,19 +6,33 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
-	"sync/atomic"
+	"sync"
+	"time"
 
 	"github.com/lyafence/flowdav/internal/logger"
 )
 
+const (
+	cbThreshold = 3
+	cbCooldown  = 30 * time.Second
+)
+
+type backendHealth struct {
+	failures int
+	lastFail time.Time
+}
+
 type MultiBackend struct {
 	backends  []Backend
-	rrCounter atomic.Uint32
+	health    []backendHealth
+	mu        sync.Mutex
+	rrCounter uint64
 }
 
 func NewMultiBackend(backends []Backend) *MultiBackend {
 	return &MultiBackend{
 		backends: backends,
+		health:   make([]backendHealth, len(backends)),
 	}
 }
 
@@ -26,21 +40,75 @@ func (m *MultiBackend) NumBackends() int {
 	return len(m.backends)
 }
 
-func (m *MultiBackend) RoundRobinBackend() Backend {
+func (m *MultiBackend) isAvailable(idx int) bool {
+	if idx >= len(m.health) {
+		return false
+	}
+	h := &m.health[idx]
+	if h.failures < cbThreshold {
+		return true
+	}
+	if time.Since(h.lastFail) > cbCooldown {
+		h.failures = 0
+		return true
+	}
+	return false
+}
+
+func (m *MultiBackend) recordFailure(idx int) {
+	if idx >= len(m.health) {
+		return
+	}
+	m.health[idx].failures++
+	m.health[idx].lastFail = time.Now()
+}
+
+func (m *MultiBackend) recordSuccess(idx int) {
+	if idx >= len(m.health) {
+		return
+	}
+	m.health[idx].failures = 0
+}
+
+func (m *MultiBackend) nextAvailableBackend() (Backend, int) {
 	n := len(m.backends)
 	if n == 0 {
-		return nil
+		return nil, -1
 	}
-	idx := (m.rrCounter.Add(1) - 1) % uint32(n)
-	return m.backends[idx]
+	for i := 0; i < n; i++ {
+		idx := int(m.rrCounter % uint64(n))
+		m.rrCounter++
+		if m.isAvailable(idx) {
+			return m.backends[idx], idx
+		}
+	}
+	return nil, -1
+}
+
+func (m *MultiBackend) RoundRobinBackend() Backend {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	be, _ := m.nextAvailableBackend()
+	return be
 }
 
 func (m *MultiBackend) BackendByIndex(idx uint8) Backend {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.backendByIndexLocked(idx)
+}
+
+func (m *MultiBackend) backendByIndexLocked(idx uint8) Backend {
 	n := len(m.backends)
 	if n == 0 {
 		return nil
 	}
-	return m.backends[idx%uint8(n)]
+	i := int(idx) % n
+	if !m.isAvailable(i) {
+		logger.Info("MultiBackend: backend %d unavailable (circuit open)", i)
+		return nil
+	}
+	return m.backends[i]
 }
 
 func (m *MultiBackend) Login(ctx context.Context) error {
@@ -54,11 +122,21 @@ func (m *MultiBackend) Login(ctx context.Context) error {
 }
 
 func (m *MultiBackend) Upload(ctx context.Context, filename string, data io.Reader) error {
-	backend := m.RoundRobinBackend()
-	if backend == nil {
+	m.mu.Lock()
+	be, idx := m.nextAvailableBackend()
+	m.mu.Unlock()
+	if be == nil {
 		return errors.New("no backends available")
 	}
-	return backend.Upload(ctx, filename, data)
+	err := be.Upload(ctx, filename, data)
+	m.mu.Lock()
+	if err != nil {
+		m.recordFailure(idx)
+	} else {
+		m.recordSuccess(idx)
+	}
+	m.mu.Unlock()
+	return err
 }
 
 func (m *MultiBackend) ListQuery(ctx context.Context, prefix string) ([]FileEntry, error) {
@@ -98,31 +176,53 @@ func (m *MultiBackend) Delete(ctx context.Context, filename string) error {
 }
 
 func (m *MultiBackend) UploadByIndex(ctx context.Context, filename string, data io.Reader, idx uint8) error {
-	backend := m.BackendByIndex(idx)
-	if backend == nil {
+	m.mu.Lock()
+	be := m.backendByIndexLocked(idx)
+	if be == nil {
+		m.mu.Unlock()
 		return errors.New("no backend available for index")
 	}
-	return backend.Upload(ctx, filename, data)
+	m.mu.Unlock()
+
+	err := be.Upload(ctx, filename, data)
+
+	m.mu.Lock()
+	if err != nil {
+		m.recordFailure(int(idx))
+	} else {
+		m.recordSuccess(int(idx))
+	}
+	m.mu.Unlock()
+	return err
 }
 
 func (m *MultiBackend) DownloadByIndex(ctx context.Context, filename string, idx uint8) (io.ReadCloser, error) {
-	backend := m.BackendByIndex(idx)
-	if backend == nil {
+	m.mu.Lock()
+	be := m.backendByIndexLocked(idx)
+	if be == nil {
+		m.mu.Unlock()
 		return nil, errors.New("no backend available for index")
 	}
-	return backend.Download(ctx, filename)
+	m.mu.Unlock()
+
+	rc, err := be.Download(ctx, filename)
+
+	m.mu.Lock()
+	if err != nil {
+		m.recordFailure(int(idx))
+	} else {
+		m.recordSuccess(int(idx))
+	}
+	m.mu.Unlock()
+	return rc, err
 }
 
-// RandBackendIndex returns a random backend index in the range [0, n).
-// Uses crypto/rand for cryptographically secure randomness.
 func RandBackendIndex(n int) int {
 	if n <= 0 {
 		return 0
 	}
-	// Generate a random uint64 and reduce it modulo n
 	var b [8]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		// This should never happen, but if it does, fall back to deterministic behavior
 		return 0
 	}
 	v := binary.BigEndian.Uint64(b[:])

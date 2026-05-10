@@ -89,3 +89,7 @@ Flowdav is an independent implementation; the original project does not specify 
 
 - **Documentation**:
   - Clarify port differences (1080 default vs 11080 in docker-compose).
+  - **Metrics & Observability**:
+  - Add Prometheus `/metrics` endpoint alongside `/health`.
+  - Expose: per-backend latency histograms, packet drop counter, active sessions gauge.
+  - Effort: ~4h (add `prometheus/client_golang`, wire into Engine, register in main).
