@@ -30,15 +30,14 @@ A lightweight SOCKS5 proxy that uses WebDAV as a transport layer. Route your tra
 ### Build
 
 ```bash
-# Build linux binaries in Podman, extract to ./bin (recommended)
-./scripts/build.sh --image-to-bin
+# Quick build (binaries to ./bin)
+make build
 
-# Or build locally if Go is installed:
-CGO_ENABLED=0 go build -o bin/flowdav-client ./cmd/client
-CGO_ENABLED=0 go build -o bin/flowdav-server ./cmd/server
+# Or build in Podman and extract
+make image-to-bin
 
-# Build release archives (multi-platform):
-./scripts/build.sh
+# Build release archives (multi-platform .tar.gz)
+make release
 ```
 
 ### Configuration
@@ -110,8 +109,8 @@ For multiple WebDAV providers (round-robin):
 
 Generate encryption keys:
 ```bash
-openssl rand -base64 32  # For enc_key
-openssl rand -base64 32  # For hmac_key
+head -c 32 /dev/urandom | base64 -w0; echo  # For enc_key
+head -c 32 /dev/urandom | base64 -w0; echo  # For hmac_key
 ```
 
 ### Run with Docker Compose (testing)
@@ -119,14 +118,15 @@ openssl rand -base64 32  # For hmac_key
 First generate test configs with fresh encryption keys:
 
 ```bash
-./scripts/setup.sh
+./scripts/prepare_test_env.sh
 ```
 
 Then start all services:
 
 ```bash
-# Build local image and start all services
-podman-compose up -d --build
+# Build image and start all services
+make docker-build
+podman-compose up -d
 ```
 
 Test the SOCKS5 proxy:
@@ -151,8 +151,8 @@ Generate example configs with fresh encryption keys:
 cp configs/flowdav_client.json.example configs/client.json
 cp configs/flowdav_server.json.example configs/server.json
 # Generate real keys (replace the placeholder values in the configs):
-openssl rand -base64 32   # → paste as enc_key
-openssl rand -base64 32   # → paste as hmac_key
+head -c 32 /dev/urandom | base64 -w0; echo   # → paste as enc_key
+head -c 32 /dev/urandom | base64 -w0; echo   # → paste as hmac_key
 ```
 
 **At home (server):**
@@ -168,10 +168,10 @@ openssl rand -base64 32   # → paste as hmac_key
 export ALL_PROXY=socks5://127.0.0.1:1080
 ```
 
-**Quick key generation with setup.sh (for docker-compose testing only):**
+**Quick key generation (for docker-compose testing only):**
 ```bash
 # Generates all test configs with fresh keys in configs/*.json
-./scripts/setup.sh
+./scripts/prepare_test_env.sh
 ```
 
 ## Config Files
@@ -202,16 +202,13 @@ E2E tests require built binaries in `bin/` and podman:
 
 ```bash
 # 1. Generate test configs with fresh keys
-./scripts/setup.sh
+./scripts/prepare_test_env.sh
 
 # 2. Build Docker image and start services
 podman-compose up -d --build
 
-# 3. Wait for healthchecks (~10 seconds)
-watch podman ps
-
-# 4. Run comprehensive E2E test suite
-./scripts/test_proxy_comprehensive.sh
+# 3. Run E2E test suite
+./scripts/test_e2e.sh
 ```
 
 ### Release Archives
@@ -219,7 +216,7 @@ watch podman ps
 Multi-platform release archives are built with:
 
 ```bash
-./scripts/build.sh
+make release
 ```
 
 Each archive contains: `flowdav-client`, `flowdav-server`, example configs, and README.

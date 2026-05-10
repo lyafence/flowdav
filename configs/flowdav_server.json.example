@@ -7,8 +7,8 @@
     "token": "password",
     "base_path": "myapp"
   },
-  "enc_key": "your-aes-256-key-base64==",
-  "hmac_key": "your-hmac-sha256-key-base64==",
+  "enc_key": "PasteYour32ByteBase64EncodedAES256KeyHere==",
+  "hmac_key": "PasteYour32ByteBase64EncodedHMACSHA256KeyHere==",
   "refresh_rate_ms": 500,
   "flush_rate_ms": 500,
   "log_level": "info",

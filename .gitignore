@@ -5,7 +5,7 @@
 !*example.json
 
 # BUT: test configs with REAL keys must NEVER be in git
-# Run scripts/setup.sh to generate them with fresh keys.
+# Run scripts/prepare_test_env.sh to generate them with fresh keys.
 
 # Ignore token files
 *.token
@@ -14,8 +14,11 @@ credentials.json
 
 # Binaries and temp files
 bin/
+server
+client
 flowdav-client
 flowdav-server
+flowdav-encrypt
 *.tmp
 *~
 .DS_Store

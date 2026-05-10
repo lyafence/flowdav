@@ -57,8 +57,15 @@ jobs:
             SUFFIX=".exe"
           fi
 
-          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o $FOLDER_NAME/flowdav-client$SUFFIX ./cmd/client
-          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o $FOLDER_NAME/flowdav-server$SUFFIX ./cmd/server
+          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build \
+            -trimpath -ldflags="-s -w -X main.version=${VERSION}" \
+            -o $FOLDER_NAME/flowdav-client$SUFFIX ./cmd/client
+          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build \
+            -trimpath -ldflags="-s -w -X main.version=${VERSION}" \
+            -o $FOLDER_NAME/flowdav-server$SUFFIX ./cmd/server
+          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build \
+            -trimpath -ldflags="-s -w" \
+            -o $FOLDER_NAME/flowdav-encrypt$SUFFIX ./cmd/encrypt
 
           cp configs/*.json.example $FOLDER_NAME/ 2>/dev/null || true
           cp README.md $FOLDER_NAME/

@@ -3,11 +3,14 @@ package config
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"strings"
 )
+
+var ErrEncryptedConfig = errors.New("config file is encrypted, use -p flag")
 
 // isPathTraversal checks if a path contains path traversal patterns.
 // Specifically looks for "../" or "/../" patterns that could escape directories.
@@ -106,7 +109,7 @@ type AppConfig struct {
 	RefreshRateMs int `json:"refresh_rate_ms,omitempty"`
 
 	// FlushRateMs is the gathering (TX) interval in milliseconds for the engine.
-	// Lower values = lower latency but more files created. Default 300ms.
+	// Lower values = lower latency but more files created. Default 500ms.
 	FlushRateMs int `json:"flush_rate_ms,omitempty"`
 
 	// LogLevel controls the verbosity of logs (debug, info, warn, error).
@@ -134,6 +137,11 @@ func Load(path string) (*AppConfig, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file %s: %w", path, err)
+	}
+
+	// Check if this looks like an encrypted config (starts with salt)
+	if len(b) > saltLen+nonceLen && !isJSON(b) {
+		return nil, ErrEncryptedConfig
 	}
 
 	var cfg AppConfig
@@ -217,4 +225,87 @@ func Load(path string) (*AppConfig, error) {
 	cfg.HMacKeyDecoded = hmacKey
 
 	return &cfg, nil
+}
+
+// LoadEncrypted reads and decrypts an encrypted config file.
+func LoadEncrypted(path, password string) (*AppConfig, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read encrypted config %s: %w", path, err)
+	}
+	enc, err := UnmarshalEncrypted(b)
+	if err != nil {
+		return nil, fmt.Errorf("invalid encrypted config: %w", err)
+	}
+	plaintext, err := DecryptConfig(enc, password)
+	if err != nil {
+		return nil, err
+	}
+	var cfg AppConfig
+	if err := json.Unmarshal(plaintext, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse decrypted config JSON: %w", err)
+	}
+	if cfg.EncKey != "" {
+		key, err := base64.StdEncoding.DecodeString(cfg.EncKey)
+		if err != nil {
+			return nil, fmt.Errorf("invalid enc_key in encrypted config: %w", err)
+		}
+		if len(key) != 32 {
+			return nil, fmt.Errorf("invalid enc_key length: %d", len(key))
+		}
+		cfg.EncKeyDecoded = key
+	}
+	if cfg.HMacKey != "" {
+		hmacKey, err := base64.StdEncoding.DecodeString(cfg.HMacKey)
+		if err != nil {
+			return nil, fmt.Errorf("invalid hmac_key in encrypted config: %w", err)
+		}
+		if len(hmacKey) != 32 {
+			return nil, fmt.Errorf("invalid hmac_key length: %d", len(hmacKey))
+		}
+		cfg.HMacKeyDecoded = hmacKey
+	}
+	return &cfg, nil
+}
+
+// ResolvePassword scans os.Args for -p before flag.Parse.
+// Returns password value, whether interactive is requested, and cleaned args.
+// Priority: -p VALUE > -p (interactive) > FLOWDAV_PASSWORD env.
+func ResolvePassword(args []string) (password string, interactive bool, rest []string) {
+	password = os.Getenv("FLOWDAV_PASSWORD")
+	for i := 0; i < len(args); i++ {
+		if args[i] == "-p" || args[i] == "--password" {
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				password = args[i+1]
+				rest = append(rest, args[:i]...)
+				rest = append(rest, args[i+2:]...)
+				return password, false, rest
+			}
+			rest = append(rest, args[:i]...)
+			rest = append(rest, args[i+1:]...)
+			return password, true, rest
+		}
+		if strings.HasPrefix(args[i], "-p=") {
+			password = strings.TrimPrefix(args[i], "-p=")
+			rest = append(rest, args[:i]...)
+			rest = append(rest, args[i+1:]...)
+			return password, false, rest
+		}
+		if args[i] == "-c" || args[i] == "-l" {
+			i++ // skip value
+		}
+	}
+	return password, false, args
+}
+
+func isJSON(data []byte) bool {
+	data = trimLeftWhitespace(data)
+	return len(data) > 0 && (data[0] == '{' || data[0] == '[')
+}
+
+func trimLeftWhitespace(data []byte) []byte {
+	for len(data) > 0 && (data[0] == ' ' || data[0] == '\t' || data[0] == '\n' || data[0] == '\r') {
+		data = data[1:]
+	}
+	return data
 }

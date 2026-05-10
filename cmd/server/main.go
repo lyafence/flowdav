@@ -22,20 +22,48 @@ import (
 	"github.com/lyafence/flowdav/internal/storage"
 
 	"github.com/lyafence/flowdav/internal/transport"
+	"golang.org/x/term"
 )
 
+var version = "dev"
+
 func main() {
+	password, askInteractive, cleanArgs := config.ResolvePassword(os.Args[1:])
+	os.Args = append([]string{os.Args[0]}, cleanArgs...)
+
 	var configPath string
 	flag.StringVar(&configPath, "c", "config.json", "Path to config file")
+	var showVersion bool
+	flag.BoolVar(&showVersion, "version", false, "Show version")
 	var logLevel string
 	flag.StringVar(&logLevel, "l", "", "Log level (debug|info|warn|error)")
 	flag.Parse()
+
+	if showVersion {
+		fmt.Println("flowdav-server", version)
+		os.Exit(0)
+	}
 
 	logger.Info("Starting flowdav Server...")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	appCfg, err := config.Load(configPath)
+	if err == config.ErrEncryptedConfig {
+		if password == "" && askInteractive {
+			fmt.Print("Master password: ")
+			pass, err := term.ReadPassword(int(syscall.Stdin))
+			fmt.Println()
+			if err != nil {
+				log.Fatalf("Failed to read password: %v", err)
+			}
+			password = string(pass)
+		}
+		if password == "" {
+			log.Fatalf("Config is encrypted. Use -p <password> or -p (interactive) or set FLOWDAV_PASSWORD env var")
+		}
+		appCfg, err = config.LoadEncrypted(configPath, password)
+	}
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
