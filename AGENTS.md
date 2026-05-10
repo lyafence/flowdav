@@ -20,7 +20,8 @@ Flowdav is an independent implementation; the original project does not specify 
 ## Architecture
 - Server has **no listening ports** for data — all communication via WebDAV storage
 - Optional HTTP health endpoint: set `health_port` in config (e.g., `"127.0.0.1:9090"`) to enable `GET /health` returning JSON engine stats
-- Data flow: `[SOCKS5] → client → WebDAV → server → destination`
+- Data flow: `[SOCKS5] ←→ client ←→ WebDAV ←→ server ←→ destination`
+  (client encrypts & muxes; server decrypts & demuxes; WebDAV is passive storage)
 - Sessions are stored as `{dir}-{clientID}-{timestamp}.bin` (e.g., `rq-client1-1778180385216825104.bin`)
 - Encryption: AES-256-GCM + HMAC-SHA256 (via `enc_key`/`hmac_key`)
 - DNS leak protection: client uses raw resolver (no local DNS lookups)

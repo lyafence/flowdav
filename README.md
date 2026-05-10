@@ -7,10 +7,8 @@ A lightweight SOCKS5 proxy that uses WebDAV as a transport layer. Route your tra
 ## How It Works
 
 ```
-[SOCKS5 Client] → [flowdav-client] → [WebDAV Storage] → [flowdav-server] → [Destination]
-                      ↓              ↑
-                [transport/]    [transport/]
-             (encrypt, mux)     (demux, decrypt)
+[SOCKS5 Client] ←→ [flowdav-client] ←→ [WebDAV Storage] ←→ [flowdav-server] ←→ [Destination]
+                   (encrypt, mux)      (passive store)     (decrypt, demux)
 ```
 
 **Data flow:**
