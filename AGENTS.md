@@ -83,8 +83,8 @@ Flowdav is an independent implementation; the original project does not specify 
   - `internal/logger`: 3 tests (SetLevel, logging levels) ✅
 
   - **Refactoring**:
-  - Add worker pool in `engine.pollLoop` to limit goroutines (HIGH-2).
-  - Deep copy of Envelope.Payload in session.rxQueue (HIGH-4).
+  - Add worker pool in `engine.pollLoop` to limit goroutines (HIGH-2 — DONE).
+  - Deep copy of Envelope.Payload in session.rxQueue (HIGH-4 — DONE).
   - Replace `select{}` with proper signal handling (DONE in fixes).
 
 - **Documentation**:
