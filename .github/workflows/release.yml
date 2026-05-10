@@ -1,0 +1,69 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+            goos: linux
+            goarch: amd64
+          - os: windows
+            arch: amd64
+            goos: windows
+            goarch: amd64
+          - os: macOS-amd64
+            arch: amd64
+            goos: darwin
+            goarch: amd64
+          - os: macOS-arm64
+            arch: arm64
+            goos: darwin
+            goarch: arm64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.2"
+
+      - name: Build Binaries
+        shell: bash
+        run: |
+          VERSION=${GITHUB_REF_NAME}
+           FOLDER_NAME="flowdav-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          mkdir -p $FOLDER_NAME
+
+          SUFFIX=""
+          if [ "${{ matrix.goos }}" == "windows" ]; then
+            SUFFIX=".exe"
+          fi
+
+          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o $FOLDER_NAME/flowdav-client$SUFFIX ./cmd/client
+          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o $FOLDER_NAME/flowdav-server$SUFFIX ./cmd/server
+
+          cp configs/*.json.example $FOLDER_NAME/ 2>/dev/null || true
+          cp README.md $FOLDER_NAME/
+
+          zip -r "${FOLDER_NAME}.zip" $FOLDER_NAME
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+           files: flowdav-*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

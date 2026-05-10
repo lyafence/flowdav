@@ -1,0 +1,28 @@
+# Ignore all JSON files (configs with secrets)
+*.json
+
+# Except example configs
+!*example.json
+
+# BUT: test configs with REAL keys must NEVER be in git
+# Run scripts/setup.sh to generate them with fresh keys.
+
+# Ignore token files
+*.token
+credentials.json
+.env
+
+# Binaries and temp files
+bin/
+flowdav-client
+flowdav-server
+*.tmp
+*~
+.DS_Store
+*.zip
+*.exe
+*.log
+.test
+
+# Build artifacts
+release/

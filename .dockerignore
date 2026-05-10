@@ -1,0 +1,12 @@
+bin/
+release/
+.test/
+.env
+*.json
+**/*.json
+*.tmp
+*.zip
+*.log
+.DS_Store
+.git/
+.github/

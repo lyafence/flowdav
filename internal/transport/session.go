@@ -1,0 +1,175 @@
+package transport
+
+import (
+	"context"
+	"sync"
+	"time"
+
+	"github.com/lyafence/flowdav/internal/logger"
+)
+
+// Direction indicates if a file is req (client to server) or res (server to client)
+type Direction string
+
+const (
+	DirReq Direction = "rq"
+	DirRes Direction = "rs"
+)
+
+// MaxRxQueueSize limits out-of-order packet queue to prevent memory exhaustion
+const MaxRxQueueSize = 1000
+
+// Session represents an active proxy connection mapped to files.
+type Session struct {
+	ID           string
+	mu           sync.Mutex
+	txBuf        []byte
+	txSeq        uint64
+	rxSeq        uint64
+	rxQueue      map[uint64]Envelope
+	lastActivity time.Time
+	closed       bool
+	rxClosed     bool // Safely tracks if RxChan was successfully closed
+	rxOnce       sync.Once
+	TargetAddr   string
+	ClientID     string
+
+	// Backpressure: blocked when txBuf is too large
+	txCond *sync.Cond
+
+	// App channel for receiving data downloaded from remote
+	RxChan chan []byte
+
+	// BackendIdx is the index of the WebDAV backend assigned to this session.
+	// Assigned on seq=0 (client writes it). Server reads it and uses the same backend.
+	BackendIdx uint8
+}
+
+func NewSession(id string) *Session {
+	s := &Session{
+		ID:           id,
+		rxQueue:      make(map[uint64]Envelope),
+		lastActivity: time.Now(),
+		RxChan:       make(chan []byte, 1024),
+	}
+	s.txCond = sync.NewCond(&s.mu)
+	return s
+}
+
+func (s *Session) EnqueueTx(data []byte) {
+	s.EnqueueTxCtx(context.Background(), data)
+}
+
+func (s *Session) EnqueueTxCtx(ctx context.Context, data []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// BACKPRESSURE: Block if txBuf is larger than 2MB
+	// This prevents memory explosion when uploading through the proxy
+	// Also check that the new data won't exceed the limit
+	// Use context to allow interruption during shutdown
+	for (len(s.txBuf) > 2*1024*1024 || len(s.txBuf)+len(data) > 2*1024*1024) && !s.closed {
+		if ctx.Err() != nil {
+			return
+		}
+		s.txCond.Wait()
+		if ctx.Err() != nil {
+			return
+		}
+	}
+
+	if s.closed {
+		return
+	}
+
+	s.txBuf = append(s.txBuf, data...)
+	s.lastActivity = time.Now()
+}
+
+func (s *Session) ClearTx() {
+	s.mu.Lock()
+	s.txBuf = nil
+	s.txCond.Broadcast() // Wake up any writers blocked on backpressure
+	s.mu.Unlock()
+}
+
+func (s *Session) ProcessRx(env *Envelope) {
+	s.mu.Lock()
+	s.lastActivity = time.Now()
+
+	if s.rxClosed {
+		s.mu.Unlock()
+		return // Ignore packets if the channel is already safely closed
+	}
+
+	// Collect payloads to send outside the lock to avoid deadlock
+	var payloadsToSend [][]byte
+	closeChannel := false
+
+	if env.Seq == s.rxSeq {
+		if len(env.Payload) > 0 {
+			// Deep copy to be consistent with queued packets
+			payloadsToSend = append(payloadsToSend, append([]byte{}, env.Payload...))
+		}
+		s.rxSeq++
+		if env.Close {
+			s.rxClosed = true
+			s.closed = true
+			closeChannel = true
+		}
+		// Capture backend index on first packet (seq=0)
+		if s.rxSeq == 1 {
+			s.BackendIdx = env.BackendIdx
+		}
+
+		// process any queued future packets
+		for {
+			if nextEnv, ok := s.rxQueue[s.rxSeq]; ok {
+				if len(nextEnv.Payload) > 0 {
+					payloadsToSend = append(payloadsToSend, append([]byte{}, nextEnv.Payload...))
+				}
+				delete(s.rxQueue, s.rxSeq)
+				s.rxSeq++
+				if nextEnv.Close {
+					s.rxClosed = true
+					s.closed = true
+					closeChannel = true
+					break
+				}
+			} else {
+				break
+			}
+		}
+	} else if env.Seq > s.rxSeq {
+		// Check queue size to prevent memory exhaustion from out-of-order packets
+		if len(s.rxQueue) >= MaxRxQueueSize {
+			logger.Info("Session %s: rxQueue full, dropping packet seq=%d", s.ID, env.Seq)
+			s.mu.Unlock()
+			return
+		}
+		// Deep copy to avoid corruption when the original envelope is reused
+		// Payload is a []byte slice which is a reference type - must copy the underlying array
+		s.rxQueue[env.Seq] = Envelope{
+			SessionID:  env.SessionID,
+			Seq:        env.Seq,
+			TargetAddr: env.TargetAddr,
+			Payload:    append([]byte{}, env.Payload...), // deep copy of slice
+			Close:      env.Close,
+		}
+	}
+	s.mu.Unlock()
+
+	// Send payloads outside the lock to avoid deadlock
+	for _, payload := range payloadsToSend {
+		select {
+		case s.RxChan <- payload:
+		default:
+			logger.Info("Session %s: RxChan full, dropping payload", s.ID)
+		}
+	}
+	if closeChannel {
+		s.rxOnce.Do(func() {
+			close(s.RxChan)
+		})
+	}
+}
