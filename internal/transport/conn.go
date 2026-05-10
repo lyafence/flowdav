@@ -24,6 +24,8 @@ type VirtualConn struct {
 	writeDeadline time.Time
 	deadlineMu    sync.Mutex
 	deadlineTimer *time.Timer // reusable timer for deadline enforcement
+
+	closeOnce sync.Once // prevents double-close deadlock (Audit C-003)
 }
 
 func NewVirtualConn(s *Session, e *Engine) *VirtualConn {
@@ -82,46 +84,44 @@ func (v *VirtualConn) Read(b []byte) (n int, err error) {
 func (v *VirtualConn) readRxChan() ([]byte, error) {
 	v.deadlineMu.Lock()
 	rd := v.readDeadline
+	if rd.IsZero() {
+		v.deadlineMu.Unlock()
+		data, ok := <-v.session.RxChan
+		if !ok {
+			return nil, io.EOF
+		}
+		return data, nil
+	}
+
+	d := time.Until(rd)
+	if d <= 0 {
+		v.deadlineMu.Unlock()
+		return nil, os.ErrDeadlineExceeded
+	}
+
+	if v.deadlineTimer == nil {
+		v.deadlineTimer = time.NewTimer(d)
+	} else {
+		v.deadlineTimer.Reset(d)
+	}
 	timer := v.deadlineTimer
 	v.deadlineMu.Unlock()
 
-	if !rd.IsZero() {
-		d := time.Until(rd)
-		if d <= 0 {
-			return nil, os.ErrDeadlineExceeded
-		}
-
-		v.deadlineMu.Lock()
-		if v.deadlineTimer == nil {
-			v.deadlineTimer = time.NewTimer(d)
-			timer = v.deadlineTimer
-		} else {
-			v.deadlineTimer.Reset(d)
-		}
-		v.deadlineMu.Unlock()
-
-		select {
-		case data, ok := <-v.session.RxChan:
-			if !timer.Stop() {
-				select {
-				case <-timer.C:
-				default:
-				}
+	select {
+	case data, ok := <-v.session.RxChan:
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
 			}
-			if !ok {
-				return nil, io.EOF
-			}
-			return data, nil
-		case <-timer.C:
-			return nil, os.ErrDeadlineExceeded
 		}
+		if !ok {
+			return nil, io.EOF
+		}
+		return data, nil
+	case <-timer.C:
+		return nil, os.ErrDeadlineExceeded
 	}
-
-	data, ok := <-v.session.RxChan
-	if !ok {
-		return nil, io.EOF
-	}
-	return data, nil
 }
 
 func (v *VirtualConn) Write(b []byte) (n int, err error) {
@@ -148,14 +148,16 @@ func (v *VirtualConn) Write(b []byte) (n int, err error) {
 }
 
 func (v *VirtualConn) Close() error {
-	v.session.mu.Lock()
-	v.session.closed = true
-	v.session.mu.Unlock()
-	v.session.wakeupTx()
+	v.closeOnce.Do(func() {
+		v.session.mu.Lock()
+		v.session.closed = true
+		v.session.mu.Unlock()
+		v.session.wakeupTx()
 
-	if v.onClose != nil {
-		v.onClose()
-	}
+		if v.onClose != nil {
+			v.onClose()
+		}
+	})
 
 	// Session data remains in engine for flushLoop to upload remaining
 	// txBuf and send close envelope. Engine.flushAll handles removal.

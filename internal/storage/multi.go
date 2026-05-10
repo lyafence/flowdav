@@ -167,12 +167,14 @@ func (m *MultiBackend) Download(ctx context.Context, filename string) (io.ReadCl
 }
 
 func (m *MultiBackend) Delete(ctx context.Context, filename string) error {
+	var errs []error
 	for i, be := range m.backends {
 		if err := be.Delete(ctx, filename); err != nil {
 			logger.Info("MultiBackend: backend[%d] Delete %s error: %v", i, filename, err)
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 func (m *MultiBackend) UploadByIndex(ctx context.Context, filename string, data io.Reader, idx uint8) error {

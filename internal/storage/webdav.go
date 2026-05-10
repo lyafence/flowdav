@@ -135,13 +135,11 @@ func validateNotPrivateURL(rawURL string) error {
 		}
 		for _, addr := range addrs {
 			ip = net.ParseIP(addr)
-			if ip != nil {
-				break
+			if ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified()) {
+				return fmt.Errorf("WebDAV URL cannot point to private/loopback IP: %s (resolved from %s)", ip, host)
 			}
 		}
-		if ip == nil {
-			return fmt.Errorf("cannot parse resolved IP for host: %s", host)
-		}
+		return nil
 	}
 
 	if ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() {
@@ -216,11 +214,14 @@ func (w *WebDAVBackend) Upload(ctx context.Context, filename string, data io.Rea
 		return fmt.Errorf("upload error: %w", err)
 	}
 
-	// Stream the data with a size limit to prevent OOM
-	limitedReader := io.LimitReader(data, MaxFileSize)
+	// Limit read to MaxFileSize+1 to prevent OOM while detecting truncation (Audit C-002)
+	limitedReader := io.LimitReader(data, MaxFileSize+1)
 	content, err := io.ReadAll(limitedReader)
 	if err != nil {
 		return fmt.Errorf("read error: %w", err)
+	}
+	if len(content) > MaxFileSize {
+		return fmt.Errorf("upload error: file too large: %d bytes (max %d)", len(content), MaxFileSize)
 	}
 
 	err = w.client.Write(full, content, 0644)

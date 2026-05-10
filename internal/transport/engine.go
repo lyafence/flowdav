@@ -238,32 +238,49 @@ func (e *Engine) flushAll(ctx context.Context) {
 		s.wakeupTx()
 	}
 
+	// safeUploadSize is slightly less than MaxFileSize to leave room for encryption overhead
+	const safeUploadSize = 14 * 1024 * 1024 // 14MB
+
 	for key, mux := range muxes {
 		fnameCID := key.CID
 		if fnameCID == "" {
 			fnameCID = "unknown"
 		}
-		filename := fmt.Sprintf("%s-%s-%d.bin", e.myDir, fnameCID, time.Now().UnixNano())
 
-		var buf bytes.Buffer
-		for _, env := range mux {
+		// Split muxed envelopes into chunks that fit within the upload limit
+		// to prevent silent truncation of data (Audit C-002)
+		remaining := mux
+		for len(remaining) > 0 {
+			var buf bytes.Buffer
+			var consumed int
+			for _, env := range remaining {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+				before := buf.Len()
+				if err := env.EncodeWithCrypto(&buf, e.cryptoCfg); err != nil {
+					logger.Info("mux encode error: %v", err)
+					return
+				}
+				if buf.Len() > safeUploadSize && consumed > 0 {
+					buf.Truncate(before)
+					break
+				}
+				consumed++
+			}
+
+			filename := fmt.Sprintf("%s-%s-%d.bin", e.myDir, fnameCID, time.Now().UnixNano())
+
+			e.inFlight.Store(filename, struct{}{})
 			select {
+			case e.uploadJobs <- uploadJob{filename: filename, buf: buf, backendIdx: key.BackendIdx}:
 			case <-ctx.Done():
-				return
-			default:
-			}
-			if err := env.EncodeWithCrypto(&buf, e.cryptoCfg); err != nil {
-				logger.Info("mux encode error: %v", err)
+				e.inFlight.Delete(filename)
 				return
 			}
-		}
-
-		e.inFlight.Store(filename, struct{}{})
-		select {
-		case e.uploadJobs <- uploadJob{filename: filename, buf: buf, backendIdx: key.BackendIdx}:
-		case <-ctx.Done():
-			e.inFlight.Delete(filename)
-			return
+			remaining = remaining[consumed:]
 		}
 	}
 

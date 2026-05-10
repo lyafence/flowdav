@@ -97,6 +97,16 @@ func TestValidateNotPrivateURL(t *testing.T) {
 	if err == nil {
 		t.Error("validateNotPrivateURL should reject private IP 192.168.1.1")
 	}
+
+	err = validateNotPrivateURL("https://10.0.0.1/path")
+	if err == nil {
+		t.Error("validateNotPrivateURL should reject private IP 10.0.0.1")
+	}
+
+	err = validateNotPrivateURL("https://127.0.0.1/path")
+	if err == nil {
+		t.Error("validateNotPrivateURL should reject loopback 127.0.0.1")
+	}
 }
 
 func TestNewWebDAVBackendInvalidProvider(t *testing.T) {

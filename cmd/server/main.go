@@ -75,22 +75,23 @@ func main() {
 	logger.Info("Engine started, waiting for signal...")
 
 	if appCfg.HealthPort != "" {
-		go func() {
-			mux := http.ServeMux{}
-			mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(engine.Stats())
-			})
-			ln, err := net.Listen("tcp", appCfg.HealthPort)
-			if err != nil {
-				logger.Info("Health server failed to listen on %s: %v", appCfg.HealthPort, err)
-				return
-			}
+		mux := http.ServeMux{}
+		mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(engine.Stats())
+		})
+		ln, err := net.Listen("tcp", appCfg.HealthPort)
+		if err != nil {
+			logger.Info("Health server failed to listen on %s: %v", appCfg.HealthPort, err)
+		} else {
 			logger.Info("Health server listening on %s", appCfg.HealthPort)
-			if err := http.Serve(ln, &mux); err != nil && !errors.Is(err, net.ErrClosed) {
-				logger.Info("Health server error: %v", err)
-			}
-		}()
+			defer ln.Close()
+			go func() {
+				if err := http.Serve(ln, &mux); err != nil && !errors.Is(err, net.ErrClosed) {
+					logger.Info("Health server error: %v", err)
+				}
+			}()
+		}
 	}
 
 	sigCh := make(chan os.Signal, 1)

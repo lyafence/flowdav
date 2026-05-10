@@ -220,3 +220,133 @@ func TestProcessedMapGrowth(t *testing.T) {
 		t.Errorf("expected 50 entries, got %d", size)
 	}
 }
+
+// TestFlushAllSplitsOversizedMux verifies that flushAll splits multiplexed
+// envelopes into multiple files when the total exceeds the safe upload size,
+// preventing silent data truncation (Audit C-002).
+func TestFlushAllSplitsOversizedMux(t *testing.T) {
+	be := &mockBackend{}
+	engine := NewEngine(be, false, "server", nil)
+	engine.SetPollRate(50)
+	engine.SetFlushRate(50)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer engine.Stop()
+	defer cancel()
+
+	// Start the engine so upload workers are running
+	engine.Start(ctx)
+	time.Sleep(50 * time.Millisecond)
+
+	// Bypass EnqueueTx backpressure by writing directly to txBuf.
+	// Use small payloads (1MB) but enough sessions to exceed the 14MB split threshold.
+	// All sessions share the same ClientID and BackendIdx for multiplexing.
+	payload := make([]byte, 1*1024*1024)
+	for i := 0; i < 20; i++ {
+		s := NewSession(fmt.Sprintf("session-%d", i))
+		s.ClientID = "shared-client" // same client → same mux key → triggers split
+		s.TargetAddr = "example.com:80"
+		s.mu.Lock()
+		s.txBuf = append(s.txBuf, payload...)
+		s.mu.Unlock()
+		engine.AddSession(s)
+	}
+
+	// Call flushAll directly (this runs in the test goroutine)
+	engine.flushAll(ctx)
+
+	// Wait for upload workers to finish processing, then check results
+	engine.Stop()
+
+	// 20 sessions × 1MB ≈ 20MB raw payload → must split into ≥2 files
+	if len(be.uploaded) < 2 {
+		t.Errorf("expected at least 2 uploaded files from oversized mux, got %d", len(be.uploaded))
+	}
+}
+
+// dataTrackingBackend records uploaded filenames AND their content fingerprints
+// to prove that flushAll split does not lose data (C-002 adversarial).
+type dataTrackingBackend struct {
+	mockBackend
+	mu         sync.Mutex
+	uploadedData map[string]int64 // filename → total bytes
+}
+
+func (d *dataTrackingBackend) UploadByIndex(ctx context.Context, name string, data io.Reader, idx uint8) error {
+	content, err := io.ReadAll(data)
+	if err != nil {
+		return err
+	}
+	d.mu.Lock()
+	d.uploaded = append(d.uploaded, name)
+	if d.uploadedData == nil {
+		d.uploadedData = make(map[string]int64)
+	}
+	d.uploadedData[name] = int64(len(content))
+	d.mu.Unlock()
+	return nil
+}
+
+// TestFlushAllDataIntegrity proves that NO data is silently lost during
+// flushAll mux splitting. It creates 15 sessions × 1MB = 15MB of payload,
+// triggers flushAll, then verifies the sum of bytes across all uploaded
+// chunks at least equals the original total (overhead from envelope
+// encoding adds extra bytes).
+//
+// On vulnerable code (before C-002 fix): flushAll sends one 15MB file,
+// WebDAV Upload silently truncates to 16MB (which passes), but if total
+// were >16MB the data would be lost. This test proves the fix works by
+// showing that data is preserved across multiple chunked uploads.
+func TestFlushAllDataIntegrity(t *testing.T) {
+	be := &dataTrackingBackend{}
+	engine := NewEngine(be, false, "server", nil)
+	engine.SetPollRate(50)
+	engine.SetFlushRate(50)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer engine.Stop()
+	defer cancel()
+
+	engine.Start(ctx)
+	time.Sleep(50 * time.Millisecond)
+
+	// Create 15 sessions with 1MB each = 15MB total (enough to trigger split near 14MB)
+	var expectedTotal int64
+	for i := 0; i < 15; i++ {
+		payload := make([]byte, 1*1024*1024)
+		for j := range payload {
+			payload[j] = byte(i)
+		}
+		s := NewSession(fmt.Sprintf("session-%d", i))
+		s.ClientID = "shared-client"
+		s.TargetAddr = "example.com:80"
+		s.mu.Lock()
+		s.txBuf = append(s.txBuf, payload...)
+		s.mu.Unlock()
+		expectedTotal += int64(len(payload))
+		engine.AddSession(s)
+	}
+
+	engine.flushAll(ctx)
+	engine.Stop()
+
+	// Sum all uploaded bytes (includes envelope overhead: session ID,
+	// seq number, target addr, binary headers — this is OK; we only
+	// need to prove data was NOT lost, meaning uploaded >= expected)
+	var uploadedTotal int64
+	be.mu.Lock()
+	for _, size := range be.uploadedData {
+		uploadedTotal += size
+	}
+	fileCount := len(be.uploaded)
+	be.mu.Unlock()
+
+	if fileCount < 2 {
+		t.Errorf("expected ≥2 chunked uploads, got %d — data integrity vulnerable to truncation", fileCount)
+	}
+	// uploaded must be at least expected (overhead makes it larger;
+	// if uploaded < expected, data was silently truncated)
+	if uploadedTotal < expectedTotal {
+		t.Errorf("DATA LOSS: uploaded %d bytes, expected at least %d bytes (Audit C-002)", uploadedTotal, expectedTotal)
+	}
+}

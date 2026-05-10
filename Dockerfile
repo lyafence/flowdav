@@ -22,6 +22,8 @@ COPY --from=builder /bin/flowdav-server /usr/local/bin/flowdav-server
 COPY --from=builder /app/configs /app/configs
 COPY --from=builder /app/README.md /app/README.md
 
+RUN chown -R flow:flow /app/configs
+
 USER flow
 
 CMD ["sh", "-c", "echo 'flowdav - Usage:'; echo '  Copy and edit example config:'; echo '  cp /app/configs/flowdav_client.json.example /app/configs/config.json'; echo '  docker run --rm -v ./config.json:/app/configs/config.json flowdav flowdav-client -c /app/configs/config.json'; echo '  docker run --rm -v ./config.json:/app/configs/config.json flowdav flowdav-server -c /app/configs/config.json'"]

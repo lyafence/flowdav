@@ -48,6 +48,10 @@ func validateBasePath(basePath string, field string) error {
 		if err2 == nil {
 			decoded = decoded2
 		}
+		// Re-check null bytes after decoding to catch %00 encoding (Audit H-004)
+		if strings.ContainsAny(decoded, "\x00\x01\x02") {
+			return fmt.Errorf("%s contains invalid characters after decoding", field)
+		}
 		if isPathTraversal(decoded) {
 			return fmt.Errorf("%s contains path traversal sequence", field)
 		}

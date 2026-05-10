@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/mock"
@@ -235,4 +236,57 @@ func TestMultiBackend(t *testing.T) {
 	mock3.DeleteFunc = func(ctx context.Context, filename string) error { return nil }
 	err = multi.Delete(context.Background(), "test.txt")
 	require.NoError(t, err, "Delete should not error")
+}
+
+// TestMultiBackendDeleteReturnsError verifies that Delete propagates errors
+// when at least one backend fails (Audit H-NEW).
+func TestMultiBackendDeleteReturnsError(t *testing.T) {
+	mock1 := &mockBackend{}
+	mock2 := &mockBackend{}
+	mock1.DeleteFunc = func(ctx context.Context, filename string) error {
+		return errors.New("delete failed on backend 1")
+	}
+	mock2.DeleteFunc = func(ctx context.Context, filename string) error {
+		return nil
+	}
+
+	multi := NewMultiBackend([]Backend{mock1, mock2})
+	err := multi.Delete(context.Background(), "test.bin")
+	if err == nil {
+		t.Error("MultiBackend.Delete should return error when at least one backend fails")
+	}
+}
+
+// TestMultiBackendDeleteAllAdversarial proves that ALL backends failing
+// produces a non-nil error. On the vulnerable code (before H-NEW fix),
+// Delete always returned nil regardless of failures — callers (engine's
+// pool.go, pollLoop) would silently lose failed deletes, causing file
+// accumulation and potential duplicate data delivery on restart.
+//
+// Reproduces: 3 backends, all fail, old code → nil error, new code → error.
+func TestMultiBackendDeleteAllAdversarial(t *testing.T) {
+	mock1 := &mockBackend{}
+	mock2 := &mockBackend{}
+	mock3 := &mockBackend{}
+	mock1.DeleteFunc = func(ctx context.Context, filename string) error {
+		return errors.New("backend 1 timeout")
+	}
+	mock2.DeleteFunc = func(ctx context.Context, filename string) error {
+		return errors.New("backend 2 timeout")
+	}
+	mock3.DeleteFunc = func(ctx context.Context, filename string) error {
+		return errors.New("backend 3 timeout")
+	}
+
+	multi := NewMultiBackend([]Backend{mock1, mock2, mock3})
+	err := multi.Delete(context.Background(), "critical.bin")
+	if err == nil {
+		t.Error("MultiBackend.Delete must return error when ALL backends fail (H-NEW)")
+	}
+	// The error must contain all three failure messages
+	if !strings.Contains(err.Error(), "backend 1 timeout") ||
+		!strings.Contains(err.Error(), "backend 2 timeout") ||
+		!strings.Contains(err.Error(), "backend 3 timeout") {
+		t.Errorf("Delete error should aggregate all backend failures, got: %v", err)
+	}
 }
