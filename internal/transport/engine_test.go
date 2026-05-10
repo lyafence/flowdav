@@ -7,6 +7,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -175,6 +176,30 @@ func TestFilenameParsingWithDashedClientID(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestRemoveSessionDataRace verifies that RemoveSession does not perform a data race
+// on len(e.sessions) after releasing the sessionMu lock (Audit #2).
+func TestRemoveSessionDataRace(t *testing.T) {
+	backend := &mockBackend{}
+	engine := NewEngine(backend, true, "test-client", nil)
+
+	for i := 0; i < 100; i++ {
+		s := NewSession(fmt.Sprintf("session-%d", i))
+		engine.AddSession(s)
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < 10; j++ {
+				engine.RemoveSession(fmt.Sprintf("session-%d", id*10+j))
+			}
+		}(i)
+	}
+	wg.Wait()
 }
 
 func TestProcessedMapGrowth(t *testing.T) {

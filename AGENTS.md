@@ -8,7 +8,7 @@ Flowdav is an independent implementation; the original project does not specify 
 # Build linux binaries in podman, copy to ./bin
 ./scripts/build.sh --image-to-bin
 
-# Build release archives (multi-platform zips in ./release)
+# Build release archives (multi-platform .tar.gz in ./release)
 ./scripts/build.sh
 ```
 

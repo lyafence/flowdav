@@ -140,6 +140,37 @@ func TestEnqueueTxCtxEarlyContextCheck(t *testing.T) {
 	}
 }
 
+// TestEnqueueTxCtxCancelDuringBackpressureWait verifies that EnqueueTxCtx returns
+// promptly when the context is cancelled while the goroutine is blocked on backpressure,
+// WITHOUT requiring an explicit wakeupTx call. This reproduces Audit #3 — the old
+// sync.Cond.Wait() would block forever if ctx was cancelled without a Broadcast.
+func TestEnqueueTxCtxCancelDuringBackpressureWait(t *testing.T) {
+	s := NewSession("test-backpressure-cancel")
+
+	s.mu.Lock()
+	s.txBuf = make([]byte, 2*1024*1024+1)
+	s.mu.Unlock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan struct{})
+	go func() {
+		s.EnqueueTxCtx(ctx, []byte("x"))
+		close(done)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	// Cancel context WITHOUT calling wakeupTx
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("EnqueueTxCtx did not return after context cancellation — goroutine leak")
+	}
+}
+
 func TestEnqueueTxCtxCancellationDuringWait(t *testing.T) {
 	s := NewSession("test-session")
 
@@ -159,9 +190,7 @@ func TestEnqueueTxCtxCancellationDuringWait(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	cancel()
 
-	s.mu.Lock()
-	s.txCond.Broadcast()
-	s.mu.Unlock()
+	s.wakeupTx()
 
 	wg.Wait()
 }

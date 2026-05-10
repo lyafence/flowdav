@@ -188,24 +188,23 @@ func handleServerConn(sessionID, targetAddr string, session *transport.Session, 
 			select {
 			case <-done:
 				return
-			default:
-			}
-			data, ok := <-session.RxChan
-			if !ok {
-				errCh <- fmt.Errorf("session closed by remote")
-				closeConn()
-				return
-			}
-			if len(data) > 0 {
-				logger.Info("Session %s: got %d bytes from client Rx, writing to target", sessionID, len(data))
-				if err := conn.SetWriteDeadline(time.Now().Add(30 * time.Second)); err != nil {
-				logger.Info("Session %s: set write deadline error: %v", sessionID, err)
-			}
-			if _, err := conn.Write(data); err != nil {
-					logger.Info("Session %s: target write error: %v", sessionID, err)
-					errCh <- err
+			case data, ok := <-session.RxChan:
+				if !ok {
+					errCh <- fmt.Errorf("session closed by remote")
 					closeConn()
 					return
+				}
+				if len(data) > 0 {
+					logger.Info("Session %s: got %d bytes from client Rx, writing to target", sessionID, len(data))
+					if err := conn.SetWriteDeadline(time.Now().Add(30 * time.Second)); err != nil {
+						logger.Info("Session %s: set write deadline error: %v", sessionID, err)
+					}
+					if _, err := conn.Write(data); err != nil {
+						logger.Info("Session %s: target write error: %v", sessionID, err)
+						errCh <- err
+						closeConn()
+						return
+					}
 				}
 			}
 		}

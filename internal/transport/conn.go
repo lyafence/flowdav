@@ -150,8 +150,8 @@ func (v *VirtualConn) Write(b []byte) (n int, err error) {
 func (v *VirtualConn) Close() error {
 	v.session.mu.Lock()
 	v.session.closed = true
-	v.session.txCond.Broadcast()
 	v.session.mu.Unlock()
+	v.session.wakeupTx()
 
 	if v.onClose != nil {
 		v.onClose()

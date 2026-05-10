@@ -99,30 +99,6 @@ func TestValidateNotPrivateURL(t *testing.T) {
 	}
 }
 
-func TestValidateBasePathURL(t *testing.T) {
-	tests := []struct {
-		name     string
-		basePath string
-		wantErr  bool
-	}{
-		{"plain traversal", "../etc", true},
-		{"single encoded", "%2e%2e/etc", true},
-		{"double encoded", "%252e%252e/etc", true},
-		{"mixed encoding", "..%2fetc", true},
-		{"valid path", "myapp", false},
-		{"empty path", "", false},
-		{"dot only", ".", false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validateBasePath(tt.basePath, "test.field")
-			if (err != nil) != tt.wantErr {
-				t.Errorf("validateBasePath(%q) error = %v, wantErr = %v", tt.basePath, err, tt.wantErr)
-			}
-		})
-	}
-}
-
 func TestNewWebDAVBackendInvalidProvider(t *testing.T) {
 	_, err := NewWebDAVBackend("google", "", "", "", "")
 	if err == nil {

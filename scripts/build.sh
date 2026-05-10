@@ -26,12 +26,24 @@ build_release() {
 # Linux amd64
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build "${BUILD_FLAGS[@]}" -o "${BINARY_DIR}/flowdav-client-linux-amd64" ./cmd/client
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build "${BUILD_FLAGS[@]}" -o "${BINARY_DIR}/flowdav-server-linux-amd64" ./cmd/server
-zip -j "${RELEASE_DIR}/flowdav-linux-amd64.zip" "${BINARY_DIR}/flowdav-client-linux-amd64" "${BINARY_DIR}/flowdav-server-linux-amd64"
+tar -czf "${RELEASE_DIR}/flowdav-linux-amd64.tar.gz" \
+    --transform 's|.*/||' \
+    "${BINARY_DIR}/flowdav-client-linux-amd64" \
+    "${BINARY_DIR}/flowdav-server-linux-amd64" \
+    configs/flowdav_client.json.example \
+    configs/flowdav_server.json.example \
+    README.md
 
 # Linux arm64
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build "${BUILD_FLAGS[@]}" -o "${BINARY_DIR}/flowdav-client-linux-arm64" ./cmd/client
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build "${BUILD_FLAGS[@]}" -o "${BINARY_DIR}/flowdav-server-linux-arm64" ./cmd/server
-zip -j "${RELEASE_DIR}/flowdav-linux-arm64.zip" "${BINARY_DIR}/flowdav-client-linux-arm64" "${BINARY_DIR}/flowdav-server-linux-arm64"
+tar -czf "${RELEASE_DIR}/flowdav-linux-arm64.tar.gz" \
+    --transform 's|.*/||' \
+    "${BINARY_DIR}/flowdav-client-linux-arm64" \
+    "${BINARY_DIR}/flowdav-server-linux-arm64" \
+    configs/flowdav_client.json.example \
+    configs/flowdav_server.json.example \
+    README.md
 
     echo "Done! Release archives in ${RELEASE_DIR}/"
 }

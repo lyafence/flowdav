@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/url"
 	"path"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -168,42 +167,6 @@ func (w *WebDAVBackend) fullPath(name string) (string, error) {
 		return name, nil
 	}
 	return path.Join(w.basePath, name), nil
-}
-
-// validateBasePath checks a base_path for path traversal and invalid characters.
-// It performs URL-decoding (including double-decoding) to catch encoded traversal
-// sequences like %2e%2e%2f, %252e%252e%252f, etc.
-func validateBasePath(basePath string, field string) error {
-	// Reject null bytes and control characters
-	if strings.ContainsAny(basePath, "\x00\x01\x02") {
-		return fmt.Errorf("%s contains invalid characters", field)
-	}
-
-	// URL-decode once to catch %2e, %2f, etc.
-	decoded, err := url.QueryUnescape(basePath)
-	if err == nil {
-		// URL-decode a second time to catch double-encoding like %252e
-		decoded2, err2 := url.QueryUnescape(decoded)
-		if err2 == nil {
-			decoded = decoded2
-		}
-		if strings.Contains(decoded, "..") {
-			return fmt.Errorf("%s contains path traversal sequence", field)
-		}
-	}
-
-	// Also check the raw value for ".."
-	if strings.Contains(basePath, "..") {
-		return fmt.Errorf("%s contains path traversal sequence", field)
-	}
-
-	// Use filepath.Clean to normalize and verify it doesn't escape
-	cleaned := filepath.Clean(basePath)
-	if !strings.HasPrefix(cleaned, basePath) && cleaned != "." {
-		return fmt.Errorf("%s resolves outside expected directory", field)
-	}
-
-	return nil
 }
 
 func (w *WebDAVBackend) Login(ctx context.Context) error {

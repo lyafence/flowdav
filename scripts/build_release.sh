@@ -58,13 +58,13 @@ for platform in "${platforms[@]}"; do
         echo "WARNING: README.md not found"
     fi
 
-    # Zip it up
-    (cd "$RELEASE_DIR" && zip -r "${FOLDER_NAME}.zip" "$FOLDER_NAME") || {
-        echo "ERROR: Failed to create zip for $FOLDER_NAME"
+    # Package it up
+    (cd "$RELEASE_DIR" && tar -czf "${FOLDER_NAME}.tar.gz" "$FOLDER_NAME") || {
+        echo "ERROR: Failed to create archive for $FOLDER_NAME"
         exit 1
     }
 
-    # Cleanup folder (keep only zip)
+    # Cleanup folder (keep only archive)
     rm -rf "$OUTPUT_PATH"
 done
 

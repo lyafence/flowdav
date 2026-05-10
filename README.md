@@ -227,11 +227,11 @@ Multi-platform release archives are built with:
 Output in `release/`:
 ```
 release/
-  flowdav-v1.0.0-linux-amd64.zip
-  flowdav-v1.0.0-linux-arm64.zip
-  flowdav-v1.0.0-windows-amd64.zip
-  flowdav-v1.0.0-darwin-amd64.zip
-  flowdav-v1.0.0-darwin-arm64.zip
+  flowdav-v1.0.0-linux-amd64.tar.gz
+  flowdav-v1.0.0-linux-arm64.tar.gz
+  flowdav-v1.0.0-windows-amd64.tar.gz
+  flowdav-v1.0.0-darwin-amd64.tar.gz
+  flowdav-v1.0.0-darwin-arm64.tar.gz
 ```
 
 Each archive contains: `flowdav-client`, `flowdav-server`, example configs, and README.

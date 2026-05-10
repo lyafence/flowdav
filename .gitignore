@@ -20,6 +20,7 @@ flowdav-server
 *~
 .DS_Store
 *.zip
+*.tar.gz
 *.exe
 *.log
 .test

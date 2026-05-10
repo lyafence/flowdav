@@ -31,6 +31,10 @@ jobs:
             arch: arm64
             goos: darwin
             goarch: arm64
+          - os: linux
+            arch: arm64
+            goos: linux
+            goarch: arm64
 
     steps:
       - name: Checkout code
@@ -59,11 +63,11 @@ jobs:
           cp configs/*.json.example $FOLDER_NAME/ 2>/dev/null || true
           cp README.md $FOLDER_NAME/
 
-          zip -r "${FOLDER_NAME}.zip" $FOLDER_NAME
+          tar -czf "${FOLDER_NAME}.tar.gz" $FOLDER_NAME
 
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
-           files: flowdav-*.zip
+           files: flowdav-*.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

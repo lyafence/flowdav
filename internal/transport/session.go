@@ -8,6 +8,16 @@ import (
 	"github.com/lyafence/flowdav/internal/logger"
 )
 
+// wakeupTx wakes all goroutines blocked in EnqueueTxCtx due to backpressure.
+// Must be called without holding s.mu.
+func (s *Session) wakeupTx() {
+	s.mu.Lock()
+	ch := s.txWait
+	s.txWait = make(chan struct{})
+	s.mu.Unlock()
+	close(ch)
+}
+
 // Direction indicates if a file is req (client to server) or res (server to client)
 type Direction string
 
@@ -35,7 +45,8 @@ type Session struct {
 	ClientID     string
 
 	// Backpressure: blocked when txBuf is too large
-	txCond *sync.Cond
+	// txWait is a channel closed to wake up waiters; replaced after each wakeup.
+	txWait chan struct{}
 
 	// App channel for receiving data downloaded from remote
 	RxChan chan []byte
@@ -51,8 +62,8 @@ func NewSession(id string) *Session {
 		rxQueue:      make(map[uint64]Envelope),
 		lastActivity: time.Now(),
 		RxChan:       make(chan []byte, 1024),
+		txWait:       make(chan struct{}),
 	}
-	s.txCond = sync.NewCond(&s.mu)
 	return s
 }
 
@@ -72,7 +83,15 @@ func (s *Session) EnqueueTxCtx(ctx context.Context, data []byte) {
 		if ctx.Err() != nil {
 			return
 		}
-		s.txCond.Wait()
+		waitCh := s.txWait
+		s.mu.Unlock()
+		select {
+		case <-ctx.Done():
+			s.mu.Lock()
+			return
+		case <-waitCh:
+		}
+		s.mu.Lock()
 		if ctx.Err() != nil {
 			return
 		}
@@ -89,8 +108,8 @@ func (s *Session) EnqueueTxCtx(ctx context.Context, data []byte) {
 func (s *Session) ClearTx() {
 	s.mu.Lock()
 	s.txBuf = nil
-	s.txCond.Broadcast() // Wake up any writers blocked on backpressure
 	s.mu.Unlock()
+	s.wakeupTx()
 }
 
 func (s *Session) ProcessRx(env *Envelope) {

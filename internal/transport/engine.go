@@ -54,10 +54,11 @@ type Engine struct {
 	inFlight sync.Map
 
 	// Graceful shutdown support
-	stopCh  chan struct{}
-	wg      sync.WaitGroup
-	wgMu    sync.Mutex
-	stopped bool
+	stopCh   chan struct{}
+	wg       sync.WaitGroup
+	uploadWg sync.WaitGroup // tracks in-flight upload goroutines from flushAll
+	wgMu     sync.Mutex
+	stopped  bool
 
 	// MaxSessions limits the total number of concurrent sessions (0 = unlimited)
 	MaxSessions int
@@ -139,6 +140,7 @@ func (e *Engine) Stop() {
 	e.wgMu.Unlock()
 
 	e.wg.Wait()
+	e.uploadWg.Wait()
 	e.downloadPool.Stop()
 }
 
@@ -186,6 +188,7 @@ func (e *Engine) flushAll(ctx context.Context) {
 
 	muxes := make(map[muxKey][]Envelope)
 	var closedSessionIDs []string
+	var sessionsToWake []*Session
 
 	for _, s := range sessions {
 		s.mu.Lock()
@@ -203,7 +206,7 @@ func (e *Engine) flushAll(ctx context.Context) {
 
 		payload := s.txBuf
 		s.txBuf = nil
-		s.txCond.Broadcast()
+		sessionsToWake = append(sessionsToWake, s)
 
 		cid := s.ClientID
 		if cid == "" && e.myDir == DirReq {
@@ -229,6 +232,10 @@ func (e *Engine) flushAll(ctx context.Context) {
 		s.mu.Unlock()
 	}
 
+	for _, s := range sessionsToWake {
+		s.wakeupTx()
+	}
+
 	for key, mux := range muxes {
 		fnameCID := key.CID
 		if fnameCID == "" {
@@ -238,7 +245,9 @@ func (e *Engine) flushAll(ctx context.Context) {
 		backendIdx := key.BackendIdx
 
 		e.inFlight.Store(filename, struct{}{})
+		e.uploadWg.Add(1)
 		go func(fname string, m []Envelope, bIdx uint8) {
+			defer e.uploadWg.Done()
 			defer e.inFlight.Delete(fname)
 			defer func() {
 				if r := recover(); r != nil {
@@ -397,9 +406,10 @@ func (e *Engine) pollLoop(ctx context.Context) {
 func (e *Engine) RemoveSession(id string) {
 	e.sessionMu.Lock()
 	delete(e.sessions, id)
+	count := len(e.sessions)
 	e.sessionMu.Unlock()
 
-	logger.Info("Engine: Session %s removed (Total now: %d)", id, len(e.sessions))
+	logger.Info("Engine: Session %s removed (Total now: %d)", id, count)
 
 	// Add to tombstone list
 	e.closedSessionsMu.Lock()
