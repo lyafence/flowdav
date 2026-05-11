@@ -8,6 +8,9 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"syscall"
+
+	"golang.org/x/term"
 )
 
 var ErrEncryptedConfig = errors.New("config file is encrypted, use -p flag")
@@ -284,6 +287,31 @@ func LoadEncrypted(path, password string) (*AppConfig, error) {
 		cfg.HMacKeyDecoded = hmacKey
 	}
 	return &cfg, nil
+}
+
+// LoadConfig handles config loading with encrypted fallback and
+// interactive password prompt. Returns the parsed config or an error.
+func LoadConfig(path, password string, askInteractive bool) (*AppConfig, error) {
+	cfg, err := Load(path)
+	if err == ErrEncryptedConfig {
+		if password == "" && askInteractive {
+			fmt.Print("Master password: ")
+			pass, err := term.ReadPassword(int(syscall.Stdin))
+			fmt.Println()
+			if err != nil {
+				return nil, fmt.Errorf("failed to read password: %w", err)
+			}
+			password = string(pass)
+		}
+		if password == "" {
+			return nil, fmt.Errorf("config is encrypted. Use -p <password> or -p (interactive) or set FLOWDAV_PASSWORD env var")
+		}
+		cfg, err = LoadEncrypted(path, password)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return cfg, nil
 }
 
 // ResolvePassword scans os.Args for -p before flag.Parse.

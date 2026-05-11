@@ -2,13 +2,9 @@ package storage
 
 import (
 	"context"
-	"errors"
 	"io"
 	"time"
 )
-
-// ErrBackendIndexNotSupported is returned when a backend does not support indexed uploads.
-var ErrBackendIndexNotSupported = errors.New("backend does not supported indexed uploads")
 
 // FileEntry represents a file discovered in a storage backend, tagged with its origin backend index.
 type FileEntry struct {
@@ -24,7 +20,7 @@ type Backend interface {
 	Login(ctx context.Context) error
 
 	// Upload writes a new file to the storage backend.
-	// filename is typically of the format request-<session>-<seq>-<timestamp>.bin
+	// filename is typically of the format {dir_byte}{16_hex}
 	Upload(ctx context.Context, filename string, data io.Reader) error
 
 	// ListQuery searches the backend for files matching a specific prefix or criteria.

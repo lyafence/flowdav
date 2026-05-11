@@ -12,7 +12,7 @@ import (
 var ErrTooManyConns = fmt.Errorf("too many concurrent connections")
 
 // VirtualConn acts as a bridge fulfilling the net.Conn interface for use by standard
-// SOCKS5 libraries, but routing data covertly through the Google Drive array Session.
+// SOCKS5 libraries, but routing data covertly through the WebDAV Session.
 type VirtualConn struct {
 	session *Session
 	engine  *Engine

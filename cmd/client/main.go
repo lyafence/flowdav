@@ -25,7 +25,6 @@ import (
 	"github.com/lyafence/flowdav/internal/transport"
 	"github.com/things-go/go-socks5"
 	"github.com/things-go/go-socks5/statute"
-	"golang.org/x/term"
 )
 
 func generateSessionID() string {
@@ -66,22 +65,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	appCfg, err := config.Load(configPath)
-	if err == config.ErrEncryptedConfig {
-		if password == "" && askInteractive {
-			fmt.Print("Master password: ")
-			pass, err := term.ReadPassword(int(syscall.Stdin))
-			fmt.Println()
-			if err != nil {
-				log.Fatalf("Failed to read password: %v", err)
-			}
-			password = string(pass)
-		}
-		if password == "" {
-			log.Fatalf("Config is encrypted. Use -p <password> or -p (interactive) or set FLOWDAV_PASSWORD env var")
-		}
-		appCfg, err = config.LoadEncrypted(configPath, password)
-	}
+	appCfg, err := config.LoadConfig(configPath, password, askInteractive)
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
@@ -162,7 +146,7 @@ func main() {
 	}
 	connLimit := make(chan struct{}, maxConns)
 
-	// Create the library SOCKS5 server wrapping our custom Google Drive Engine tunnel
+	// Create the library SOCKS5 server wrapping our custom WebDAV Engine tunnel
 	// Build server options
 	serverOpts := []socks5.Option{
 		socks5.WithAuthMethods([]socks5.Authenticator{}), // Initialize with empty slice

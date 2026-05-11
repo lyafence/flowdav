@@ -79,6 +79,7 @@ func TestPoolStartStopLifecycle(t *testing.T) {
 	}
 	cancel()
 }
+
 // TestDeleteErrorPreservesProcessedEntry verifies that when Delete fails,
 // the processed entry is NOT removed, allowing TTL-based retry.
 func TestDeleteErrorPreservesProcessedEntry(t *testing.T) {
