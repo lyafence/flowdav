@@ -1,6 +1,8 @@
 package transport
 
 import (
+	"bytes"
+	"compress/gzip"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hmac"
@@ -13,12 +15,44 @@ import (
 	"github.com/lyafence/flowdav/internal/logger"
 )
 
+const (
+	compressFlagNone       = 0x00
+	compressFlagGzip       = 0x01
+	compressMinBytes       = 256 // minimum raw payload to bother compressing
+)
+
 type CryptoConfig struct {
 	EncKey  []byte
 	HMacKey []byte
 }
 
-// EncodeWithCrypto encrypts and writes the envelope to the writer
+func gzipCompress(data []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	w, err := gzip.NewWriterLevel(&buf, gzip.DefaultCompression)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := w.Write(data); err != nil {
+		return nil, err
+	}
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func gzipDecompress(data []byte) ([]byte, error) {
+	r, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	return io.ReadAll(r)
+}
+
+// EncodeWithCrypto encrypts and writes the envelope to the writer.
+// Payloads ≥256 bytes are gzip-compressed before encryption (flag byte
+// stored alongside to support backward-compatible decode).
 func (e *Envelope) EncodeWithCrypto(w io.Writer, cfg *CryptoConfig) error {
 	data, err := e.MarshalBinary()
 	if err != nil {
@@ -26,12 +60,23 @@ func (e *Envelope) EncodeWithCrypto(w io.Writer, cfg *CryptoConfig) error {
 	}
 
 	if cfg == nil {
-		// No encryption
 		_, err = w.Write(data)
 		return err
 	}
 
-	// Encrypt
+	// Compress (if beneficial) and prepend a 1-byte flag
+	var payload []byte
+	if len(data) >= compressMinBytes {
+		compressed, cerr := gzipCompress(data)
+		if cerr == nil && len(compressed) < len(data) {
+			payload = append([]byte{compressFlagGzip}, compressed...)
+			logger.Debug("Crypto: compressed %d → %d bytes", len(data), len(compressed))
+		}
+	}
+	if payload == nil {
+		payload = append([]byte{compressFlagNone}, data...)
+	}
+
 	block, err := aes.NewCipher(cfg.EncKey)
 	if err != nil {
 		return err
@@ -44,14 +89,12 @@ func (e *Envelope) EncodeWithCrypto(w io.Writer, cfg *CryptoConfig) error {
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
 		return err
 	}
-	ciphertext := gcm.Seal(nonce, nonce, data, nil)
+	ciphertext := gcm.Seal(nonce, nonce, payload, nil)
 
-	// HMAC
 	h := hmac.New(sha256.New, cfg.HMacKey)
 	h.Write(ciphertext)
 	hmacBytes := h.Sum(nil)
 
-	// Write length + ciphertext + HMAC
 	lenBuf := make([]byte, 4)
 	binary.BigEndian.PutUint32(lenBuf, uint32(len(ciphertext)))
 	if _, err := w.Write(lenBuf); err != nil {
@@ -68,7 +111,7 @@ func (e *Envelope) EncodeWithCrypto(w io.Writer, cfg *CryptoConfig) error {
 }
 
 // MaxMessageSize defines the maximum allowed message size to prevent OOM attacks
-const MaxMessageSize = 16 * 1024 * 1024 // 16 MB
+var MaxMessageSize = 16 * 1024 * 1024 // 16 MB
 
 // DecodeEnvelopeWithCrypto reads and decrypts an envelope from the reader
 func DecodeEnvelopeWithCrypto(r io.Reader, cfg *CryptoConfig) (*Envelope, error) {
@@ -89,7 +132,7 @@ func DecodeEnvelopeWithCrypto(r io.Reader, cfg *CryptoConfig) (*Envelope, error)
 	dataLen := binary.BigEndian.Uint32(lenBuf)
 
 	// Validate dataLen to prevent overflow and OOM
-	if dataLen > MaxMessageSize {
+	if int(dataLen) > MaxMessageSize {
 		return nil, fmt.Errorf("message too large: %d bytes (max %d)", dataLen, MaxMessageSize)
 	}
 	if dataLen < 32 {
@@ -137,9 +180,23 @@ func DecodeEnvelopeWithCrypto(r io.Reader, cfg *CryptoConfig) (*Envelope, error)
 		return nil, err
 	}
 
-	// Unmarshal
+	// Check compression flag (backward compat: flag 0x00/0x01 = new
+	// format; anything else = old format without flag byte).
+	var wire []byte
+	switch plaintext[0] {
+	case compressFlagGzip:
+		wire, err = gzipDecompress(plaintext[1:])
+		if err != nil {
+			return nil, fmt.Errorf("decompress error: %w", err)
+		}
+	case compressFlagNone:
+		wire = plaintext[1:]
+	default:
+		wire = plaintext // old format, no flag byte
+	}
+
 	env := &Envelope{}
-	if _, err := env.UnmarshalBinary(plaintext); err != nil {
+	if _, err := env.UnmarshalBinary(wire); err != nil {
 		return nil, err
 	}
 	return env, nil

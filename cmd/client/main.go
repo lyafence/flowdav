@@ -104,6 +104,11 @@ func main() {
 		EncKey:  appCfg.EncKeyDecoded,
 		HMacKey: appCfg.HMacKeyDecoded,
 	}
+	if appCfg.MaxMessageSize > 0 {
+		transport.MaxMessageSize = appCfg.MaxMessageSize
+		storage.MaxFileSize = appCfg.MaxMessageSize
+	}
+
 	engine := transport.NewEngine(backend, true, cid, cryptoCfg)
 	if appCfg.RefreshRateMs > 0 {
 		engine.SetPollRate(appCfg.RefreshRateMs)

@@ -257,7 +257,7 @@ func (e *Envelope) Decode(r io.Reader) error {
 		return err
 	}
 	payLen := binary.BigEndian.Uint32(payLenBuf[:])
-	if payLen > MaxMessageSize {
+	if int(payLen) > MaxMessageSize {
 		return fmt.Errorf("packet too large: %d bytes (max %d)", payLen, MaxMessageSize)
 	}
 	if payLen > 0 {

@@ -323,7 +323,7 @@ func (e *Engine) pollLoop(ctx context.Context) {
 				count := len(e.sessions)
 				e.sessionMu.RUnlock()
 				if count == 0 {
-					timer.Reset(currentPollInterval)
+					timer.Reset(jitterPollInterval(currentPollInterval))
 					continue
 				}
 			}
@@ -331,7 +331,7 @@ func (e *Engine) pollLoop(ctx context.Context) {
 			files, err := e.backend.ListQuery(ctx, peerPrefix)
 			if err != nil {
 				logger.Info("poll list error: %v", err)
-				timer.Reset(currentPollInterval)
+				timer.Reset(jitterPollInterval(currentPollInterval))
 				continue
 			}
 
@@ -341,7 +341,7 @@ func (e *Engine) pollLoop(ctx context.Context) {
 				if currentPollInterval > e.maxPollInterval {
 					currentPollInterval = e.maxPollInterval
 				}
-				timer.Reset(currentPollInterval)
+				timer.Reset(jitterPollInterval(currentPollInterval))
 				continue
 			}
 
@@ -392,10 +392,25 @@ func (e *Engine) pollLoop(ctx context.Context) {
 				}
 			}
 
-			timer.Reset(currentPollInterval)
+			timer.Reset(jitterPollInterval(currentPollInterval))
 			continue
 		}
 	}
+}
+
+// jitterPollInterval applies ±25% random jitter to the given duration
+// to reduce traffic fingerprinting via polling patterns.
+func jitterPollInterval(d time.Duration) time.Duration {
+	if d <= 0 {
+		return d
+	}
+	var b [1]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return d
+	}
+	// 0.75–1.25 range
+	factor := 0.75 + float64(b[0])/255.0*0.5
+	return time.Duration(float64(d) * factor)
 }
 
 // randomFilename generates an obfuscated filename with a direction prefix

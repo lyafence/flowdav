@@ -26,20 +26,23 @@ type VirtualConn struct {
 	deadlineTimer *time.Timer // reusable timer for deadline enforcement
 
 	closeOnce sync.Once // prevents double-close deadlock
+	readWake  chan struct{} // closed on Close() to unblock Read
 }
 
 func NewVirtualConn(s *Session, e *Engine) *VirtualConn {
 	return &VirtualConn{
-		session: s,
-		engine:  e,
+		session:  s,
+		engine:   e,
+		readWake: make(chan struct{}),
 	}
 }
 
 func NewVirtualConnWithOnClose(s *Session, e *Engine, fn func()) *VirtualConn {
 	return &VirtualConn{
-		session: s,
-		engine:  e,
-		onClose: fn,
+		session:  s,
+		engine:   e,
+		onClose:  fn,
+		readWake: make(chan struct{}),
 	}
 }
 
@@ -69,15 +72,18 @@ func (v *VirtualConn) Read(b []byte) (n int, err error) {
 			return n, nil
 		}
 
-		// 0-byte heartbeat: check closed, prevent tight spin
+		// 0-byte heartbeat: wait for wake signal or timeout
+		select {
+		case <-v.readWake:
+		case <-time.After(time.Millisecond):
+		}
+
 		v.session.mu.Lock()
 		closed := v.session.closed
 		v.session.mu.Unlock()
-
 		if closed {
 			return 0, io.EOF
 		}
-		time.Sleep(time.Millisecond)
 	}
 }
 
@@ -153,6 +159,7 @@ func (v *VirtualConn) Close() error {
 		v.session.closed = true
 		v.session.mu.Unlock()
 		v.session.wakeupTx()
+		close(v.readWake)
 
 		if v.onClose != nil {
 			v.onClose()

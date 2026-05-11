@@ -17,7 +17,7 @@ import (
 )
 
 // MaxFileSize is the maximum file size allowed for upload/download (16MB)
-const MaxFileSize = 16 * 1024 * 1024
+var MaxFileSize = 16 * 1024 * 1024
 
 type WebDAVBackend struct {
 	client   *gowebdav.Client
@@ -215,7 +215,7 @@ func (w *WebDAVBackend) Upload(ctx context.Context, filename string, data io.Rea
 	}
 
 	// Limit read to MaxFileSize+1 to prevent OOM while detecting truncation
-	limitedReader := io.LimitReader(data, MaxFileSize+1)
+	limitedReader := io.LimitReader(data, int64(MaxFileSize)+1)
 	content, err := io.ReadAll(limitedReader)
 	if err != nil {
 		return fmt.Errorf("read error: %w", err)

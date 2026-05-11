@@ -81,6 +81,11 @@ func main() {
 		log.Fatalf("Backend login failed: %v", err)
 	}
 
+	if appCfg.MaxMessageSize > 0 {
+		transport.MaxMessageSize = appCfg.MaxMessageSize
+		storage.MaxFileSize = appCfg.MaxMessageSize
+	}
+
 	cryptoCfg := &transport.CryptoConfig{
 		EncKey:  appCfg.EncKeyDecoded,
 		HMacKey: appCfg.HMacKeyDecoded,

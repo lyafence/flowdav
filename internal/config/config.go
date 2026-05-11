@@ -134,6 +134,11 @@ type AppConfig struct {
 	// Default 100 if not specified.
 	MaxConnections int `json:"max_connections,omitempty"`
 
+	// MaxMessageSize limits the maximum envelope payload size in bytes.
+	// Default 16777216 (16MB). Must be ≥65536 (64KB). Applied to both
+	// transport.MaxMessageSize and storage.MaxFileSize.
+	MaxMessageSize int `json:"max_message_size,omitempty"`
+
 	// HealthPort enables a lightweight HTTP health server on this port.
 	// When set, a GET /health endpoint is available returning JSON Engine stats.
 	// If empty, no health server is started (zero overhead).
@@ -226,6 +231,11 @@ func Load(path string) (*AppConfig, error) {
 	}
 	if len(hmacKey) != 32 {
 		return nil, fmt.Errorf("invalid hmac_key: must be 32 bytes after base64 decoding, got %d", len(hmacKey))
+	}
+
+	// Validate MaxMessageSize (if set)
+	if cfg.MaxMessageSize > 0 && cfg.MaxMessageSize < 65536 {
+		return nil, fmt.Errorf("max_message_size must be at least 65536 (64KB), got %d", cfg.MaxMessageSize)
 	}
 
 	// Store decoded keys for use by transport layer
