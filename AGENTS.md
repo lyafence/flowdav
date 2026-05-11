@@ -100,6 +100,8 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 
 ### 📋 Backlog (safe to fix)
 - **OpenWrt cross-build** — add `GOARCH=mips`/`mipsle`/`arm` to release matrix for travel router use. ~6.8 MB client binary, static musl. Low priority.
+- **Polling jitter** — add random jitter (±25%) around poll intervals to reduce traffic fingerprinting. ~15 lines.
+- **Envelope compression** — gzip/deflate payload before encryption. ~3-5x compression on HTML/JSON/text. High ROI for bandwidth-limited WebDAV.
 - **1ms busy-wait** on RxChan graceful close — `conn.go:80`
 - **`DownloadWorkerPool.Submit` can stall `pollLoop`** — ~~`pool.go:65-70` (channel full = poll loop blocks)~~ ✅ Non-blocking with auto-retry
 - **`inFlight` sync.Map entries persist** on shutdown (dead code, zero impact)
@@ -109,6 +111,11 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 - **`TestFilenameParsingWithDashedClientID`** — ~~tests old filename format, dead code~~
 - **Go 1.26.3** — current patch (May 2026). CI targets 1.26.3; local go.mod at 1.26.2. Still supported until Go 1.28. Plan migration to Go 1.27+ when released.
 - **Retry for storage ops** — upload/download/delete with 3 attempts, exponential backoff (100ms, 200ms). ✅ Added
+- **Metadata obfuscation** — directory bucketing (`ab/cd/` from first 2 filename bytes) to reduce per-directory scan overhead and hide traffic patterns. Low/medium priority.
+- **Generic transport providers** — formalize `storage.Backend` contract; add S3, IMAP, filesystem relay backends. Medium priority.
+- **MaxEnvelopeSize in config** — make `MaxMessageSize` (hardcoded 16MB) configurable per-deployment. Low priority.
+- **Persistent state** — optional SQLite metadata layer for crash recovery, durable queues, resumable delivery. Low priority (not needed yet).
+- **Fixed-size envelope mode** — optional padding to fixed envelope sizes. Reduces payload-size correlation analysis. Medium complexity, low priority.
 
 ### 🧪 Test Gaps (add tests here)
 - `WebDAVBackend.Login()` — Mkdir error handling (not "already exists")
