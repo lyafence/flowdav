@@ -94,7 +94,6 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 
 ### 📋 Backlog (safe to fix)
 - **OpenWrt cross-build** — add `GOARCH=mips`/`mipsle`/`arm` to release matrix for travel router use. ~6.8 MB client binary, static musl. Low priority.
-- **Metadata obfuscation** — direction subdirs (`invoices`/`receipts`), uppercase hex filenames, no extension. ✅ Added
 - **Generic transport providers** — formalize `storage.Backend` contract; add S3, IMAP, filesystem relay backends. Medium priority.
 - **Persistent state** — optional SQLite metadata layer for crash recovery, durable queues, resumable delivery. Low priority (not needed yet).
 - **Fixed-size envelope mode** — optional padding to fixed envelope sizes. Reduces payload-size correlation analysis. Medium complexity, low priority.
