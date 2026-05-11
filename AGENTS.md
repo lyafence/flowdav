@@ -101,13 +101,14 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 ### 📋 Backlog (safe to fix)
 - **OpenWrt cross-build** — add `GOARCH=mips`/`mipsle`/`arm` to release matrix for travel router use. ~6.8 MB client binary, static musl. Low priority.
 - **1ms busy-wait** on RxChan graceful close — `conn.go:80`
-- **`DownloadWorkerPool.Submit` can stall `pollLoop`** — `pool.go:65-70` (channel full = poll loop blocks)
+- **`DownloadWorkerPool.Submit` can stall `pollLoop`** — ~~`pool.go:65-70` (channel full = poll loop blocks)~~ ✅ Non-blocking with auto-retry
 - **`inFlight` sync.Map entries persist** on shutdown (dead code, zero impact)
 - **Double semaphore** — ~~`downloadSem` (cap 16) redundant under `sem` (cap 8) — `pool.go:81-85`~~ ✅ Removed
 - **Missing security linters** in `.golangci.yml` ~~(`gosec`, `bodyclose`, `noctx`)~~ ✅ Added
 - **Triple-encoded null byte bypass** (negligible risk)
 - **`TestFilenameParsingWithDashedClientID`** — ~~tests old filename format, dead code~~
 - **Go 1.26.3** — current patch (May 2026). CI targets 1.26.3; local go.mod at 1.26.2. Still supported until Go 1.28. Plan migration to Go 1.27+ when released.
+- **Retry for storage ops** — upload/download/delete with 3 attempts, exponential backoff (100ms, 200ms). ✅ Added
 
 ### 🧪 Test Gaps (add tests here)
 - `WebDAVBackend.Login()` — Mkdir error handling (not "already exists")
@@ -118,5 +119,5 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 - `pool.go` — only 4 direct tests in `pool_test.go` (improved from 2, still minimal)
 
 ### 🏗️ Architecture Weaknesses
-- **No retry** for failed storage operations (upload, download, delete)
+- **No retry** for failed storage operations (upload, download, delete) — ✅ Added
 - **Memory buffering:** entire proxied traffic in memory (txBuf per session, full file content)

@@ -4,9 +4,52 @@ import (
 	"context"
 	"io"
 	"sync"
+	"time"
 
 	"github.com/lyafence/flowdav/internal/logger"
 )
+
+const (
+	retryAttempts = 3
+	retryBaseWait = 100 * time.Millisecond
+)
+
+func retryStorage(ctx context.Context, stopCh <-chan struct{}, desc string, fn func() error) error {
+	var err error
+	for attempt := 0; attempt < retryAttempts; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-stopCh:
+				return context.Canceled
+			default:
+			}
+		}
+
+		err = fn()
+		if err == nil {
+			return nil
+		}
+
+		if attempt < retryAttempts-1 {
+			wait := retryBaseWait << attempt
+			logger.Info("retry %s: attempt %d failed, retrying in %v: %v", desc, attempt+1, wait, err)
+			timer := time.NewTimer(wait)
+			select {
+			case <-timer.C:
+			case <-ctx.Done():
+				timer.Stop()
+				return ctx.Err()
+			case <-stopCh:
+				timer.Stop()
+				return context.Canceled
+			}
+		}
+	}
+	logger.Info("retry %s: all %d attempts failed: %v", desc, retryAttempts, err)
+	return err
+}
 
 type downloadJob struct {
 	filename   string
@@ -62,10 +105,14 @@ func (p *DownloadWorkerPool) Stop() {
 	p.wg.Wait()
 }
 
-func (p *DownloadWorkerPool) Submit(job downloadJob, stopCh <-chan struct{}) {
+func (p *DownloadWorkerPool) Submit(job downloadJob, stopCh <-chan struct{}) bool {
 	select {
 	case p.jobs <- job:
+		return true
 	case <-stopCh:
+		return false
+	default:
+		return false
 	}
 }
 
@@ -89,7 +136,12 @@ func (p *DownloadWorkerPool) processDownload(ctx context.Context, stopCh <-chan 
 	default:
 	}
 
-	rc, err := e.backend.DownloadByIndex(ctx, job.filename, job.backendIdx)
+	var rc io.ReadCloser
+	err := retryStorage(ctx, stopCh, "download "+job.filename, func() error {
+		var err error
+		rc, err = e.backend.DownloadByIndex(ctx, job.filename, job.backendIdx)
+		return err
+	})
 	if err != nil {
 		if rc != nil {
 			rc.Close()
@@ -153,7 +205,9 @@ func (p *DownloadWorkerPool) processDownload(ctx context.Context, stopCh <-chan 
 		}
 	}
 
-	if err := e.backend.Delete(ctx, job.filename); err != nil {
+	if err := retryStorage(ctx, stopCh, "delete "+job.filename, func() error {
+		return e.backend.Delete(ctx, job.filename)
+	}); err != nil {
 		logger.Info("delete error %s: %v — keeping processed entry for TTL-based retry", job.filename, err)
 	} else {
 		e.processedMu.Lock()

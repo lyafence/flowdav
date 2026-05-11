@@ -355,18 +355,21 @@ func (e *Engine) pollLoop(ctx context.Context) {
 					continue
 				}
 
+			e.processedMu.Lock()
+			if ts, exists := e.processed[entry.Filename]; exists && time.Since(ts) < 5*time.Minute {
+				e.processedMu.Unlock()
+				continue
+			}
+			e.processedMu.Unlock()
+
+			if e.downloadPool.Submit(downloadJob{
+				filename:   entry.Filename,
+				backendIdx: entry.BackendIdx,
+			}, e.stopCh) {
 				e.processedMu.Lock()
-				if ts, exists := e.processed[entry.Filename]; exists && time.Since(ts) < 5*time.Minute {
-					e.processedMu.Unlock()
-					continue
-				}
 				e.processed[entry.Filename] = time.Now()
 				e.processedMu.Unlock()
-
-				e.downloadPool.Submit(downloadJob{
-					filename:   entry.Filename,
-					backendIdx: entry.BackendIdx,
-				}, e.stopCh)
+			}
 			}
 
 			// Burst backoff: fast re-poll after receiving files
@@ -474,7 +477,9 @@ func (e *Engine) uploadWorker(ctx context.Context) {
 						logger.Info("upload panic %s: %v", job.filename, r)
 					}
 				}()
-				if err := e.backend.UploadByIndex(ctx, job.filename, &job.buf, job.backendIdx); err != nil {
+				if err := retryStorage(ctx, e.stopCh, "upload "+job.filename, func() error {
+					return e.backend.UploadByIndex(ctx, job.filename, &job.buf, job.backendIdx)
+				}); err != nil {
 					logger.Info("upload error %s (backend %d): %v", job.filename, job.backendIdx, err)
 				}
 			}()
