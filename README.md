@@ -25,6 +25,8 @@ A lightweight SOCKS5 proxy that uses WebDAV as a transport layer. Route your tra
 - Client and server must use the same WebDAV storage and credentials
 - Default SOCKS5 port is 1080 (127.0.0.1), docker-compose exposes as 11080 (0.0.0.0)
 
+> **Disclaimer:** This tool is designed for legitimate privacy protection — securing traffic on untrusted public Wi-Fi networks. Users are solely responsible for complying with all applicable laws in their jurisdiction. The authors assume no liability for misuse or unlawful use.
+
 ## Quick Start
 
 ### What you need
