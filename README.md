@@ -204,11 +204,14 @@ E2E tests require built binaries in `bin/` and podman:
 # 1. Generate test configs with fresh keys
 ./scripts/prepare_test_env.sh
 
-# 2. Build Docker image and start services
-podman-compose up -d --build
+# 2. Build Docker image
+make docker-build
 
-# 3. Run E2E test suite
+# 3. Start services and run tests
 ./scripts/test_e2e.sh
+
+# Or run all at once:
+make docker-e2e
 ```
 
 ### Release Archives
@@ -219,7 +222,7 @@ Multi-platform release archives are built with:
 make release
 ```
 
-Each archive contains: `flowdav-client`, `flowdav-server`, example configs, and README.
+Each archive contains: `flowdav-client`, `flowdav-server`, `flowdav-encrypt`, example configs, and README.
 
 ## License
 
