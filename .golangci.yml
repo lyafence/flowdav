@@ -16,6 +16,9 @@ linters:
     - misspell
     - unconvert
     - wastedassign
+    - gosec
+    - bodyclose
+    - noctx
   settings:
     revive:
       rules:

@@ -42,9 +42,6 @@ type Engine struct {
 	// Concurrency control for storage operations (Upload/Download)
 	sem chan struct{}
 
-	// Concurrency control for download goroutines in pollLoop
-	downloadSem chan struct{}
-
 	// Track processed files with timestamps to avoid duplicates and enable TTL cleanup
 	processed   map[string]time.Time
 	processedMu sync.Mutex
@@ -100,7 +97,6 @@ func NewEngine(backend storage.Backend, isClient bool, clientID string, cryptoCf
 		e.peerDir = DirReq
 	}
 	e.sem = make(chan struct{}, 8)
-	e.downloadSem = make(chan struct{}, 16)
 	e.downloadPool = NewDownloadWorkerPool(e, 16)
 	e.uploadJobs = make(chan uploadJob, 16)
 	return e

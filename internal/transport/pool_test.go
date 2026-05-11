@@ -29,6 +29,56 @@ func (d *deleteRecordingBackend) Delete(ctx context.Context, name string) error 
 	return nil
 }
 
+// TestPoolSubmitAfterStop verifies that Submit returns immediately
+// when stopCh is already closed (no deadlock on shutdown).
+func TestPoolSubmitAfterStop(t *testing.T) {
+	be := &deleteRecordingBackend{failDelete: true}
+	engine := NewEngine(be, false, "", nil)
+	engine.SetPollRate(50)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	engine.Start(ctx)
+	engine.Stop()
+
+	done := make(chan struct{})
+	go func() {
+		engine.downloadPool.Submit(downloadJob{
+			filename:   "after-stop.bin",
+			backendIdx: 0,
+		}, engine.stopCh)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Error("Submit blocked on closed stopCh")
+	}
+}
+
+// TestPoolStartStopLifecycle verifies Start → Stop completes within timeout.
+func TestPoolStartStopLifecycle(t *testing.T) {
+	pool := NewDownloadWorkerPool(nil, 4)
+	ctx, cancel := context.WithCancel(context.Background())
+	stopCh := make(chan struct{})
+
+	pool.Start(ctx, stopCh)
+	close(stopCh)
+
+	done := make(chan struct{})
+	go func() {
+		pool.Stop()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Error("Stop() did not complete within timeout")
+	}
+	cancel()
+}
 // TestDeleteErrorPreservesProcessedEntry verifies that when Delete fails,
 // the processed entry is NOT removed, allowing TTL-based retry.
 func TestDeleteErrorPreservesProcessedEntry(t *testing.T) {

@@ -5,8 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strconv"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -147,45 +145,7 @@ func TestEngineFastShutdownOnStopSignal(t *testing.T) {
 	}
 }
 
-func TestFilenameParsingWithDashedClientID(t *testing.T) {
-	tests := []struct {
-		fname    string
-		wantTS   bool
-		wantCID  string
-	}{
-		{"rq-client1-1234567890.bin", true, "client1"},
-		{"rq-my-client-id-1234567890.bin", true, "my-client-id"},
-		{"rs-test-client-1234567890.bin", true, "test-client"},
-		{"rq-abc-9999999999.bin", true, "abc"},
-		{"rq-client.bin", false, ""},
-		{"rq--1234567890.bin", true, ""},
-	}
-	for _, tt := range tests {
-		fname := tt.fname
-		if len(fname) > 4 && fname[len(fname)-4:] == ".bin" {
-			fname = fname[:len(fname)-4]
-		}
-		parts := strings.Split(fname, "-")
-		if len(parts) < 3 {
-			if tt.wantTS {
-				t.Errorf("%s: expected valid parse, got < 3 parts", tt.fname)
-			}
-			continue
-		}
-		tsStr := parts[len(parts)-1]
-		_, err := strconv.ParseInt(tsStr, 10, 64)
-		hasTS := err == nil
-		if hasTS != tt.wantTS {
-			t.Errorf("%s: hasTS=%v, want %v", tt.fname, hasTS, tt.wantTS)
-		}
-		if hasTS && tt.wantTS {
-			gotCID := strings.Join(parts[1:len(parts)-1], "-")
-			if gotCID != tt.wantCID {
-				t.Errorf("%s: clientID=%q, want %q", tt.fname, gotCID, tt.wantCID)
-			}
-		}
-	}
-}
+
 
 // TestBackendIdxDataRace verifies that s.BackendIdx is read under s.mu in flushAll.
 // Starts the engine so upload workers consume jobs (preventing uploadJobs buffer deadlock).

@@ -14,8 +14,8 @@ credentials.json
 
 # Binaries and temp files
 bin/
-server
-client
+# server
+# client
 flowdav-client
 flowdav-server
 flowdav-encrypt

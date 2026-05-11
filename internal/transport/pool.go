@@ -78,9 +78,6 @@ func (p *DownloadWorkerPool) processDownload(ctx context.Context, stopCh <-chan 
 
 	e := p.engine
 
-	e.downloadSem <- struct{}{}
-	defer func() { <-e.downloadSem }()
-
 	e.sem <- struct{}{}
 	defer func() { <-e.sem }()
 

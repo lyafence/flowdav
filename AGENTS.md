@@ -11,7 +11,7 @@ Flowdav is an independent implementation; the original project does not specify 
 | Unit tests | `make test` (race-enabled, 90+ tests) |
 | E2E tests | `make test-e2e` or `./scripts/test_e2e.sh` |
 | E2E + encrypted configs | `make test-e2e-encrypted` |
-| Full-stack Podman | `make docker-e2e` or `podman-compose up -d` |
+| Full-stack Podman | `make docker-e2e` or `./scripts/prepare_test_env.sh && podman-compose up -d` |
 | Test SOCKS5 | `curl --socks5h://127.0.0.1:11080 https://api.ipify.org` |
 | Encrypt config | `make encrypt FILE=config.json` or `FLOWDAV_PASSWORD=secret make encrypt FILE=config.json` |
 | Release archives | `make release` |
@@ -99,14 +99,15 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 - **ACK/retransmit:** no reliability beyond Seq ordering. Envelope loss = data loss.
 
 ### 📋 Backlog (safe to fix)
+- **OpenWrt cross-build** — add `GOARCH=mips`/`mipsle`/`arm` to release matrix for travel router use. ~6.8 MB client binary, static musl. Low priority.
 - **1ms busy-wait** on RxChan graceful close — `conn.go:80`
 - **`DownloadWorkerPool.Submit` can stall `pollLoop`** — `pool.go:65-70` (channel full = poll loop blocks)
 - **`inFlight` sync.Map entries persist** on shutdown (dead code, zero impact)
-- **Double semaphore** — `downloadSem` (cap 16) redundant under `sem` (cap 8) — `pool.go:81-85`
-- **Missing security linters** in `.golangci.yml` (`gosec`, `bodyclose`, `noctx`)
+- **Double semaphore** — ~~`downloadSem` (cap 16) redundant under `sem` (cap 8) — `pool.go:81-85`~~ ✅ Removed
+- **Missing security linters** in `.golangci.yml` ~~(`gosec`, `bodyclose`, `noctx`)~~ ✅ Added
 - **Triple-encoded null byte bypass** (negligible risk)
-- **`TestFilenameParsingWithDashedClientID`** — tests old filename format, dead code since `randomFilename` refactor
-- **Go 1.26 — last patch 1.26.3** (May 2026). Still supported until Go 1.28. Plan migration to Go 1.27+ when released.
+- **`TestFilenameParsingWithDashedClientID`** — ~~tests old filename format, dead code~~
+- **Go 1.26.3** — current patch (May 2026). CI targets 1.26.3; local go.mod at 1.26.2. Still supported until Go 1.28. Plan migration to Go 1.27+ when released.
 
 ### 🧪 Test Gaps (add tests here)
 - `WebDAVBackend.Login()` — Mkdir error handling (not "already exists")
@@ -114,7 +115,7 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 - `Envelope.Encode()` — zero coverage (unused; `EncodeWithCrypto` uses `MarshalBinary`+`Write`); `Decode()` has indirect coverage
 - `Engine.gcLoop()` — tombstone TTL expiry edge cases
 - `Engine.pollLoop()` — empty poll backoff reset to minPollInterval
-- `pool.go` — only 2 direct tests in `pool_test.go` (minimal coverage)
+- `pool.go` — only 4 direct tests in `pool_test.go` (improved from 2, still minimal)
 
 ### 🏗️ Architecture Weaknesses
 - **No retry** for failed storage operations (upload, download, delete)
