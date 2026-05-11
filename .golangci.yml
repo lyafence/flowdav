@@ -1,3 +1,5 @@
+version: "2"
+
 run:
   go: "1.26"
   timeout: 3m
@@ -14,11 +16,10 @@ linters:
     - misspell
     - unconvert
     - wastedassign
-
-linters-settings:
-  revive:
-    rules:
-      - name: exported
-        severity: warning
-      - name: var-naming
-        severity: warning
+  settings:
+    revive:
+      rules:
+        - name: exported
+          severity: warning
+        - name: var-naming
+          severity: warning

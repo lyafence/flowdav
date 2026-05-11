@@ -72,7 +72,7 @@ release:
 	rm -rf $(RELEASE_DIR)/*
 	$(MAKE) build-all
 	tar -czf $(RELEASE_DIR)/flowdav-$(VERSION)-linux-amd64.tar.gz \
-		-C $(BIN_DIR) flowdav-client-linux-amd64 flowdav-server-linux-amd64 \
+		-C $(BIN_DIR) flowdav-client-linux-amd64 flowdav-server-linux-amd64 flowdav-encrypt-linux-amd64 \
 		-C $(CURDIR) README.md configs/flowdav_client.json.example configs/flowdav_server.json.example
 
 clean:

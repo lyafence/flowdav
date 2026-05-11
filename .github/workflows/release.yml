@@ -49,7 +49,7 @@ jobs:
         shell: bash
         run: |
           VERSION=${GITHUB_REF_NAME}
-           FOLDER_NAME="flowdav-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          FOLDER_NAME="flowdav-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}"
           mkdir -p $FOLDER_NAME
 
           SUFFIX=""
