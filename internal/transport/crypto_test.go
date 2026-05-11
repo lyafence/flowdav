@@ -6,6 +6,56 @@ import (
 	"testing"
 )
 
+func TestGzipCompressDecompress(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []byte
+	}{
+		{"small payload", []byte("hello world")},
+		{"compressible", bytes.Repeat([]byte("ABCDEFGHIJ"), 1000)},
+		{"binary", []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			compressed, err := gzipCompress(tt.input)
+			if err != nil {
+				t.Fatalf("gzipCompress failed: %v", err)
+			}
+			if len(compressed) == 0 {
+				t.Fatal("compressed output is empty")
+			}
+			decompressed, err := gzipDecompress(compressed)
+			if err != nil {
+				t.Fatalf("gzipDecompress failed: %v", err)
+			}
+			if !bytes.Equal(decompressed, tt.input) {
+				t.Fatalf("roundtrip mismatch: got %d bytes, want %d bytes", len(decompressed), len(tt.input))
+			}
+		})
+	}
+}
+
+func TestGzipCompressLargePayload(t *testing.T) {
+	input := make([]byte, 100000)
+	for i := range input {
+		input[i] = byte(i % 256)
+	}
+	compressed, err := gzipCompress(input)
+	if err != nil {
+		t.Fatalf("gzipCompress failed: %v", err)
+	}
+	if len(compressed) >= len(input) {
+		t.Logf("incompressible data grew: %d → %d (expected for random)", len(input), len(compressed))
+	}
+	decompressed, err := gzipDecompress(compressed)
+	if err != nil {
+		t.Fatalf("gzipDecompress failed: %v", err)
+	}
+	if !bytes.Equal(decompressed, input) {
+		t.Fatal("roundtrip mismatch on large payload")
+	}
+}
+
 func TestEncodeDecodeWithCrypto(t *testing.T) {
 	cfg := &CryptoConfig{
 		EncKey:  make([]byte, 32),

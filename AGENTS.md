@@ -8,19 +8,20 @@ Flowdav is an independent implementation; the original project does not specify 
 | Purpose | Command |
 |---------|---------|
 | Build | `make build` → binaries in `./bin/` |
-| Unit tests | `make test` (race-enabled, 88 tests) |
+| Unit tests | `make test` (race-enabled, 93 tests) |
 | E2E tests | `make test-e2e` or `./scripts/test_e2e.sh` |
 | E2E + encrypted configs | `make test-e2e-encrypted` |
 | Full-stack Podman | `make docker-e2e` or `./scripts/prepare_test_env.sh && podman-compose up -d` |
 | Test SOCKS5 | `curl --socks5h://127.0.0.1:11080 https://api.ipify.org` |
 | Encrypt config | `make encrypt FILE=config.json` or `FLOWDAV_PASSWORD=secret make encrypt FILE=config.json` |
 | Release archives | `make release` |
+| Show version | `flowdav-client --version`, `flowdav-server --version`, `flowdav-encrypt --version` |
 
 **Binaries:** `flowdav-client` (has `listen_addr`), `flowdav-server` (no listener), `flowdav-encrypt` (config encryption).
 
 ## Quick Reference
 
-**Config:** `configs/flowdav_{role}.json.example` — flags: `-c` config, `-l` log level, `-p` master password, `--version`.
+**Config:** `configs/flowdav_{role}.json.example` — flags: `-c` config, `-l` log level, `-p` master password, `--version`. Optional field: `max_message_size` (bytes, default 16MB).
 
 **Health:** `GET /health` on `health_port` (e.g., `"127.0.0.1:9191"`) → JSON stats.
 

@@ -322,6 +322,37 @@ func (d *dataTrackingBackend) UploadByIndex(ctx context.Context, name string, da
 	return nil
 }
 
+func TestJitterPollInterval(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    time.Duration
+		minRatio float64
+		maxRatio float64
+	}{
+		{"zero", 0, 0, 0},
+		{"100ms", 100 * time.Millisecond, 0.75, 1.25},
+		{"5s", 5 * time.Second, 0.75, 1.25},
+		{"1h", time.Hour, 0.75, 1.25},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for i := 0; i < 100; i++ {
+				got := jitterPollInterval(tt.input)
+				if tt.input == 0 {
+					if got != 0 {
+						t.Fatalf("expected 0, got %v", got)
+					}
+					continue
+				}
+				ratio := float64(got) / float64(tt.input)
+				if ratio < tt.minRatio || ratio > tt.maxRatio {
+					t.Fatalf("jitter ratio %.4f out of range [%.2f, %.2f] for %v", ratio, tt.minRatio, tt.maxRatio, tt.input)
+				}
+			}
+		})
+	}
+}
+
 // TestFlushAllDataIntegrity proves that NO data is silently lost during
 // flushAll mux splitting. It creates 15 sessions × 1MB = 15MB of payload,
 // triggers flushAll, then verifies the sum of bytes across all uploaded

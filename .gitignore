@@ -30,3 +30,4 @@ flowdav-encrypt
 
 # Build artifacts
 release/
+coverage.out

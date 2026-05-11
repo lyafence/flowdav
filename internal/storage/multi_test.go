@@ -290,3 +290,56 @@ func TestMultiBackendDeleteAllAdversarial(t *testing.T) {
 		t.Errorf("Delete error should aggregate all backend failures, got: %v", err)
 	}
 }
+
+func TestCircuitBreakerTripsOnFailures(t *testing.T) {
+	mock1 := &mockBackend{}
+	mock2 := &mockBackend{}
+	multi := NewMultiBackend([]Backend{mock1, mock2})
+	ctx := context.Background()
+
+	// Mock1 always fails; mock2 always succeeds
+	failCount := 0
+	mock1.UploadFunc = func(ctx context.Context, filename string, data io.Reader) error {
+		failCount++
+		return errors.New("upload failed")
+	}
+	mock2.UploadFunc = func(ctx context.Context, filename string, data io.Reader) error {
+		return nil
+	}
+
+	// Trip circuit on backend 0 with cbThreshold failures
+	for i := 0; i < cbThreshold; i++ {
+		err := multi.UploadByIndex(ctx, "test.bin", nil, 0)
+		require.Error(t, err)
+	}
+
+	// Backend 0 should now be unavailable
+	require.Nil(t, multi.BackendByIndex(0), "backend 0 should be tripped")
+
+	// Backend 1 unaffected
+	require.NotNil(t, multi.BackendByIndex(1), "backend 1 should still be available")
+}
+
+func TestRandBackendIndex(t *testing.T) {
+	if idx := RandBackendIndex(0); idx != 0 {
+		t.Errorf("expected 0 for n=0, got %d", idx)
+	}
+	if idx := RandBackendIndex(-1); idx != 0 {
+		t.Errorf("expected 0 for n=-1, got %d", idx)
+	}
+	for n := 1; n <= 10; n++ {
+		seen := make(map[int]int)
+		const samples = 5000
+		for i := 0; i < samples; i++ {
+			seen[RandBackendIndex(n)]++
+		}
+		if len(seen) != n {
+			t.Errorf("n=%d: expected %d distinct values, got %d", n, n, len(seen))
+		}
+		for idx := 0; idx < n; idx++ {
+			if seen[idx] == 0 {
+				t.Errorf("n=%d: index %d never produced in %d samples", n, idx, samples)
+			}
+		}
+	}
+}

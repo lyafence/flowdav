@@ -127,7 +127,22 @@ The client runs at cafe and listens for SOCKS5 connections:
 
 > **Key differences between configs:** client has `listen_addr` (SOCKS5 port) and optional `socks5_user`/`socks5_pass`; server does not.
 
-For multiple WebDAV providers (round-robin), use the `backends` array instead of a single backend — see `flowdav_client.json.example` for the full structure.
+All configs support an optional `max_message_size` field (default 16777216 bytes / 16MB) to limit envelope payload size. Both `--version` and `-l <level>` flags are supported on all three binaries.
+
+For multiple WebDAV providers (round-robin), replace the single backend fields with a `backends` array:
+
+```json
+{
+  "webdav": {
+    "backends": [
+      { "url": "https://webdav1.example.com", "login": "user", "token": "pass", "base_path": "app1" },
+      { "url": "https://webdav2.example.com", "login": "user", "token": "pass", "base_path": "app2" }
+    ]
+  }
+}
+```
+
+See `flowdav_client.json.example` and `flowdav_server.json.example` for the single-backend structure.
 
 #### Optional: encrypt configs
 
@@ -203,10 +218,14 @@ make docker-e2e
 Test the proxy after compose starts:
 
 ```bash
+# Single-backend proxy (maps to docker-compose flow-client)
 curl -s --proxy socks5h://127.0.0.1:11080 https://api.ipify.org
+
+# Multi-backend proxy (maps to docker-compose flow-client-multi)
+curl -s --proxy socks5h://127.0.0.1:11081 https://api.ipify.org
 ```
 
-> **Port note:** The default SOCKS5 port is 1080 (localhost only). Docker Compose exposes it as 11080 on `0.0.0.0` to avoid conflicts and allow host access.
+> **Port note:** The default SOCKS5 port is 1080 (localhost only). Docker Compose exposes the single-backend proxy as `11080` and multi-backend as `11081` on `0.0.0.0` to avoid conflicts and allow host access.
 
 ## Config Files
 
@@ -257,6 +276,8 @@ make release
 ```
 
 Each archive contains: `flowdav-client`, `flowdav-server`, `flowdav-encrypt`, example configs, and README.
+
+All binaries accept `--version` to print the release version.
 
 ## License
 
