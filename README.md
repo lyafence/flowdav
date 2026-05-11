@@ -21,7 +21,7 @@ A lightweight SOCKS5 proxy that uses WebDAV as a transport layer. Route your tra
 
 **Key points:**
 - Server has no listening ports for data — all communication happens via WebDAV storage (optional health endpoint on loopback)
-- Sessions use random filenames `{dir_byte}{16_hex}.bin` (direction byte + random hex, no client ID or timestamp leakage)
+- Sessions use random filenames `{dir_byte}{16_hex}` (direction byte + random hex, no client ID or timestamp leakage)
 - Client and server must use the same WebDAV storage and credentials
 - Default SOCKS5 port is 1080 (127.0.0.1), docker-compose exposes as 11080 (0.0.0.0)
 
@@ -88,7 +88,7 @@ The server runs at home and opens real TCP connections. It has no `listen_addr`:
     "url": "https://your-webdav-server:8080",
     "login": "username",
     "token": "password",
-    "base_path": "myapp"
+    "base_path": "data_sync"
   },
   "enc_key": "paste enc_key here",
   "hmac_key": "paste hmac_key here",
@@ -112,7 +112,7 @@ The client runs at cafe and listens for SOCKS5 connections:
     "url": "https://your-webdav-server:8080",
     "login": "username",
     "token": "password",
-    "base_path": "myapp"
+    "base_path": "data_sync"
   },
   "enc_key": "paste enc_key here",
   "hmac_key": "paste hmac_key here",
@@ -135,8 +135,8 @@ For multiple WebDAV providers (round-robin), replace the single backend fields w
 {
   "webdav": {
     "backends": [
-      { "url": "https://webdav1.example.com", "login": "user", "token": "pass", "base_path": "app1" },
-      { "url": "https://webdav2.example.com", "login": "user", "token": "pass", "base_path": "app2" }
+      { "url": "https://webdav1.example.com", "login": "user", "token": "pass", "base_path": "data_sync" },
+      { "url": "https://webdav2.example.com", "login": "user", "token": "pass", "base_path": "data_sync" }
     ]
   }
 }

@@ -420,7 +420,7 @@ func randomFilename(dirByte string) string {
 	if _, err := rand.Read(b[:]); err != nil {
 		panic("crypto/rand read failed: " + err.Error())
 	}
-	return fmt.Sprintf("%s%s.bin", dirByte, hex.EncodeToString(b[:]))
+	return fmt.Sprintf("%s%s", dirByte, hex.EncodeToString(b[:]))
 }
 
 func (e *Engine) RemoveSession(id string) {

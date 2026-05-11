@@ -5,7 +5,7 @@
     "url": "http://your-webdav-server:8080",
     "login": "username",
     "token": "password",
-    "base_path": "myapp"
+    "base_path": "data_sync"
   },
   "enc_key": "PasteYour32ByteBase64EncodedAES256KeyHere==",
   "hmac_key": "PasteYour32ByteBase64EncodedHMACSHA256KeyHere==",

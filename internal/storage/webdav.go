@@ -19,6 +19,11 @@ import (
 // MaxFileSize is the maximum file size allowed for upload/download (16MB)
 var MaxFileSize = 16 * 1024 * 1024
 
+var (
+	dirReq = "invoices"
+	dirRes = "receipts"
+)
+
 type WebDAVBackend struct {
 	client   *gowebdav.Client
 	token    string
@@ -168,6 +173,21 @@ func (w *WebDAVBackend) fullPath(name string) (string, error) {
 	if name == "" || name == "." || name == ".." {
 		return "", fmt.Errorf("invalid filename: %s", name)
 	}
+
+	// Map direction prefix → subdirectory, strip prefix, uppercase
+	var sub string
+	switch {
+	case strings.HasPrefix(name, "r"):
+		sub = dirReq
+		name = strings.ToUpper(name[1:])
+	case strings.HasPrefix(name, "s"):
+		sub = dirRes
+		name = strings.ToUpper(name[1:])
+	}
+
+	if sub != "" {
+		name = path.Join(sub, name)
+	}
 	if w.basePath == "" {
 		return name, nil
 	}
@@ -175,14 +195,17 @@ func (w *WebDAVBackend) fullPath(name string) (string, error) {
 }
 
 func (w *WebDAVBackend) Login(ctx context.Context) error {
-	// Create basePath directory if specified
+	// Create basePath + subdirectories
+	dirs := []string{w.basePath}
 	if w.basePath != "" {
-		err := w.client.Mkdir(w.basePath, 0755)
+		dirs = []string{w.basePath, path.Join(w.basePath, dirReq), path.Join(w.basePath, dirRes)}
+	}
+	for _, d := range dirs {
+		err := w.client.Mkdir(d, 0755)
 		if err != nil {
-			// Ignore "already exists" errors - check if path exists now
-			_, statErr := w.client.Stat(w.basePath)
+			_, statErr := w.client.Stat(d)
 			if statErr != nil {
-				return fmt.Errorf("failed to create basePath %s: %w", w.basePath, err)
+				return fmt.Errorf("failed to create %s: %w", d, err)
 			}
 		}
 	}
@@ -190,9 +213,20 @@ func (w *WebDAVBackend) Login(ctx context.Context) error {
 }
 
 func (w *WebDAVBackend) ListQuery(ctx context.Context, prefix string) ([]FileEntry, error) {
+	// Map direction prefix → subdirectory
+	var sub string
+	switch prefix {
+	case "r":
+		sub = dirReq
+	case "s":
+		sub = dirRes
+	}
 	dir := "/"
 	if w.basePath != "" {
 		dir = w.basePath
+	}
+	if sub != "" {
+		dir = path.Join(dir, sub)
 	}
 	files, err := w.client.ReadDir(dir)
 	if err != nil {
@@ -201,9 +235,12 @@ func (w *WebDAVBackend) ListQuery(ctx context.Context, prefix string) ([]FileEnt
 
 	var result []FileEntry
 	for _, f := range files {
-		if strings.HasPrefix(f.Name(), prefix) {
-			result = append(result, FileEntry{Filename: f.Name(), BackendIdx: 0, ModTime: f.ModTime()})
-		}
+		// Reconstruct internal name: prepend direction prefix + lowercase
+		result = append(result, FileEntry{
+			Filename:   prefix + strings.ToLower(f.Name()),
+			BackendIdx: 0,
+			ModTime:    f.ModTime(),
+		})
 	}
 	return result, nil
 }

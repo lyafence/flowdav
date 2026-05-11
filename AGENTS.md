@@ -41,7 +41,7 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 - **Server has zero listening ports** for data — all via WebDAV storage.
 - Client encrypts & muxes; server decrypts & demuxes. WebDAV is passive dumb storage.
 - AES-256-GCM + HMAC-SHA256 on all data. Encrypted configs use PBKDF2 (600k iterations).
-- Sessions: random filenames `{dir_byte}{16_hex}.bin` — no client ID or timestamps leaked.
+- Sessions: random filenames `{dir_byte}{16_hex}` — no client ID or timestamps leaked.
 - DNS leak protection: raw resolver (no local DNS). UDP explicitly blocked.
 - Multi-WebDAV: round-robin session assignment across backends (see `webdav.backends` in config).
 
@@ -96,7 +96,7 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 - **OpenWrt cross-build** — add `GOARCH=mips`/`mipsle`/`arm` to release matrix for travel router use. ~6.8 MB client binary, static musl. Low priority.
 - **Triple-encoded null byte bypass** (negligible risk)
 - **Go 1.26.3** — current patch (May 2026). CI targets 1.26.3; local go.mod at 1.26.2. Still supported until Go 1.28. Plan migration to Go 1.27+ when released.
-- **Metadata obfuscation** — directory bucketing (`ab/cd/` from first 2 filename bytes) to reduce per-directory scan overhead and hide traffic patterns. Low/medium priority.
+- **Metadata obfuscation** — direction subdirs (`invoices`/`receipts`), uppercase hex filenames, no extension. ✅ Added
 - **Generic transport providers** — formalize `storage.Backend` contract; add S3, IMAP, filesystem relay backends. Medium priority.
 - **Persistent state** — optional SQLite metadata layer for crash recovery, durable queues, resumable delivery. Low priority (not needed yet).
 - **Fixed-size envelope mode** — optional padding to fixed envelope sizes. Reduces payload-size correlation analysis. Medium complexity, low priority.
