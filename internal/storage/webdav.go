@@ -203,6 +203,11 @@ func (w *WebDAVBackend) Login(ctx context.Context) error {
 	for _, d := range dirs {
 		err := w.client.Mkdir(d, 0755)
 		if err != nil {
+			// 403 Forbidden is always fatal — even if the directory already exists,
+			// we won't be able to upload files to it. Propagate immediately.
+			if gowebdav.IsErrCode(err, http.StatusForbidden) {
+				return fmt.Errorf("failed to create %s: permission denied (403)", d)
+			}
 			_, statErr := w.client.Stat(d)
 			if statErr != nil {
 				return fmt.Errorf("failed to create %s: %w", d, err)

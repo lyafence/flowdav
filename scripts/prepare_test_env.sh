@@ -56,7 +56,7 @@ gen_config "flowdav_test_client.json" '{
     "url": "http://webdav-test:8080",
     "login": "test",
     "token": "test",
-    "base_path": "myapp"
+    "base_path": "data_sync"
   },
   "refresh_rate_ms": 500,
   "flush_rate_ms": 500,
@@ -75,7 +75,7 @@ gen_config "flowdav_test_server.json" '{
     "url": "http://webdav-test:8080",
     "login": "test",
     "token": "test",
-    "base_path": "myapp"
+    "base_path": "data_sync"
   },
   "enc_key": "'"$enc_key"'",
   "hmac_key": "'"$hmac_key"'",
@@ -95,21 +95,21 @@ gen_config "flowdav_test_client_multi.json" '{
         "url": "http://webdav-test:8080",
         "login": "test",
         "token": "test",
-        "base_path": "app1"
+        "base_path": "data_sync"
       },
       {
         "provider": "custom",
         "url": "http://webdav-test-2:8080",
         "login": "test",
         "token": "test",
-        "base_path": "app2"
+        "base_path": "data_sync"
       },
       {
         "provider": "custom",
         "url": "http://webdav-test-3:8080",
         "login": "test",
         "token": "test",
-        "base_path": "app3"
+        "base_path": "data_sync"
       }
     ]
   },
@@ -132,21 +132,21 @@ gen_config "flowdav_test_server_multi.json" '{
         "url": "http://webdav-test:8080",
         "login": "test",
         "token": "test",
-        "base_path": "app1"
+        "base_path": "data_sync"
       },
       {
         "provider": "custom",
         "url": "http://webdav-test-2:8080",
         "login": "test",
         "token": "test",
-        "base_path": "app2"
+        "base_path": "data_sync"
       },
       {
         "provider": "custom",
         "url": "http://webdav-test-3:8080",
         "login": "test",
         "token": "test",
-        "base_path": "app3"
+        "base_path": "data_sync"
       }
     ]
   },

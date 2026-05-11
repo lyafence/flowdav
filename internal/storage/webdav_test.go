@@ -1,7 +1,13 @@
 package storage
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+
+	gowebdav "github.com/studio-b12/gowebdav"
 )
 
 func TestFullPathTraversal(t *testing.T) {
@@ -120,5 +126,37 @@ func TestNewWebDAVBackendEmptyURL(t *testing.T) {
 	_, err := NewWebDAVBackend("custom", "", "", "", "")
 	if err == nil {
 		t.Fatal("expected error for empty URL")
+	}
+}
+
+// TestLoginMkdirForbidden verifies that Login returns an error immediately
+// when Mkdir returns 403 Forbidden, even if Stat would succeed. This prevents
+// silent data loss when using a read-only WebDAV token.
+func TestLoginMkdirForbidden(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "MKCOL":
+			w.WriteHeader(http.StatusForbidden)
+		case "PROPFIND":
+			w.WriteHeader(http.StatusMultiStatus)
+			w.Write([]byte(`<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:response><d:href>/</d:href><d:propstat><d:prop><d:displayname>root</d:displayname></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	client := gowebdav.NewClient(srv.URL, "test", "test")
+	backend := &WebDAVBackend{
+		client:   client,
+		basePath: "myapp",
+	}
+
+	err := backend.Login(context.Background())
+	if err == nil {
+		t.Fatal("expected error for 403 Forbidden on Mkdir")
+	}
+	if !strings.Contains(err.Error(), "403") {
+		t.Errorf("expected error to mention 403, got: %v", err)
 	}
 }

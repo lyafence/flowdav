@@ -94,20 +94,15 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 
 ### 📋 Backlog (safe to fix)
 - **OpenWrt cross-build** — add `GOARCH=mips`/`mipsle`/`arm` to release matrix for travel router use. ~6.8 MB client binary, static musl. Low priority.
-- **Triple-encoded null byte bypass** (negligible risk)
-- **Go 1.26.3** — current patch (May 2026). CI targets 1.26.3; local go.mod at 1.26.2. Still supported until Go 1.28. Plan migration to Go 1.27+ when released.
 - **Metadata obfuscation** — direction subdirs (`invoices`/`receipts`), uppercase hex filenames, no extension. ✅ Added
 - **Generic transport providers** — formalize `storage.Backend` contract; add S3, IMAP, filesystem relay backends. Medium priority.
 - **Persistent state** — optional SQLite metadata layer for crash recovery, durable queues, resumable delivery. Low priority (not needed yet).
 - **Fixed-size envelope mode** — optional padding to fixed envelope sizes. Reduces payload-size correlation analysis. Medium complexity, low priority.
 
 ### 🧪 Test Gaps (add tests here)
-- `WebDAVBackend.Login()` — Mkdir error handling (not "already exists")
 - `MultiBackend.isAvailable()` — cooldown expiration path
-- `Envelope.Encode()` — zero coverage (unused; `EncodeWithCrypto` uses `MarshalBinary`+`Write`); `Decode()` has indirect coverage
 - `Engine.gcLoop()` — tombstone TTL expiry edge cases
 - `Engine.pollLoop()` — empty poll backoff reset to minPollInterval
-- `pool.go` — only 4 direct tests in `pool_test.go` (improved from 2, still minimal)
 
 ### 🏗️ Architecture Weaknesses
 - **Memory buffering:** entire proxied traffic in memory (txBuf per session, full file content)
