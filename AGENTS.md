@@ -8,7 +8,7 @@ Flowdav is an independent implementation; the original project does not specify 
 | Purpose | Command |
 |---------|---------|
 | Build | `make build` → binaries in `./bin/` |
-| Unit tests | `make test` (race-enabled, 93 tests) |
+| Unit tests | `make test` (race-enabled, 94 tests) |
 | E2E tests | `make test-e2e` or `./scripts/test_e2e.sh` |
 | E2E + encrypted configs | `make test-e2e-encrypted` |
 | Full-stack Podman | `make docker-e2e` or `./scripts/prepare_test_env.sh && podman-compose up -d` |
@@ -57,7 +57,7 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 
 ## Coding Conventions
 
-- **Language:** Go 1.26.2 — use stdlib where possible.
+- **Language:** Go 1.26.3 — use stdlib where possible.
 - **Tests:** `testing` package, table-driven style, race-enabled (`-race`). Run `make test` before asking for review.
 - **Imports:** stdlib first, then third-party, then internal. Grouped with blank lines.
 - **Naming:** camelCase, no getters. Unexported by default.

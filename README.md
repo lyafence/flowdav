@@ -269,11 +269,8 @@ make docker-e2e
 
 ### Release Archives
 
-Multi-platform release archives are built with:
-
-```bash
-make release
-```
+Multi-platform release archives are built automatically by CI on each tag (`v*`).
+Download the latest archive from [GitHub Releases](https://github.com/lyafence/flowdav/releases).
 
 Each archive contains: `flowdav-client`, `flowdav-server`, `flowdav-encrypt`, example configs, and README.
 
