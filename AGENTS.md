@@ -64,6 +64,15 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 - **Thread safety:** explicit `sync.Mutex`, `sync.Map`, `sync.Once`. No global state. Document lock order.
 - **No external HTTP or storage clients beyond WebDAV.** No raw TCP listener on server.
 
+## Documentation Audiences
+
+| Document | Ships in release archive | Audience | Constraints |
+|----------|-------------------------|----------|-------------|
+| `README.md` | ✅ Yes | End user | ALL commands must work from release tarball — binaries, example configs, README only. **Never reference `make`, `go run`, or source tree paths.** |
+| `AGENTS.md` | ❌ No | Developer / Agent | Same repo. Can reference `make`, scripts (`./scripts/`), Go toolchain, source tree. |
+
+**Rule:** When editing README.md, every command snippet must be runnable by a user who only has the release archive contents.
+
 ## Agent Workflow
 
 1. **Read the relevant package** — understand existing patterns before writing code.

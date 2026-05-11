@@ -27,152 +27,184 @@ A lightweight SOCKS5 proxy that uses WebDAV as a transport layer. Route your tra
 
 ## Quick Start
 
-### Build
+### What you need
+
+- A WebDAV storage (any provider — rclone, NextCloud, ownCloud, or a dedicated WebDAV service)
+- Two machines sharing the same WebDAV: **server** at home (connects to destinations), **client** at cafe (your proxy entry point). For testing, both can run on the same machine.
+
+### 1. Install
+
+**From a release archive** (recommended for end users):
 
 ```bash
-# Quick build (binaries to ./bin)
+# Download from https://github.com/lyafence/flowdav/releases
+tar -xzf flowdav-*.tar.gz
+cd flowdav-*/
+```
+
+**From source** (for development):
+
+```bash
 make build
-
-# Or build in Podman and extract
-make image-to-bin
-
-# Build release archives (multi-platform .tar.gz)
-make release
+# Binaries are in ./bin/
 ```
 
-### Configuration
+### 2. Configure
 
-Copy config for production (example configs show the structure):
+#### Generate encryption keys
+
+The `enc_key` and `hmac_key` must be identical on client and server:
 
 ```bash
-# Note: .gitignore excludes *.json to protect secrets.
-# Only configs matching *example.json are tracked.
-# Copy the example as your starting point:
-cp configs/flowdav_client.json.example configs/client.json
-cp configs/flowdav_server.json.example configs/server.json
+head -c 32 /dev/urandom | base64 -w0; echo  # enc_key
+head -c 32 /dev/urandom | base64 -w0; echo  # hmac_key
 ```
 
-**Note:** For testing with docker-compose, no copy is needed - the test configs are already referenced in `docker-compose.yml`.
+#### Copy example configs
 
-Edit `configs/client.json`:
+Paths depend on how you installed:
 
-For a single WebDAV provider:
+```bash
+# From source checkout:
+cp configs/flowdav_server.json.example configs/server.json
+cp configs/flowdav_client.json.example configs/client.json
+
+# From a release archive (configs are alongside binaries):
+cp flowdav_server.json.example server.json
+cp flowdav_client.json.example client.json
+```
+
+#### Edit the server config
+
+The server runs at home and opens real TCP connections. It has no `listen_addr`:
+
+```json
+{
+  "storage_type": "webdav",
+  "webdav": {
+    "provider": "custom",
+    "url": "https://your-webdav-server:8080",
+    "login": "username",
+    "token": "password",
+    "base_path": "myapp"
+  },
+  "enc_key": "paste enc_key here",
+  "hmac_key": "paste hmac_key here",
+  "refresh_rate_ms": 500,
+  "flush_rate_ms": 500,
+  "log_level": "info",
+  "health_port": "127.0.0.1:9190"
+}
+```
+
+#### Edit the client config
+
+The client runs at cafe and listens for SOCKS5 connections:
+
 ```json
 {
   "listen_addr": "127.0.0.1:1080",
   "storage_type": "webdav",
   "webdav": {
     "provider": "custom",
-    "url": "http://your-webdav-server:8080",
+    "url": "https://your-webdav-server:8080",
     "login": "username",
     "token": "password",
     "base_path": "myapp"
   },
-  "enc_key": "your-aes-256-key-base64==",
-  "hmac_key": "your-hmac-sha256-key-base64==",
-  "socks5_user": "admin",
-  "socks5_pass": "secret",
+  "enc_key": "paste enc_key here",
+  "hmac_key": "paste hmac_key here",
+  "refresh_rate_ms": 500,
+  "flush_rate_ms": 500,
+  "log_level": "info",
+  "socks5_user": "",
+  "socks5_pass": "",
   "health_port": "127.0.0.1:9191"
- }
- ```
-
-For multiple WebDAV providers (round-robin):
-```json
-{
-  "listen_addr": "127.0.0.1:1080",
-  "storage_type": "webdav",
-  "webdav": {
-    "backends": [
-      {
-        "provider": "custom",
-        "url": "http://webdav1:8080",
-        "login": "user1",
-        "token": "pass1",
-        "base_path": "app1"
-      },
-      {
-        "provider": "custom",
-        "url": "http://webdav2:8080",
-        "login": "user2",
-        "token": "pass2",
-        "base_path": "app2"
-      }
-    ]
-  },
-  "enc_key": "your-aes-256-key-base64==",
-  "hmac_key": "your-hmac-sha256-key-base64==",
-  "socks5_user": "admin",
-  "socks5_pass": "secret",
-  "health_port": "127.0.0.1:9191"
- }
- ```
-
-Generate encryption keys:
-```bash
-head -c 32 /dev/urandom | base64 -w0; echo  # For enc_key
-head -c 32 /dev/urandom | base64 -w0; echo  # For hmac_key
+}
 ```
 
-### Run with Docker Compose (testing)
+> **Key differences between configs:** client has `listen_addr` (SOCKS5 port) and optional `socks5_user`/`socks5_pass`; server does not.
 
-First generate test configs with fresh encryption keys:
+For multiple WebDAV providers (round-robin), use the `backends` array instead of a single backend — see `flowdav_client.json.example` for the full structure.
+
+#### Optional: encrypt configs
+
+Encrypt your config with a master password so secrets are never stored in plaintext:
 
 ```bash
-./scripts/prepare_test_env.sh
+# Generate encryption keys automatically and encrypt:
+FLOWDAV_PASSWORD=secret ./flowdav-encrypt --gen-keys < server.json > server.json.enc
+FLOWDAV_PASSWORD=secret ./flowdav-encrypt --gen-keys < client.json > client.json.enc
+
+# Or encrypt an already-configured file (keys already set):
+FLOWDAV_PASSWORD=secret ./flowdav-encrypt < server.json > server.json.enc
 ```
 
-Then start all services:
+Run with the encrypted config:
 
 ```bash
-# Build image and start all services
-make docker-build
-podman-compose up -d
+./flowdav-server -p -c server.json.enc   # prompts for password
+# or via env var:
+FLOWDAV_PASSWORD=secret ./flowdav-client -c client.json.enc
 ```
 
-Test the SOCKS5 proxy:
+### 3. Run
+
+**Start the server** (at home):
 
 ```bash
-# From a container inside the Docker network:
-podman run --rm --network flowdav_flow-net alpine:latest sh -c \
-  "apk add --no-cache curl && curl -s --proxy socks5h://flow-client:11080 https://api.ipify.org"
-
-# Or from the host (port 11080 is mapped to host):
-curl -s --proxy socks5h://127.0.0.1:11080 https://api.ipify.org
+./flowdav-server -c server.json
+# or with encrypted config:
+./flowdav-server -p -c server.json.enc   # prompts for password
 ```
 
-**Port note:** The default SOCKS5 port is 1080 (localhost only). In docker-compose, the client exposes port 11080 on `0.0.0.0` to avoid conflicts with local services and allow host access.
+The server polls WebDAV for new sessions — no listening ports required.
 
-### Manual Run
-
-Generate example configs with fresh encryption keys:
+**Start the client** (at cafe):
 
 ```bash
-# Only needed once — creates configs/client.json and configs/server.json
-cp configs/flowdav_client.json.example configs/client.json
-cp configs/flowdav_server.json.example configs/server.json
-# Generate real keys (replace the placeholder values in the configs):
-head -c 32 /dev/urandom | base64 -w0; echo   # → paste as enc_key
-head -c 32 /dev/urandom | base64 -w0; echo   # → paste as hmac_key
+./flowdav-client -c client.json
 ```
 
-**At home (server):**
+The client listens on `127.0.0.1:1080` (or the address in `listen_addr`).
+
+**Test the proxy:**
+
 ```bash
-./bin/flowdav-server -c configs/server.json
+curl -s --proxy socks5h://127.0.0.1:1080 https://api.ipify.org
 ```
 
-**At cafe (client):**
-```bash
-./bin/flowdav-client -c configs/client.json
+Or set it system-wide:
 
-# Use proxy in browser/app
+```bash
 export ALL_PROXY=socks5://127.0.0.1:1080
 ```
 
-**Quick key generation (for docker-compose testing only):**
+### 4. Docker Compose (for testing only)
+
+Quick full-stack test with three WebDAV backends and multi-client support:
+
 ```bash
-# Generates all test configs with fresh keys in configs/*.json
+# 1. Generate test configs with fresh keys
 ./scripts/prepare_test_env.sh
+
+# 2. Build image
+make docker-build
+
+# 3. Start all services and run tests
+./scripts/test_e2e.sh
+
+# Or all at once:
+make docker-e2e
 ```
+
+Test the proxy after compose starts:
+
+```bash
+curl -s --proxy socks5h://127.0.0.1:11080 https://api.ipify.org
+```
+
+> **Port note:** The default SOCKS5 port is 1080 (localhost only). Docker Compose exposes it as 11080 on `0.0.0.0` to avoid conflicts and allow host access.
 
 ## Config Files
 
