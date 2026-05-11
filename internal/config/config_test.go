@@ -83,7 +83,7 @@ func TestConfigBasePathValidation(t *testing.T) {
 }
 
 func TestValidateBasePathRejectsEncodedNullByte(t *testing.T) {
-	// URL-encoded null bytes must be caught after decoding (Audit H-004)
+	// URL-encoded null bytes must be caught after decoding
 	tests := []struct {
 		name string
 		path string

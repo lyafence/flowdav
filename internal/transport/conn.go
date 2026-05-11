@@ -25,7 +25,7 @@ type VirtualConn struct {
 	deadlineMu    sync.Mutex
 	deadlineTimer *time.Timer // reusable timer for deadline enforcement
 
-	closeOnce sync.Once // prevents double-close deadlock (Audit C-003)
+	closeOnce sync.Once // prevents double-close deadlock
 }
 
 func NewVirtualConn(s *Session, e *Engine) *VirtualConn {

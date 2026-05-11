@@ -110,7 +110,7 @@ func TestVirtualConnWriteNormalFlow(t *testing.T) {
 
 // TestVirtualConnDoubleClose verifies that calling Close() twice does not
 // block or panic, fixing a deadlock where onClose (e.g. connLimit receive)
-// would block forever on the second invocation (Audit C-003).
+// would block forever on the second invocation.
 func TestVirtualConnDoubleClose(t *testing.T) {
 	closeCount := 0
 	v := NewVirtualConnWithOnClose(NewSession("test-double-close"), nil, func() {
@@ -139,7 +139,7 @@ func TestVirtualConnDoubleClose(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(time.Second):
-		t.Fatal("second Close blocked — goroutine leak / deadlock (Audit C-003)")
+		t.Fatal("second Close blocked — goroutine leak / deadlock")
 	}
 
 	if closeCount != 1 {
@@ -147,7 +147,7 @@ func TestVirtualConnDoubleClose(t *testing.T) {
 	}
 }
 
-// TestVirtualConnConcurrentDoubleClose reproduces the C-003 deadlock under
+// TestVirtualConnConcurrentDoubleClose reproduces the double-close deadlock under
 // heavy concurrent load. Without sync.Once, N-1 out of N goroutines block
 // forever on the second+ call to v.Close() when onClose is a blocking
 // operation (e.g., <-connLimit). This test MUST complete within 2 seconds
@@ -195,7 +195,7 @@ func TestVirtualConnConcurrentDoubleClose(t *testing.T) {
 		// the rest are no-ops. closeCh is drained once by the single
 		// real onClose invocation, then all wg.Done() fire.
 	case <-time.After(2 * time.Second):
-		t.Fatalf("concurrent Close deadlock: %d goroutines blocked forever (C-003)", goroutines-1)
+		t.Fatalf("concurrent Close deadlock: %d goroutines blocked forever", goroutines-1)
 	}
 
 	mu.Lock()

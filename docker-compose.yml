@@ -2,6 +2,7 @@ services:
   webdav:
     image: docker.io/rclone/rclone:latest
     container_name: webdav-test
+    mem_limit: 64m
     command: serve webdav /data --addr 0.0.0.0:8080 --user test --pass test
     ports:
       - "8080:8080"
@@ -22,6 +23,7 @@ services:
   webdav2:
     image: docker.io/rclone/rclone:latest
     container_name: webdav-test-2
+    mem_limit: 64m
     command: serve webdav /data --addr 0.0.0.0:8080 --user test --pass test
     ports:
       - "8081:8080"
@@ -42,6 +44,7 @@ services:
   webdav3:
     image: docker.io/rclone/rclone:latest
     container_name: webdav-test-3
+    mem_limit: 64m
     command: serve webdav /data --addr 0.0.0.0:8080 --user test --pass test
     ports:
       - "8082:8080"
@@ -63,9 +66,10 @@ services:
     image: localhost/flowdav:latest
     container_name: flow-server
     stop_grace_period: 10s
+    mem_limit: 64m
     depends_on:
       webdav:
-        condition: service_started
+        condition: service_healthy
     volumes:
       - ./configs/flowdav_test_server.json:/app/configs/flowdav_test_server.json:Z
     command: flowdav-server -c /app/configs/flowdav_test_server.json
@@ -73,7 +77,7 @@ services:
       - FLOWDAV_PASSWORD=${FLOWDAV_PASSWORD:-}
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9090/health"]
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9190/health"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -85,11 +89,12 @@ services:
     image: localhost/flowdav:latest
     container_name: flow-client
     stop_grace_period: 10s
+    mem_limit: 64m
     depends_on:
       webdav:
-        condition: service_started
+        condition: service_healthy
       flow-server:
-        condition: service_started
+        condition: service_healthy
     volumes:
       - ./configs/flowdav_test_client.json:/app/configs/flowdav_test_client.json:Z
     command: flowdav-client -c /app/configs/flowdav_test_client.json
@@ -99,7 +104,7 @@ services:
     ports:
       - "11080:11080"
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9091/health"]
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9191/health"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -112,13 +117,14 @@ services:
     image: localhost/flowdav:latest
     container_name: flow-server-multi
     stop_grace_period: 10s
+    mem_limit: 64m
     depends_on:
       webdav:
-        condition: service_started
+        condition: service_healthy
       webdav2:
-        condition: service_started
+        condition: service_healthy
       webdav3:
-        condition: service_started
+        condition: service_healthy
     volumes:
       - ./configs/flowdav_test_server_multi.json:/app/configs/flowdav_test_server_multi.json:Z
     command: flowdav-server -c /app/configs/flowdav_test_server_multi.json
@@ -126,7 +132,7 @@ services:
       - FLOWDAV_PASSWORD=${FLOWDAV_PASSWORD:-}
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9090/health"]
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9190/health"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -138,15 +144,16 @@ services:
     image: localhost/flowdav:latest
     container_name: flow-client-multi
     stop_grace_period: 10s
+    mem_limit: 64m
     depends_on:
       webdav:
-        condition: service_started
+        condition: service_healthy
       webdav2:
-        condition: service_started
+        condition: service_healthy
       webdav3:
-        condition: service_started
+        condition: service_healthy
       flow-server-multi:
-        condition: service_started
+        condition: service_healthy
     volumes:
       - ./configs/flowdav_test_client_multi.json:/app/configs/flowdav_test_client_multi.json:Z
     command: flowdav-client -c /app/configs/flowdav_test_client_multi.json
@@ -156,7 +163,7 @@ services:
     ports:
       - "11081:11080"
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9091/health"]
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9191/health"]
       interval: 10s
       timeout: 5s
       retries: 3

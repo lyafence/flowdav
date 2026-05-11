@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/pbkdf2"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"os"
@@ -99,23 +101,29 @@ func TestUnmarshalEncryptedBoundary(t *testing.T) {
 
 func TestDeriveKeyDeterministic(t *testing.T) {
 	salt := []byte("01234567890123456789012345678901")
-	k1 := deriveKey([]byte("password"), salt, 10)
-	k2 := deriveKey([]byte("password"), salt, 10)
+	k1, err := pbkdf2.Key(sha256.New, "password", salt, 10, 32)
+	require.NoError(t, err)
+	k2, err := pbkdf2.Key(sha256.New, "password", salt, 10, 32)
+	require.NoError(t, err)
 	require.Equal(t, k1, k2)
 }
 
 func TestDeriveKeyDifferentPassword(t *testing.T) {
 	salt := []byte("01234567890123456789012345678901")
-	k1 := deriveKey([]byte("password-a"), salt, 10)
-	k2 := deriveKey([]byte("password-b"), salt, 10)
+	k1, err := pbkdf2.Key(sha256.New, "password-a", salt, 10, 32)
+	require.NoError(t, err)
+	k2, err := pbkdf2.Key(sha256.New, "password-b", salt, 10, 32)
+	require.NoError(t, err)
 	require.NotEqual(t, k1, k2)
 }
 
 func TestDeriveKeyDifferentSalt(t *testing.T) {
 	s1 := []byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	s2 := []byte("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
-	k1 := deriveKey([]byte("password"), s1, 10)
-	k2 := deriveKey([]byte("password"), s2, 10)
+	k1, err := pbkdf2.Key(sha256.New, "password", s1, 10, 32)
+	require.NoError(t, err)
+	k2, err := pbkdf2.Key(sha256.New, "password", s2, 10, 32)
+	require.NoError(t, err)
 	require.NotEqual(t, k1, k2)
 }
 

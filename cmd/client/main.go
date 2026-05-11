@@ -108,6 +108,12 @@ func main() {
 	if appCfg.RefreshRateMs > 0 {
 		engine.SetPollRate(appCfg.RefreshRateMs)
 	}
+	if appCfg.MinPollMs > 0 {
+		engine.SetMinPollRate(appCfg.MinPollMs)
+	}
+	if appCfg.MaxPollMs > 0 {
+		engine.SetMaxPollRate(appCfg.MaxPollMs)
+	}
 	if appCfg.FlushRateMs > 0 {
 		engine.SetFlushRate(appCfg.FlushRateMs)
 	}

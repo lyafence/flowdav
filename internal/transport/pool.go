@@ -9,9 +9,8 @@ import (
 )
 
 type downloadJob struct {
-	filename    string
-	fileClientID string
-	backendIdx  uint8
+	filename   string
+	backendIdx uint8
 }
 
 type DownloadWorkerPool struct {
@@ -139,15 +138,13 @@ func (p *DownloadWorkerPool) processDownload(ctx context.Context, stopCh <-chan 
 				continue
 			}
 			s = NewSession(env.SessionID)
-			s.ClientID = job.fileClientID
 			s.BackendIdx = env.BackendIdx
 			e.sessions[env.SessionID] = s
 			sessionID := env.SessionID
 			targetAddr := env.TargetAddr
-			clientID := job.fileClientID
 			backendIdx := env.BackendIdx
 			e.sessionMu.Unlock()
-			logger.Info("Engine: Triggering new session %s for Client %s (backend %d)", sessionID, clientID, backendIdx)
+			logger.Info("Engine: Triggering new session %s (backend %d)", sessionID, backendIdx)
 			e.OnNewSession(sessionID, targetAddr, s)
 		} else {
 			e.sessionMu.Unlock()
@@ -159,9 +156,11 @@ func (p *DownloadWorkerPool) processDownload(ctx context.Context, stopCh <-chan 
 		}
 	}
 
-	e.backend.Delete(ctx, job.filename)
-
-	e.processedMu.Lock()
-	delete(e.processed, job.filename)
-	e.processedMu.Unlock()
+	if err := e.backend.Delete(ctx, job.filename); err != nil {
+		logger.Info("delete error %s: %v — keeping processed entry for TTL-based retry", job.filename, err)
+	} else {
+		e.processedMu.Lock()
+		delete(e.processed, job.filename)
+		e.processedMu.Unlock()
+	}
 }

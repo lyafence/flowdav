@@ -50,6 +50,9 @@ func (e *Envelope) MarshalBinary() ([]byte, error) {
 	}
 
 	totalSize := 1 + 2 + len(e.SessionID) + 8 + 2 + len(e.TargetAddr) + 1 + 4 + len(e.Payload) + 1
+	if totalSize < 0 {
+		return nil, fmt.Errorf("envelope too large: %d bytes (overflow)", totalSize)
+	}
 	buf := make([]byte, totalSize)
 	
 	buf[0] = MagicByte

@@ -15,6 +15,7 @@ import (
 )
 
 type mockBackend struct {
+	mu         sync.Mutex
 	uploaded   []string
 	downloaded []string
 	deleted    []string
@@ -23,18 +24,26 @@ type mockBackend struct {
 
 func (m *mockBackend) Login(ctx context.Context) error                         { return nil }
 func (m *mockBackend) Upload(ctx context.Context, name string, data io.Reader) error {
+	m.mu.Lock()
 	m.uploaded = append(m.uploaded, name)
+	m.mu.Unlock()
 	return nil
 }
 func (m *mockBackend) ListQuery(ctx context.Context, prefix string) ([]storage.FileEntry, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return m.listFiles, nil
 }
 func (m *mockBackend) Download(ctx context.Context, name string) (io.ReadCloser, error) {
+	m.mu.Lock()
 	m.downloaded = append(m.downloaded, name)
+	m.mu.Unlock()
 	return nil, nil
 }
 func (m *mockBackend) Delete(ctx context.Context, name string) error {
+	m.mu.Lock()
 	m.deleted = append(m.deleted, name)
+	m.mu.Unlock()
 	return nil
 }
 func (m *mockBackend) UploadByIndex(ctx context.Context, name string, data io.Reader, idx uint8) error {
@@ -178,8 +187,74 @@ func TestFilenameParsingWithDashedClientID(t *testing.T) {
 	}
 }
 
+// TestBackendIdxDataRace verifies that s.BackendIdx is read under s.mu in flushAll.
+// Starts the engine so upload workers consume jobs (preventing uploadJobs buffer deadlock).
+// Re-seeds txBuf after each flushAll so all iterations exercise the read path.
+func TestBackendIdxDataRace(t *testing.T) {
+	be := &mockBackend{}
+	engine := NewEngine(be, true, "test-client", nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	engine.Start(ctx)
+	t.Cleanup(engine.Stop)
+
+	const numSessions = 100
+	for i := range numSessions {
+		s := NewSession(fmt.Sprintf("race-session-%d", i))
+		s.TargetAddr = "example.com:80"
+		s.mu.Lock()
+		s.txBuf = []byte("data")
+		s.mu.Unlock()
+		engine.AddSession(s)
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	ready := make(chan struct{})
+	start := make(chan struct{})
+
+	// Writer: ProcessRx writes BackendIdx on Seq=0 for each session
+	go func() {
+		close(ready)
+		<-start
+		defer wg.Done()
+		for i := 0; i < numSessions; i++ {
+			env := &Envelope{
+				SessionID:  fmt.Sprintf("race-session-%d", i),
+				Seq:        0,
+				Payload:    []byte("hello"),
+				BackendIdx: uint8(i % 4),
+			}
+			if s := engine.GetSession(fmt.Sprintf("race-session-%d", i)); s != nil {
+				s.ProcessRx(env)
+			}
+		}
+	}()
+
+	// Reader: flushAll reads BackendIdx; re-seed txBuf after each call
+	go func() {
+		<-ready
+		close(start)
+		defer wg.Done()
+		for iter := 0; iter < 50; iter++ {
+			engine.flushAll(ctx)
+			for j := range numSessions {
+				if s := engine.GetSession(fmt.Sprintf("race-session-%d", j)); s != nil {
+					s.mu.Lock()
+					s.txBuf = []byte("more data")
+					s.mu.Unlock()
+				}
+			}
+		}
+	}()
+
+	wg.Wait()
+}
+
 // TestRemoveSessionDataRace verifies that RemoveSession does not perform a data race
-// on len(e.sessions) after releasing the sessionMu lock (Audit #2).
+// on len(e.sessions) after releasing the sessionMu lock.
 func TestRemoveSessionDataRace(t *testing.T) {
 	backend := &mockBackend{}
 	engine := NewEngine(backend, true, "test-client", nil)
@@ -223,7 +298,7 @@ func TestProcessedMapGrowth(t *testing.T) {
 
 // TestFlushAllSplitsOversizedMux verifies that flushAll splits multiplexed
 // envelopes into multiple files when the total exceeds the safe upload size,
-// preventing silent data truncation (Audit C-002).
+// preventing silent truncation of data by WebDAV upload limits.
 func TestFlushAllSplitsOversizedMux(t *testing.T) {
 	be := &mockBackend{}
 	engine := NewEngine(be, false, "server", nil)
@@ -265,7 +340,7 @@ func TestFlushAllSplitsOversizedMux(t *testing.T) {
 }
 
 // dataTrackingBackend records uploaded filenames AND their content fingerprints
-// to prove that flushAll split does not lose data (C-002 adversarial).
+// to prove that flushAll split does not lose data.
 type dataTrackingBackend struct {
 	mockBackend
 	mu         sync.Mutex
@@ -293,7 +368,7 @@ func (d *dataTrackingBackend) UploadByIndex(ctx context.Context, name string, da
 // chunks at least equals the original total (overhead from envelope
 // encoding adds extra bytes).
 //
-// On vulnerable code (before C-002 fix): flushAll sends one 15MB file,
+// Before the mux-splitting fix: flushAll sends one 15MB file,
 // WebDAV Upload silently truncates to 16MB (which passes), but if total
 // were >16MB the data would be lost. This test proves the fix works by
 // showing that data is preserved across multiple chunked uploads.
@@ -347,6 +422,6 @@ func TestFlushAllDataIntegrity(t *testing.T) {
 	// uploaded must be at least expected (overhead makes it larger;
 	// if uploaded < expected, data was silently truncated)
 	if uploadedTotal < expectedTotal {
-		t.Errorf("DATA LOSS: uploaded %d bytes, expected at least %d bytes (Audit C-002)", uploadedTotal, expectedTotal)
+		t.Errorf("DATA LOSS: uploaded %d bytes, expected at least %d bytes (mux split lost data)", uploadedTotal, expectedTotal)
 	}
 }

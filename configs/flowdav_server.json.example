@@ -12,5 +12,5 @@
   "refresh_rate_ms": 500,
   "flush_rate_ms": 500,
   "log_level": "info",
-  "health_port": "127.0.0.1:9090"
+  "health_port": "127.0.0.1:9190"
 }

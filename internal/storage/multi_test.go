@@ -239,7 +239,7 @@ func TestMultiBackend(t *testing.T) {
 }
 
 // TestMultiBackendDeleteReturnsError verifies that Delete propagates errors
-// when at least one backend fails (Audit H-NEW).
+// when at least one backend fails.
 func TestMultiBackendDeleteReturnsError(t *testing.T) {
 	mock1 := &mockBackend{}
 	mock2 := &mockBackend{}
@@ -258,7 +258,7 @@ func TestMultiBackendDeleteReturnsError(t *testing.T) {
 }
 
 // TestMultiBackendDeleteAllAdversarial proves that ALL backends failing
-// produces a non-nil error. On the vulnerable code (before H-NEW fix),
+// produces a non-nil error. On the vulnerable code (before errors.Join fix),
 // Delete always returned nil regardless of failures — callers (engine's
 // pool.go, pollLoop) would silently lose failed deletes, causing file
 // accumulation and potential duplicate data delivery on restart.
@@ -281,7 +281,7 @@ func TestMultiBackendDeleteAllAdversarial(t *testing.T) {
 	multi := NewMultiBackend([]Backend{mock1, mock2, mock3})
 	err := multi.Delete(context.Background(), "critical.bin")
 	if err == nil {
-		t.Error("MultiBackend.Delete must return error when ALL backends fail (H-NEW)")
+		t.Error("MultiBackend.Delete must return error when ALL backends fail")
 	}
 	// The error must contain all three failure messages
 	if !strings.Contains(err.Error(), "backend 1 timeout") ||

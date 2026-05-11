@@ -51,7 +51,7 @@ func validateBasePath(basePath string, field string) error {
 		if err2 == nil {
 			decoded = decoded2
 		}
-		// Re-check null bytes after decoding to catch %00 encoding (Audit H-004)
+		// Re-check null bytes after decoding to catch %00 encoding
 		if strings.ContainsAny(decoded, "\x00\x01\x02") {
 			return fmt.Errorf("%s contains invalid characters after decoding", field)
 		}
@@ -107,6 +107,14 @@ type AppConfig struct {
 	// RefreshRateMs is the polling (RX) interval in milliseconds for the engine.
 	// Lower values = faster response but more API calls. Default 500ms.
 	RefreshRateMs int `json:"refresh_rate_ms,omitempty"`
+
+	// MinPollMs is the minimum polling interval in milliseconds (idle backoff floor).
+	// Default 100ms. Only used when RefreshRateMs is not set.
+	MinPollMs int `json:"min_poll_ms,omitempty"`
+
+	// MaxPollMs is the maximum polling interval in milliseconds (idle backoff ceiling).
+	// Default 5000ms (5s). Only used when RefreshRateMs is not set.
+	MaxPollMs int `json:"max_poll_ms,omitempty"`
 
 	// FlushRateMs is the gathering (TX) interval in milliseconds for the engine.
 	// Lower values = lower latency but more files created. Default 500ms.

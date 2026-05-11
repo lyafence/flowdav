@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"time"
 )
 
 // ErrBackendIndexNotSupported is returned when a backend does not support indexed uploads.
@@ -13,6 +14,7 @@ var ErrBackendIndexNotSupported = errors.New("backend does not supported indexed
 type FileEntry struct {
 	Filename    string
 	BackendIdx  uint8
+	ModTime     time.Time
 }
 
 // Backend defines the interface for our pluggable storage mechanism that acts as the

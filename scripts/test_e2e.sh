@@ -132,10 +132,10 @@ fi
 
 log_info "Waiting for services to become healthy..."
 wait_for_health "webdav" "webdav-test" 'wget -q --spider http://test:test@localhost:8080/' 15 2 || true
-wait_for_health "flow-server" "flow-server" 'curl -sf http://127.0.0.1:9090/health' 10 3 || true
-wait_for_health "flow-client" "flow-client" 'curl -sf http://127.0.0.1:9091/health' 10 3 || true
-wait_for_health "flow-server-multi" "flow-server-multi" 'curl -sf http://127.0.0.1:9090/health' 10 3 || true
-wait_for_health "flow-client-multi" "flow-client-multi" 'curl -sf http://127.0.0.1:9091/health' 10 3 || true
+wait_for_health "flow-server" "flow-server" 'curl -sf http://127.0.0.1:9190/health' 10 3 || true
+wait_for_health "flow-client" "flow-client" 'curl -sf http://127.0.0.1:9191/health' 10 3 || true
+wait_for_health "flow-server-multi" "flow-server-multi" 'curl -sf http://127.0.0.1:9190/health' 10 3 || true
+wait_for_health "flow-client-multi" "flow-client-multi" 'curl -sf http://127.0.0.1:9191/health' 10 3 || true
 echo ""
 
 # ── Phase 6: SOCKS5 Proxy Tests ────────────

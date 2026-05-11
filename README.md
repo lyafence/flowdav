@@ -20,8 +20,8 @@ A lightweight SOCKS5 proxy that uses WebDAV as a transport layer. Route your tra
 6. Response flows back through WebDAV to client
 
 **Key points:**
-- Server has no listening port — all communication happens via WebDAV storage
-- Sessions are stored as `{dir}-{clientID}-{timestamp}.bin` (e.g., `rq-client1-1778180385216825104.bin`)
+- Server has no listening ports for data — all communication happens via WebDAV storage (optional health endpoint on loopback)
+- Sessions use random filenames `{dir_byte}{16_hex}.bin` (direction byte + random hex, no client ID or timestamp leakage)
 - Client and server must use the same WebDAV storage and credentials
 - Default SOCKS5 port is 1080 (127.0.0.1), docker-compose exposes as 11080 (0.0.0.0)
 
@@ -72,9 +72,9 @@ For a single WebDAV provider:
   "hmac_key": "your-hmac-sha256-key-base64==",
   "socks5_user": "admin",
   "socks5_pass": "secret",
-  "health_port": "127.0.0.1:9090"
-}
-```
+  "health_port": "127.0.0.1:9191"
+ }
+ ```
 
 For multiple WebDAV providers (round-robin):
 ```json
@@ -103,9 +103,9 @@ For multiple WebDAV providers (round-robin):
   "hmac_key": "your-hmac-sha256-key-base64==",
   "socks5_user": "admin",
   "socks5_pass": "secret",
-  "health_port": "127.0.0.1:9090"
-}
-```
+  "health_port": "127.0.0.1:9191"
+ }
+ ```
 
 Generate encryption keys:
 ```bash
@@ -178,16 +178,16 @@ export ALL_PROXY=socks5://127.0.0.1:1080
 
 | File | Type | listen_addr | Health Port | Storage |
 |------|------|-------------|-------------|---------|
-| `flowdav_client.json.example` | Client | `127.0.0.1:1080` | `127.0.0.1:9090` | WebDAV |
-| `flowdav_server.json.example` | Server | No | `127.0.0.1:9090` | WebDAV |
+| `flowdav_client.json.example` | Client | `127.0.0.1:1080` | `127.0.0.1:9191` | WebDAV |
+| `flowdav_server.json.example` | Server | No | `127.0.0.1:9190` | WebDAV |
 
 **Rule:** Client has `listen_addr` (SOCKS5 port), server does NOT (only polls WebDAV).
 
 ## Health Check
 
-Both the client and server support an optional HTTP health endpoint. Set `health_port` in the config to enable it (e.g., `"127.0.0.1:9090"`). The endpoint `GET /health` returns JSON with engine statistics (active sessions, processed files, role, poll/flush rates).
+Both the client and server support an optional HTTP health endpoint. Set `health_port` in the config to enable it (e.g., `"127.0.0.1:9191"`). The endpoint `GET /health` returns JSON with engine statistics (active sessions, processed files, role, poll/flush rates).
 
-In docker-compose, `HEALTHCHECK` is configured for both `flow-server` (port 9090) and `flow-client` (port 9091), enabling `depends_on` conditions and container orchestration health awareness.
+In docker-compose, `HEALTHCHECK` is configured for both `flow-server` (port `9190`) and `flow-client` (port `9191`), enabling `depends_on` conditions and container orchestration health awareness.
 
 ## Security
 

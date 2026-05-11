@@ -202,7 +202,7 @@ func (w *WebDAVBackend) ListQuery(ctx context.Context, prefix string) ([]FileEnt
 	var result []FileEntry
 	for _, f := range files {
 		if strings.HasPrefix(f.Name(), prefix) {
-			result = append(result, FileEntry{Filename: f.Name(), BackendIdx: 0})
+			result = append(result, FileEntry{Filename: f.Name(), BackendIdx: 0, ModTime: f.ModTime()})
 		}
 	}
 	return result, nil
@@ -214,7 +214,7 @@ func (w *WebDAVBackend) Upload(ctx context.Context, filename string, data io.Rea
 		return fmt.Errorf("upload error: %w", err)
 	}
 
-	// Limit read to MaxFileSize+1 to prevent OOM while detecting truncation (Audit C-002)
+	// Limit read to MaxFileSize+1 to prevent OOM while detecting truncation
 	limitedReader := io.LimitReader(data, MaxFileSize+1)
 	content, err := io.ReadAll(limitedReader)
 	if err != nil {

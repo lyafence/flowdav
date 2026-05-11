@@ -65,7 +65,7 @@ gen_config "flowdav_test_client.json" '{
   "log_level": "debug",
   "socks5_user": "",
   "socks5_pass": "",
-  "health_port": "127.0.0.1:9091"
+  "health_port": "127.0.0.1:9191"
 }'
 
 gen_config "flowdav_test_server.json" '{
@@ -82,7 +82,7 @@ gen_config "flowdav_test_server.json" '{
   "refresh_rate_ms": 500,
   "flush_rate_ms": 500,
   "log_level": "debug",
-  "health_port": "127.0.0.1:9090"
+  "health_port": "127.0.0.1:9190"
 }'
 
 gen_config "flowdav_test_client_multi.json" '{
@@ -120,7 +120,7 @@ gen_config "flowdav_test_client_multi.json" '{
   "log_level": "debug",
   "socks5_user": "",
   "socks5_pass": "",
-  "health_port": "127.0.0.1:9091"
+  "health_port": "127.0.0.1:9191"
 }'
 
 gen_config "flowdav_test_server_multi.json" '{
@@ -155,7 +155,7 @@ gen_config "flowdav_test_server_multi.json" '{
   "enc_key": "'"$enc_key_multi"'",
   "hmac_key": "'"$hmac_key_multi"'",
   "log_level": "debug",
-  "health_port": "127.0.0.1:9090"
+  "health_port": "127.0.0.1:9190"
 }'
 
 echo "Generated test configs in $CONFIG_DIR:"

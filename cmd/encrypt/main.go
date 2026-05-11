@@ -14,15 +14,24 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io"
 	"os"
 
 	"github.com/lyafence/flowdav/internal/config"
 )
 
+var version = "dev"
+
 func main() {
 	genKeys := flag.Bool("gen-keys", false, "Generate enc_key and hmac_key if missing")
+	showVersion := flag.Bool("version", false, "Show version")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println("flowdav-encrypt", version)
+		os.Exit(0)
+	}
 
 	password := os.Getenv("FLOWDAV_PASSWORD")
 	if password == "" {

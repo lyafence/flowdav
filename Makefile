@@ -2,8 +2,10 @@ BIN_DIR    := bin
 RELEASE_DIR := release
 VERSION    := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_FLAGS := -trimpath -ldflags="-s -w -X main.version=$(VERSION)"
+COMPOSE_FILE := docker-compose.yml
 
-.PHONY: build test lint encrypt clean docker-build docker-e2e image-to-bin release
+.PHONY: build test lint encrypt clean docker-build docker-e2e image-to-bin release \
+        compose-down clean-images clean-all nuke
 
 # Build binaries
 build:
@@ -75,5 +77,23 @@ release:
 
 clean:
 	rm -rf $(BIN_DIR) $(RELEASE_DIR)
+	rm -f configs/flowdav_test_*.json configs/.env
+
+# Podman Compose lifecycle
+compose-down:
+	podman-compose -f $(COMPOSE_FILE) down -v
+
+clean-images:
+	podman rmi -f localhost/flowdav:latest 2>/dev/null || true
+	podman image prune -f 2>/dev/null || true
+
+# Full environment reset
+nuke: compose-down clean-images clean
+	podman system prune -f 2>/dev/null || true
+	@echo "Environment reset complete. Run 'make docker-build && make docker-e2e' to rebuild."
+
+# Alias
+clean-all: nuke
+
 
 .DEFAULT_GOAL := build

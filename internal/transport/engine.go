@@ -3,9 +3,9 @@ package transport
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -28,8 +28,10 @@ type Engine struct {
 	closedSessions   map[string]time.Time
 	closedSessionsMu sync.Mutex
 
-	pollTicker  time.Duration
-	flushTicker time.Duration
+	pollTicker      time.Duration
+	minPollInterval time.Duration
+	maxPollInterval time.Duration
+	flushTicker     time.Duration
 
 	// Server mode handler: called when a new session is discovered
 	OnNewSession func(sessionID, targetAddr string, s *Session)
@@ -85,8 +87,10 @@ func NewEngine(backend storage.Backend, isClient bool, clientID string, cryptoCf
 		cryptoCfg:      cryptoCfg,
 		stopCh:         make(chan struct{}),
 		// Default intervals: Poll (RX) and Flush (TX) - safe for cloud rate limits (~1 req/s)
-		pollTicker:  500 * time.Millisecond,
-		flushTicker: 500 * time.Millisecond,
+		pollTicker:      500 * time.Millisecond,
+		minPollInterval: 100 * time.Millisecond,
+		maxPollInterval: 5 * time.Second,
+		flushTicker:     500 * time.Millisecond,
 	}
 	if isClient {
 		e.myDir = DirReq
@@ -105,6 +109,18 @@ func NewEngine(backend storage.Backend, isClient bool, clientID string, cryptoCf
 func (e *Engine) SetPollRate(ms int) {
 	if ms > 0 {
 		e.pollTicker = time.Duration(ms) * time.Millisecond
+	}
+}
+
+func (e *Engine) SetMinPollRate(ms int) {
+	if ms > 0 {
+		e.minPollInterval = time.Duration(ms) * time.Millisecond
+	}
+}
+
+func (e *Engine) SetMaxPollRate(ms int) {
+	if ms > 0 {
+		e.maxPollInterval = time.Duration(ms) * time.Millisecond
 	}
 }
 
@@ -189,7 +205,6 @@ func (e *Engine) flushLoop(ctx context.Context) {
 }
 
 type muxKey struct {
-	CID        string
 	BackendIdx uint8
 }
 
@@ -212,10 +227,9 @@ func (e *Engine) flushAll(ctx context.Context) {
 		}
 		sessionsToWake = append(sessionsToWake, s)
 
-		cid := s.ClientID
-		if cid == "" && e.myDir == DirReq {
-			cid = e.id
-		}
+		s.mu.Lock()
+		bidx := s.BackendIdx
+		s.mu.Unlock()
 
 		env := Envelope{
 			SessionID:  s.ID,
@@ -223,14 +237,14 @@ func (e *Engine) flushAll(ctx context.Context) {
 			Payload:    payload,
 			Close:      closed,
 			TargetAddr: s.TargetAddr,
-			BackendIdx: s.BackendIdx,
+			BackendIdx: bidx,
 		}
 
 		if closed {
 			closedSessionIDs = append(closedSessionIDs, s.ID)
 		}
 
-		key := muxKey{CID: cid, BackendIdx: s.BackendIdx}
+		key := muxKey{BackendIdx: bidx}
 		muxes[key] = append(muxes[key], env)
 	}
 
@@ -242,13 +256,8 @@ func (e *Engine) flushAll(ctx context.Context) {
 	const safeUploadSize = 14 * 1024 * 1024 // 14MB
 
 	for key, mux := range muxes {
-		fnameCID := key.CID
-		if fnameCID == "" {
-			fnameCID = "unknown"
-		}
-
 		// Split muxed envelopes into chunks that fit within the upload limit
-		// to prevent silent truncation of data (Audit C-002)
+		// to prevent silent truncation by WebDAV upload limits
 		remaining := mux
 		for len(remaining) > 0 {
 			var buf bytes.Buffer
@@ -271,7 +280,7 @@ func (e *Engine) flushAll(ctx context.Context) {
 				consumed++
 			}
 
-			filename := fmt.Sprintf("%s-%s-%d.bin", e.myDir, fnameCID, time.Now().UnixNano())
+			filename := randomFilename(uploadPrefix(e.myDir))
 
 			e.inFlight.Store(filename, struct{}{})
 			select {
@@ -290,12 +299,10 @@ func (e *Engine) flushAll(ctx context.Context) {
 }
 
 func (e *Engine) pollLoop(ctx context.Context) {
-	logger.Info("pollLoop: started, myDir=%s, peerDir=%s", e.myDir, e.peerDir)
+	logger.Info("pollLoop: started, peerDir=%s", pollPrefix(e.myDir))
 	currentPollInterval := e.pollTicker
-	maxPollInterval := 5 * time.Second
 	timer := time.NewTimer(currentPollInterval)
 	defer timer.Stop()
-	// Reusable timer for the 100ms post-receive backoff to avoid time.After() leaks
 	backoffTimer := time.NewTimer(100 * time.Millisecond)
 	if !backoffTimer.Stop() {
 		select {
@@ -304,6 +311,9 @@ func (e *Engine) pollLoop(ctx context.Context) {
 		}
 	}
 	defer backoffTimer.Stop()
+
+	// peerPrefix is the direction byte we expect from the other side
+	peerPrefix := pollPrefix(e.myDir)
 
 	for {
 		select {
@@ -322,13 +332,7 @@ func (e *Engine) pollLoop(ctx context.Context) {
 				}
 			}
 
-			prefix := string(e.peerDir) + "-"
-			if e.myDir == DirReq {
-				prefix += e.id + "-"
-			} else {
-				prefix += ""
-			}
-			files, err := e.backend.ListQuery(ctx, prefix)
+			files, err := e.backend.ListQuery(ctx, peerPrefix)
 			if err != nil {
 				logger.Info("poll list error: %v", err)
 				timer.Reset(currentPollInterval)
@@ -336,40 +340,24 @@ func (e *Engine) pollLoop(ctx context.Context) {
 			}
 
 			if len(files) == 0 {
-				if e.myDir == DirRes {
-					e.sessionMu.RLock()
-					activeSessions := len(e.sessions)
-					e.sessionMu.RUnlock()
-
-					if activeSessions == 0 {
-						currentPollInterval += 500 * time.Millisecond
-						if currentPollInterval > maxPollInterval {
-							currentPollInterval = maxPollInterval
-						}
-					} else {
-						currentPollInterval = e.pollTicker
-					}
+				// Exponential backoff: double interval, cap at max
+				currentPollInterval *= 2
+				if currentPollInterval > e.maxPollInterval {
+					currentPollInterval = e.maxPollInterval
 				}
 				timer.Reset(currentPollInterval)
 				continue
 			}
 
-			currentPollInterval = e.pollTicker
+			// Reset to base interval on data received
+			currentPollInterval = e.minPollInterval
 
 			for _, entry := range files {
-				fname := strings.TrimSuffix(entry.Filename, ".bin")
-				backendIdx := entry.BackendIdx
-				parts := strings.Split(fname, "-")
-				if len(parts) < 3 {
-					continue
-				}
-				tsStr := parts[len(parts)-1]
-				ts, err := strconv.ParseInt(tsStr, 10, 64)
-				if err == nil && ts > 0 && time.Since(time.Unix(0, ts)) > 5*time.Minute {
+				// GC: delete files older than 5 minutes
+				if time.Since(entry.ModTime) > 5*time.Minute {
 					e.backend.Delete(ctx, entry.Filename)
 					continue
 				}
-				fileClientID := strings.Join(parts[1:len(parts)-1], "-")
 
 				e.processedMu.Lock()
 				if ts, exists := e.processed[entry.Filename]; exists && time.Since(ts) < 5*time.Minute {
@@ -380,12 +368,12 @@ func (e *Engine) pollLoop(ctx context.Context) {
 				e.processedMu.Unlock()
 
 				e.downloadPool.Submit(downloadJob{
-					filename:    entry.Filename,
-					fileClientID: fileClientID,
-					backendIdx:  backendIdx,
+					filename:   entry.Filename,
+					backendIdx: entry.BackendIdx,
 				}, e.stopCh)
 			}
 
+			// Burst backoff: fast re-poll after receiving files
 			if !backoffTimer.Stop() {
 				select {
 				case <-backoffTimer.C:
@@ -409,6 +397,16 @@ func (e *Engine) pollLoop(ctx context.Context) {
 			continue
 		}
 	}
+}
+
+// randomFilename generates an obfuscated filename with a direction prefix
+// to avoid leaking client ID, timing, or session metadata via filenames.
+func randomFilename(dirByte string) string {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		panic("crypto/rand read failed: " + err.Error())
+	}
+	return fmt.Sprintf("%s%s.bin", dirByte, hex.EncodeToString(b[:]))
 }
 
 func (e *Engine) RemoveSession(id string) {
@@ -523,4 +521,22 @@ func (e *Engine) Stats() EngineStats {
 		FlushTickerMs:  int(e.flushTicker.Milliseconds()),
 		Role:           role,
 	}
+}
+
+// uploadPrefix returns the one-byte filename prefix for files uploaded by this side.
+// Client uploads "r" (request), server uploads "s" (response).
+func uploadPrefix(myDir Direction) string {
+	if myDir == DirReq {
+		return "r"
+	}
+	return "s"
+}
+
+// pollPrefix returns the one-byte filename prefix for files this side should poll.
+// Client polls "s" (responses from server), server polls "r" (requests from client).
+func pollPrefix(myDir Direction) string {
+	if myDir == DirReq {
+		return "s"
+	}
+	return "r"
 }

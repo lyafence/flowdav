@@ -203,10 +203,20 @@ func (s *Session) ProcessRx(env *Envelope) {
 	s.mu.Unlock()
 
 	// Send payloads outside the lock to avoid deadlock
+	// Reusable timer to prevent per-iteration timer leak
+	timer := time.NewTimer(30 * time.Second)
+	defer timer.Stop()
 	for _, payload := range payloadsToSend {
+		timer.Reset(30 * time.Second)
 		select {
 		case s.RxChan <- payload:
-		case <-time.After(30 * time.Second):
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+		case <-timer.C:
 			logger.Warn("Session %s: RxChan blocked for 30s, dropping payload", s.ID)
 		}
 	}

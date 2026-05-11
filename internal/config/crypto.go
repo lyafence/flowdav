@@ -3,10 +3,9 @@ package config
 import (
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/hmac"
+	"crypto/pbkdf2"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/binary"
 	"errors"
 )
 
@@ -32,7 +31,10 @@ func EncryptConfig(plaintext []byte, password string) (*EncryptedConfig, error) 
 	if _, err := rand.Read(nonce); err != nil {
 		return nil, err
 	}
-	kek := deriveKey([]byte(password), salt, pbkdf2Iter)
+	kek, err := pbkdf2.Key(sha256.New, password, salt, pbkdf2Iter, keyLen)
+	if err != nil {
+		return nil, err
+	}
 	block, err := aes.NewCipher(kek)
 	if err != nil {
 		return nil, err
@@ -50,7 +52,10 @@ func EncryptConfig(plaintext []byte, password string) (*EncryptedConfig, error) 
 }
 
 func DecryptConfig(enc *EncryptedConfig, password string) ([]byte, error) {
-	kek := deriveKey([]byte(password), enc.Salt, pbkdf2Iter)
+	kek, err := pbkdf2.Key(sha256.New, password, enc.Salt, pbkdf2Iter, keyLen)
+	if err != nil {
+		return nil, err
+	}
 	block, err := aes.NewCipher(kek)
 	if err != nil {
 		return nil, err
@@ -89,22 +94,4 @@ func UnmarshalEncrypted(data []byte) (*EncryptedConfig, error) {
 	return enc, nil
 }
 
-func deriveKey(password, salt []byte, iter int) []byte {
-	h := hmac.New(sha256.New, password)
-	h.Write(salt)
-	var block [4]byte
-	binary.BigEndian.PutUint32(block[:], 1)
-	h.Write(block[:])
-	u := h.Sum(nil)
-	result := make([]byte, len(u))
-	copy(result, u)
-	for i := 1; i < iter; i++ {
-		h.Reset()
-		h.Write(u)
-		u = h.Sum(nil)
-		for j := range u {
-			result[j] ^= u[j]
-		}
-	}
-	return result
-}
+

@@ -166,3 +166,21 @@ func TestDecodeWithNilCrypto(t *testing.T) {
 		t.Errorf("SessionID mismatch")
 	}
 }
+
+// TestMarshalBinaryOverflowGuard verifies that MarshalBinary handles
+// MaxMessageSize payload without overflow.
+func TestMarshalBinaryOverflowGuard(t *testing.T) {
+	payload := make([]byte, MaxMessageSize)
+	env := &Envelope{
+		SessionID:  "test",
+		Payload:    payload,
+		TargetAddr: "example.com:80",
+	}
+	data, err := env.MarshalBinary()
+	if err != nil {
+		t.Fatalf("MarshalBinary failed for MaxMessageSize payload: %v", err)
+	}
+	if len(data) == 0 {
+		t.Fatal("expected non-empty data")
+	}
+}

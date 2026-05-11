@@ -24,10 +24,10 @@ make release
 
 ## Architecture
 - Server has **no listening ports** for data — all communication via WebDAV storage
-- Optional HTTP health endpoint: set `health_port` in config (e.g., `"127.0.0.1:9090"`) to enable `GET /health` returning JSON engine stats
+- Optional HTTP health endpoint: set `health_port` in config (e.g., `"127.0.0.1:9191"`) to enable `GET /health` returning JSON engine stats
 - Data flow: `[SOCKS5] ←→ client ←→ WebDAV ←→ server ←→ destination`
   (client encrypts & muxes; server decrypts & demuxes; WebDAV is passive storage)
-- Sessions are stored as `{dir}-{clientID}-{timestamp}.bin` (e.g., `rq-client1-1778180385216825104.bin`)
+- Sessions use random filenames `{dir_byte}{16_hex}.bin` (direction byte + random hex, no client ID or timestamp leakage)
 - Encryption: AES-256-GCM + HMAC-SHA256 (via `enc_key`/`hmac_key`) + PBKDF2 key derivation for encrypted configs
 - DNS leak protection: client uses raw resolver (no local DNS lookups)
 - UDP explicitly blocked
@@ -47,7 +47,7 @@ make release
 - Test with: `podman run -d --name webdav-test -p 8080:8080 docker.io/rclone/rclone:latest serve webdav /data --addr 0.0.0.0:8080 --user test --pass test`
 
 ## Testing
-- **Unit tests**: `make test` (98+ tests across 7 packages, race-enabled)
+- **Unit tests**: `make test` (100+ tests across 7 packages, race-enabled)
 - **E2E tests**: `make test-e2e` or `./scripts/test_e2e.sh`
 - **Encrypted config E2E**: `make test-e2e-encrypted` or `./scripts/test_e2e.sh --encrypted`
 - **Full-stack with Podman**:
@@ -85,10 +85,10 @@ make release
 - Server has no exposed ports — reduced attack surface
 
 ## Technical Debt
-- **Tests** (current):
+- **Tests** (current): 100+ tests across 7 packages, race-enabled
   - `internal/config`: 33+ tests (Load, validation, crypto, encrypted config, ResolvePassword)
   - `internal/storage`: 10+ tests (fullPath, isLocalURL, validateNotPrivateURL, multi-backend)
-  - `internal/transport`: 30+ tests (Session, Engine, Envelope, Crypto, VirtualConn, worker pool)
+  - `internal/transport`: 37+ tests (Session, Engine, Envelope, Crypto, VirtualConn, worker pool, race tests)
   - `internal/logger`: 4 tests (SetLevel, logging levels, filtering)
   - `internal/config/e2e_test.go`: E2E test for encrypted config flow (builds binaries, tests -p flag, FLOWDAV_PASSWORD, wrong password)
 - **Refactoring completed**:
@@ -96,6 +96,31 @@ make release
   - Deep copy of Envelope.Payload in session.rxQueue ✅
   - `sync.Once` for VirtualConn.Close() ✅
   - Circuit breaker in MultiBackend ✅
+  - Hand-rolled PBKDF2 replaced with `crypto/pbkdf2` (stdlib) ✅
+  - Configurable adaptive polling (min/max bounds, exponential backoff) ✅
+  - Metadata obfuscation: random filenames without client ID or timestamps ✅
+  - Data race on `s.BackendIdx` — read under `s.mu` in flushAll ✅
+  - `time.After` timer leak — replaced with reusable timer in ProcessRx ✅
+  - Buffer overflow latent risk — overflow guard added in MarshalBinary ✅
+  - WebDAV Delete error — now checked before removing processed entry ✅
 - **Known gaps**:
-  - Wire version injection through CI and Makefile
-  - Replace `sleep 10` in E2E tests with healthcheck polling
+  - ACK/retransmit layer: no reliability mechanism beyond Seq ordering (envelope loss = data loss)
+- **Backlog**:
+  - Goroutine spin (1ms busy-wait) on RxChan graceful close — `conn.go:80`
+  - `DownloadWorkerPool.Submit` can stall `pollLoop` under load when all workers busy — `pool.go:65-70`
+  - `inFlight` sync.Map entries persist on shutdown (dead code, zero functional impact)
+  - Double semaphore — `downloadSem` (cap 16) redundant under `sem` (cap 8) — `pool.go:81-85`
+  - Missing security linters in `.golangci.yml` (`gosec`, `bodyclose`, `noctx`)
+  - Triple-encoded null byte bypass (documented limitation, negligible practical risk)
+  - Go 1.26 EOL Feb 2026 — plan migration to Go 1.27+
+- **Test gaps**:
+  - `WebDAVBackend.Login()` — Mkdir error handling (not "already exists")
+  - `MultiBackend.isAvailable()` — cooldown expiration path
+  - `Envelope.Encode()` / `Decode()` — streaming I/O methods not directly tested
+  - `Engine.gcLoop()` — tombstone TTL expiry edge cases
+  - `Engine.pollLoop()` — empty poll backoff reset to minPollInterval
+  - `pool.go` — only tested indirectly through engine_test.go
+- **Architecture weaknesses**:
+  - No retry logic for failed storage operations (upload, download, delete)
+  - Memory buffering: entire proxied traffic buffered in memory (txBuf per session, full file content)
+  - Double semaphore in download workers (see Backlog)

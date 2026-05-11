@@ -142,7 +142,7 @@ func TestEnqueueTxCtxEarlyContextCheck(t *testing.T) {
 
 // TestEnqueueTxCtxCancelDuringBackpressureWait verifies that EnqueueTxCtx returns
 // promptly when the context is cancelled while the goroutine is blocked on backpressure,
-// WITHOUT requiring an explicit wakeupTx call. This reproduces Audit #3 — the old
+// WITHOUT requiring an explicit wakeupTx call. The old
 // sync.Cond.Wait() would block forever if ctx was cancelled without a Broadcast.
 func TestEnqueueTxCtxCancelDuringBackpressureWait(t *testing.T) {
 	s := NewSession("test-backpressure-cancel")
@@ -193,5 +193,42 @@ func TestEnqueueTxCtxCancellationDuringWait(t *testing.T) {
 	s.wakeupTx()
 
 	wg.Wait()
+}
+
+// TestProcessRxTimerReuseNoDeadlock verifies that the reusable timer in ProcessRx
+// does not cause deadlocks on subsequent calls.
+func TestProcessRxTimerReuseNoDeadlock(t *testing.T) {
+	s := NewSession("test-timer-reuse")
+
+	// First call: normal send to RxChan
+	env1 := &Envelope{
+		SessionID: "test-timer-reuse",
+		Seq:       0,
+		Payload:   []byte("first"),
+	}
+	s.ProcessRx(env1)
+
+	select {
+	case <-s.RxChan:
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for first payload")
+	}
+
+	// Second call: timer.Stop/drain must not cause deadlock
+	env2 := &Envelope{
+		SessionID: "test-timer-reuse",
+		Seq:       1,
+		Payload:   []byte("second"),
+	}
+	s.ProcessRx(env2)
+
+	select {
+	case data := <-s.RxChan:
+		if string(data) != "second" {
+			t.Errorf("expected 'second', got %q", data)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for second payload — timer drain deadlock")
+	}
 }
 

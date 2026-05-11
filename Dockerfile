@@ -11,7 +11,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/flowdav-client ./cmd/client && \
     CGO_ENABLED=0 GOOS=linux go build -o /bin/flowdav-server ./cmd/server && \
     CGO_ENABLED=0 GOOS=linux go build -o /bin/flowdav-encrypt ./cmd/encrypt
 
-FROM alpine:latest
+FROM alpine:3.23
 RUN apk --no-cache add ca-certificates curl
 
 RUN addgroup -g 1000 flow && \
