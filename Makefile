@@ -70,10 +70,11 @@ image-to-bin: docker-build
 release:
 	mkdir -p $(RELEASE_DIR)
 	rm -rf $(RELEASE_DIR)/*
-	$(MAKE) build-all
+	$(MAKE) build
 	tar -czf $(RELEASE_DIR)/flowdav-$(VERSION)-linux-amd64.tar.gz \
-		-C $(BIN_DIR) flowdav-client-linux-amd64 flowdav-server-linux-amd64 flowdav-encrypt-linux-amd64 \
-		-C $(CURDIR) README.md configs/flowdav_client.json.example configs/flowdav_server.json.example
+		-C $(BIN_DIR) flowdav-client flowdav-server flowdav-encrypt \
+		-C $(CURDIR) README.md \
+		-C $(CURDIR)/configs flowdav_client.json.example flowdav_server.json.example
 
 clean:
 	rm -rf $(BIN_DIR) $(RELEASE_DIR)

@@ -1,49 +1,18 @@
 # flowdav — Agent Instructions
 
-**Inspired by [NullLatency/FlowDriver](https://github.com/NullLatency/FlowDriver).**
-Flowdav is an independent implementation; the original project does not specify a license.
-
 ## Commands
 
-| Purpose | Command |
-|---------|---------|
-| Build | `make build` → binaries in `./bin/` |
-| Unit tests | `make test` (race-enabled, 94 tests) |
-| E2E tests | `make test-e2e` or `./scripts/test_e2e.sh` |
-| E2E + encrypted configs | `make test-e2e-encrypted` |
-| Full-stack Podman | `make docker-e2e` or `./scripts/prepare_test_env.sh && podman-compose up -d` |
-| Test SOCKS5 | `curl --socks5h://127.0.0.1:11080 https://api.ipify.org` |
-| Encrypt config | `make encrypt FILE=config.json` or `FLOWDAV_PASSWORD=secret make encrypt FILE=config.json` |
-| Release archives | `make release` |
-| Show version | `flowdav-client --version`, `flowdav-server --version`, `flowdav-encrypt --version` |
-
-**Binaries:** `flowdav-client` (has `listen_addr`), `flowdav-server` (no listener), `flowdav-encrypt` (config encryption).
-
-## Quick Reference
-
-**Config:** `configs/flowdav_{role}.json.example` — flags: `-c` config, `-l` log level, `-p` master password, `--version`. Optional field: `max_message_size` (bytes, default 16MB).
-
-**Health:** `GET /health` on `health_port` (e.g., `"127.0.0.1:9191"`) → JSON stats.
-
-**WebDAV test container:**
-```bash
-podman run -d --name webdav-test -p 8080:8080 \
-  docker.io/rclone/rclone:latest serve webdav /data \
-  --addr 0.0.0.0:8080 --user test --pass test
-```
-
-## Architecture (30s version)
-
-```
-SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
-```
-
-- **Server has zero listening ports** for data — all via WebDAV storage.
-- Client encrypts & muxes; server decrypts & demuxes. WebDAV is passive dumb storage.
-- AES-256-GCM + HMAC-SHA256 on all data. Encrypted configs use PBKDF2 (600k iterations).
-- Sessions: random filenames `{dir_byte}{16_hex}` — no client ID or timestamps leaked.
-- DNS leak protection: raw resolver (no local DNS). UDP explicitly blocked.
-- Multi-WebDAV: round-robin session assignment across backends (see `webdav.backends` in config).
+| Command | What |
+|---------|------|
+| `make build` | Build all binaries → `./bin/` |
+| `make test` | Unit tests with race detector |
+| `make test-e2e` | E2E tests |
+| `make test-e2e-encrypted` | E2E + encrypted configs |
+| `make docker-e2e` | Full-stack Podman |
+| `make encrypt FILE=config.json` | Encrypt config (also: `FLOWDAV_PASSWORD=secret make encrypt FILE=config.json`) |
+| `make release` | Release archives |
+| `flowdav-* --version` | Show version (client, server, encrypt) |
+| `curl --socks5h://127.0.0.1:11080 https://api.ipify.org` | Test SOCKS5 proxy |
 
 ## Package Map
 
@@ -51,57 +20,89 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 |---------|---------------|
 | `cmd/flowdav-*` | Entrypoints (thin) |
 | `internal/config` | Load, validate, encrypt/decrypt configs |
-| `internal/transport` | Engine (poll loop, sessions), Envelope (wire format), Crypto, VirtualConn (SOCKS5), worker Pool |
+| `internal/transport` | Engine (poll loop, sessions), Envelope, Crypto, VirtualConn (SOCKS5), Pool |
 | `internal/storage` | WebDAV backend + MultiBackend (circuit breaker, round-robin) |
 | `internal/logger` | Leveled logging |
 
-## Coding Conventions
+## Architecture
 
-- **Language:** Go 1.26.3 — use stdlib where possible.
-- **Tests:** `testing` package, table-driven style, race-enabled (`-race`). Run `make test` before asking for review.
-- **Imports:** stdlib first, then third-party, then internal. Grouped with blank lines.
-- **Naming:** camelCase, no getters. Unexported by default.
-- **Errors:** always checked and wrapped. Log via `internal/logger` package.
-- **Thread safety:** explicit `sync.Mutex`, `sync.Map`, `sync.Once`. No global state. Document lock order.
-- **No external HTTP or storage clients beyond WebDAV.** No raw TCP listener on server.
+```
+SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
+```
+
+**Binaries:** `flowdav-client` (has `listen_addr`), `flowdav-server` (no listener), `flowdav-encrypt` (config encryption).
+
+## Design Invariants
+
+- Server has **zero listening ports** — all data via WebDAV storage.
+- WebDAV is passive dumb storage; client encrypts/muxes, server decrypts/demuxes.
+- AES-256-GCM + HMAC-SHA256 on all data.
+- Random filenames `{dir_byte}{16_hex}` — no metadata leaks.
+- DNS leak protection: raw resolver, UDP explicitly blocked.
+- Multi-WebDAV: random session assignment, round-robin upload fallback.
+- No global state.
+
+## Config Quick Reference
+
+- Flags: `-c config.json`, `-l loglevel`, `-p master_password`, `--version`
+- Fields: `enc_key` / `hmac_key` (32-byte base64), `max_message_size` (default 16MB), `webdav.backends` (array), `health_port` (e.g. `"127.0.0.1:9191"`)
+- Health: `GET /health` on `health_port` → JSON stats
 
 ## Documentation Audiences
 
-| Document | Ships in release archive | Audience | Constraints |
-|----------|-------------------------|----------|-------------|
-| `README.md` | ✅ Yes | End user | ALL commands must work from release tarball — binaries, example configs, README only. **Never reference `make`, `go run`, or source tree paths.** |
-| `AGENTS.md` | ❌ No | Developer / Agent | Same repo. Can reference `make`, scripts (`./scripts/`), Go toolchain, source tree. |
+| Document | Ships in archive | Audience | Constraint |
+|----------|-----------------|----------|------------|
+| `README.md` | ✅ Yes | End user | All commands must work from release tarball. **Never reference `make`, `go run`, or source tree paths.** |
+| `AGENTS.md` | ❌ No | Agent | Can reference `make`, scripts, Go toolchain. |
+| `CONTRIBUTING.md` | ❌ No | Developer / Agent | Development workflow, code style, PR guide. Overlaps with AGENTS.md by design — AGENTS.md is authoritative for agents. |
 
-**Rule:** When editing README.md, every command snippet must be runnable by a user who only has the release archive contents.
+## Coding Conventions
+
+- Go 1.26.3, stdlib preferred.
+- Tests: `testing` package, table-driven, `-race` enabled.
+- Imports: stdlib → third-party → internal, blank-line separated.
+- Naming: camelCase, no getters, unexported by default.
+- Errors: always checked and wrapped. Log via `internal/logger`.
+- Thread safety: explicit `sync.Mutex`/`Map`/`Once`. Document lock order.
 
 ## Agent Constraints
 
-- **NEVER commit or push** without explicit `commit`/`push` command.
-- Unauthorized commit → user says `revert` → revert immediately, no questions.
+- **NEVER commit or push** without explicit command.
+- Unauthorized commit → user says `revert` → revert immediately.
 - Destructive git operations (revert, reset, force push, rebase): **ask first**.
 
 ## Agent Workflow
 
-1. **Read the relevant package** — understand existing patterns before writing code.
-2. **Run `make test`** after any change — all tests must pass with race detector.
-3. **Run `make build`** to verify compilation.
-4. **If adding features to the SOCKS5/engine path**, run `make test-e2e` or `make docker-e2e`.
+1. Read the relevant package before writing code.
+2. `make test` after any change — must pass with race detector.
+3. `make build` to verify compilation.
+4. SOCKS5/engine changes → `make test-e2e` or `make docker-e2e`.
+5. Encrypted config changes → `make test-e2e-encrypted`.
 
-## Technical Debt
+## Anti-Patterns
 
-### 🐛 Known Gaps (fundamental, not quick fixes)
+- **Coverage Theater** — don't write tests you can't name a real bug for.
+- **Refactoring for Testability** — test through public API, not extracted private methods.
+- **Don't clean what you don't understand** — double-select shutdown, redundant Store guards — often intentional.
+- **No cargo cult** — understand why a pattern exists before copying it. Just because it's in the codebase doesn't mean it belongs in your change.
+- **YAGNI** — don't add features "just in case". If you don't need it today, you probably won't need it tomorrow. Adding it later is cheaper than maintaining it now.
+
+## Known Weaknesses
+
+- **Memory buffering:** all proxied traffic kept in memory (txBuf, full file content).
 - **ACK/retransmit:** no reliability beyond Seq ordering. Envelope loss = data loss.
 
-### 📋 Backlog (safe to fix)
-- **OpenWrt cross-build** — add `GOARCH=mips`/`mipsle`/`arm` to release matrix for travel router use. ~6.8 MB client binary, static musl. Low priority.
-- **Generic transport providers** — formalize `storage.Backend` contract; add S3, IMAP, filesystem relay backends. Medium priority.
-- **Persistent state** — optional SQLite metadata layer for crash recovery, durable queues, resumable delivery. Low priority (not needed yet).
-- **Fixed-size envelope mode** — optional padding to fixed envelope sizes. Reduces payload-size correlation analysis. Medium complexity, low priority.
+## Test Gaps
 
-### 🧪 Test Gaps (add tests here)
 - `MultiBackend.isAvailable()` — cooldown expiration path
 - `Engine.gcLoop()` — tombstone TTL expiry edge cases
 - `Engine.pollLoop()` — empty poll backoff reset to minPollInterval
 
-### 🏗️ Architecture Weaknesses
-- **Memory buffering:** entire proxied traffic in memory (txBuf per session, full file content)
+> Remove entries from this list once fixed.
+
+## Backlog
+
+- **OpenWrt cross-build** — add `GOARCH=mips`/`mipsle`/`arm` to release matrix for travel router use. Low priority.
+- **Generic transport providers** — formalize `storage.Backend` contract; add S3, IMAP, filesystem relay backends. Medium priority.
+- **Persistent state** — optional SQLite metadata layer for crash recovery, durable queues, resumable delivery. Low priority (not needed yet).
+- **Fixed-size envelope mode** — optional padding to fixed envelope sizes. Reduces payload-size correlation analysis. Medium complexity, low priority.

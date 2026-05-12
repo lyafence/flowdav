@@ -30,5 +30,4 @@ USER flow
 
 CMD ["sh", "-c", "echo 'flowdav - Usage:'; echo '  Copy and edit example config:'; echo '  cp /app/configs/flowdav_client.json.example /app/configs/config.json'; echo '  docker run --rm -v ./config.json:/app/configs/config.json flowdav flowdav-client -c /app/configs/config.json'; echo '  docker run --rm -v ./config.json:/app/configs/config.json flowdav flowdav-server -c /app/configs/config.json'"]
 LABEL maintainer="lyafence" \
-       description="Lightweight SOCKS5 proxy using WebDAV storage" \
-       version="1.0.0"
+       description="Lightweight SOCKS5 proxy using WebDAV storage"

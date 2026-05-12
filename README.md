@@ -2,7 +2,7 @@
 
 A lightweight SOCKS5 proxy that uses WebDAV as a transport layer. Route your traffic through your home internet connection when connected to public Wi-Fi (cafe, hotel, etc.) by using WebDAV storage as an intermediary.
 
-**Inspired by [NullLatency/FlowDriver](https://github.com/NullLatency/FlowDriver) - credit to NullLatency for the original concept.**
+**Inspired by [NullLatency/FlowDriver](https://github.com/NullLatency/FlowDriver) — credit to NullLatency for the original concept.**
 
 ## How It Works
 
@@ -23,7 +23,7 @@ A lightweight SOCKS5 proxy that uses WebDAV as a transport layer. Route your tra
 - Server has no listening ports for data — all communication happens via WebDAV storage (optional health endpoint on loopback)
 - Sessions use random filenames `{dir_byte}{16_hex}` (direction byte + random hex, no client ID or timestamp leakage)
 - Client and server must use the same WebDAV storage and credentials
-- Default SOCKS5 port is 1080 (127.0.0.1), docker-compose exposes as 11080 (0.0.0.0)
+- Default SOCKS5 port is 1080 (`127.0.0.1`)
 
 > **Disclaimer:** This tool is designed for legitimate privacy protection — securing traffic on untrusted public Wi-Fi networks. Users are solely responsible for complying with all applicable laws in their jurisdiction. The authors assume no liability for misuse or unlawful use.
 
@@ -36,19 +36,11 @@ A lightweight SOCKS5 proxy that uses WebDAV as a transport layer. Route your tra
 
 ### 1. Install
 
-**From a release archive** (recommended for end users):
+Download the latest archive from [GitHub Releases](https://github.com/lyafence/flowdav/releases):
 
 ```bash
-# Download from https://github.com/lyafence/flowdav/releases
 tar -xzf flowdav-*.tar.gz
 cd flowdav-*/
-```
-
-**From source** (for development):
-
-```bash
-make build
-# Binaries are in ./bin/
 ```
 
 ### 2. Configure
@@ -64,14 +56,7 @@ head -c 32 /dev/urandom | base64 -w0; echo  # hmac_key
 
 #### Copy example configs
 
-Paths depend on how you installed:
-
 ```bash
-# From source checkout:
-cp configs/flowdav_server.json.example configs/server.json
-cp configs/flowdav_client.json.example configs/client.json
-
-# From a release archive (configs are alongside binaries):
 cp flowdav_server.json.example server.json
 cp flowdav_client.json.example client.json
 ```
@@ -197,36 +182,6 @@ Or set it system-wide:
 export ALL_PROXY=socks5://127.0.0.1:1080
 ```
 
-### 4. Docker Compose (for testing only)
-
-Quick full-stack test with three WebDAV backends and multi-client support:
-
-```bash
-# 1. Generate test configs with fresh keys
-./scripts/prepare_test_env.sh
-
-# 2. Build image
-make docker-build
-
-# 3. Start all services and run tests
-./scripts/test_e2e.sh
-
-# Or all at once:
-make docker-e2e
-```
-
-Test the proxy after compose starts:
-
-```bash
-# Single-backend proxy (maps to docker-compose flow-client)
-curl -s --proxy socks5h://127.0.0.1:11080 https://api.ipify.org
-
-# Multi-backend proxy (maps to docker-compose flow-client-multi)
-curl -s --proxy socks5h://127.0.0.1:11081 https://api.ipify.org
-```
-
-> **Port note:** The default SOCKS5 port is 1080 (localhost only). Docker Compose exposes the single-backend proxy as `11080` and multi-backend as `11081` on `0.0.0.0` to avoid conflicts and allow host access.
-
 ## Config Files
 
 | File | Type | listen_addr | Health Port | Storage |
@@ -240,8 +195,6 @@ curl -s --proxy socks5h://127.0.0.1:11081 https://api.ipify.org
 
 Both the client and server support an optional HTTP health endpoint. Set `health_port` in the config to enable it (e.g., `"127.0.0.1:9191"`). The endpoint `GET /health` returns JSON with engine statistics (active sessions, processed files, role, poll/flush rates).
 
-In docker-compose, `HEALTHCHECK` is configured for both `flow-server` (port `9190`) and `flow-client` (port `9191`), enabling `depends_on` conditions and container orchestration health awareness.
-
 ## Security
 
 - **Encryption:** AES-256-GCM + HMAC-SHA256 (configured in config.json)
@@ -249,25 +202,7 @@ In docker-compose, `HEALTHCHECK` is configured for both `flow-server` (port `919
 - **DNS leak protection:** Raw resolver (no local DNS lookups)
 - **UDP blocked:** Only TCP traffic is supported
 
-## Testing
-
-E2E tests require built binaries in `bin/` and podman:
-
-```bash
-# 1. Generate test configs with fresh keys
-./scripts/prepare_test_env.sh
-
-# 2. Build Docker image
-make docker-build
-
-# 3. Start services and run tests
-./scripts/test_e2e.sh
-
-# Or run all at once:
-make docker-e2e
-```
-
-### Release Archives
+## Release Archives
 
 Multi-platform release archives are built automatically by CI on each tag (`v*`).
 Download the latest archive from [GitHub Releases](https://github.com/lyafence/flowdav/releases).

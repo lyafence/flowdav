@@ -2,7 +2,7 @@
   "storage_type": "webdav",
   "webdav": {
     "provider": "custom",
-    "url": "http://your-webdav-server:8080",
+    "url": "https://your-webdav-server:8080",
     "login": "username",
     "token": "password",
     "base_path": "data_sync"

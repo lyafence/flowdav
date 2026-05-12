@@ -248,9 +248,6 @@ func (e *Engine) flushAll(ctx context.Context) {
 		s.wakeupTx()
 	}
 
-	// safeUploadSize is slightly less than MaxFileSize to leave room for encryption overhead
-	const safeUploadSize = 14 * 1024 * 1024 // 14MB
-
 	for key, mux := range muxes {
 		// Split muxed envelopes into chunks that fit within the upload limit
 		// to prevent silent truncation by WebDAV upload limits
@@ -269,7 +266,7 @@ func (e *Engine) flushAll(ctx context.Context) {
 					logger.Info("mux encode error: %v", err)
 					return
 				}
-				if buf.Len() > safeUploadSize && consumed > 0 {
+				if buf.Len() > safeUploadSize() && consumed > 0 {
 					buf.Truncate(before)
 					break
 				}
@@ -292,6 +289,17 @@ func (e *Engine) flushAll(ctx context.Context) {
 	for _, id := range closedSessionIDs {
 		e.RemoveSession(id)
 	}
+}
+
+// safeUploadSize returns the effective upload limit, leaving ~12.5% headroom
+// for envelope and crypto overhead (binary headers, nonces, GCM tags, HMAC).
+// Scales with MaxMessageSize so user-configured limits are respected.
+func safeUploadSize() int {
+	s := MaxMessageSize * 7 / 8
+	if s < 65536 {
+		return 65536
+	}
+	return s
 }
 
 func (e *Engine) pollLoop(ctx context.Context) {
