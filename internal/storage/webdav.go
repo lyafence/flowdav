@@ -32,13 +32,9 @@ type WebDAVBackend struct {
 	basePath string
 }
 
-func NewWebDAVBackend(provider, login, token, basePath, url string) (*WebDAVBackend, error) {
-	// Only custom provider is supported
-	if provider != "custom" {
-		return nil, fmt.Errorf("only 'custom' provider is supported, got: %s", provider)
-	}
+func NewWebDAVBackend(login, token, basePath, url string) (*WebDAVBackend, error) {
 	if url == "" {
-		return nil, fmt.Errorf("URL is required for custom WebDAV provider")
+		return nil, fmt.Errorf("WebDAV URL is required")
 	}
 
 	// Enforce HTTPS for non-local URLs to prevent traffic interception

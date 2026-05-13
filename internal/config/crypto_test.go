@@ -131,10 +131,9 @@ func TestLoadEncryptedSuccess(t *testing.T) {
 	cfg := &AppConfig{
 		StorageType: "webdav",
 		WebDAV: &WebDAVConfig{
-			Provider: "custom",
-			URL:      "https://webdav.example.com",
-			Login:    "user",
-			Token:    "pass",
+			URL:   "https://webdav.example.com",
+			Login: "user",
+			Token: "pass",
 		},
 		RefreshRateMs: 500,
 		FlushRateMs:   500,

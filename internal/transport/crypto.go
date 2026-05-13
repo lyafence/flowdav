@@ -47,7 +47,14 @@ func gzipDecompress(data []byte) ([]byte, error) {
 		return nil, err
 	}
 	defer r.Close()
-	return io.ReadAll(r)
+	b, err := io.ReadAll(io.LimitReader(r, int64(MaxMessageSize)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(b) > MaxMessageSize {
+		return nil, fmt.Errorf("decompressed payload exceeds max message size")
+	}
+	return b, nil
 }
 
 // EncodeWithCrypto encrypts and writes the envelope to the writer.

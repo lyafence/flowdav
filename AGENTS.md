@@ -34,7 +34,7 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 
 ## Design Invariants
 
-- Server has **zero listening ports** — all data via WebDAV storage.
+- Server has **zero listening ports** for data — all data via WebDAV storage (optional health endpoint on loopback only).
 - WebDAV is passive dumb storage; client encrypts/muxes, server decrypts/demuxes.
 - AES-256-GCM + HMAC-SHA256 on all data.
 - Random filenames `{dir_byte}{16_hex}` — no metadata leaks.
@@ -46,14 +46,14 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 ## Config Quick Reference
 
 - Flags: `-c config.json`, `-l loglevel`, `-p master_password`, `--version`
-- Fields: `enc_key` / `hmac_key` (32-byte base64), `max_message_size` (default 16MB), `webdav.backends` (array), `health_port` (e.g. `"127.0.0.1:9191"`)
+- Fields: `enc_key` / `hmac_key` (32-byte base64), `max_message_size` (default 16MB), `max_sessions` (default 0 = unlimited), `webdav.backends` (array), `health_port` (e.g. `"127.0.0.1:9191"`)
 - Health: `GET /health` on `health_port` → JSON stats
 
 ## Documentation Audiences
 
 | Document | Ships in archive | Audience | Constraint |
 |----------|-----------------|----------|------------|
-| `README.md` | ✅ Yes | End user | All commands must work from release tarball. **Never reference `make`, `go run`, or source tree paths.** |
+| `README.md` | 📋 Yes | End user | All commands must work from release tarball. **Never reference `make`, `go run`, or source tree paths.** |
 | `AGENTS.md` | ❌ No | Agent | Can reference `make`, scripts, Go toolchain. |
 | `CONTRIBUTING.md` | ❌ No | Developer / Agent | Development workflow, code style, PR guide. Overlaps with AGENTS.md by design — AGENTS.md is authoritative for agents. |
 
@@ -97,30 +97,22 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 
 - **Memory buffering:** all proxied traffic kept in memory (txBuf, full file content).
 - **ACK/retransmit:** no reliability beyond Seq ordering. Envelope loss = data loss.
-- **`VirtualConn.Read()` not woken by `Close()`:** `readRxChan()` blocks on `<-session.RxChan` without selecting on `v.readWake`. Goroutine leaks until process exit. Fix: add `readWake` to select in `conn.go:readRxChan`. Low impact (channel-receive uses zero CPU).
-
 ## Test Gaps
 
 - `MultiBackend.isAvailable()` — cooldown expiry (`internal/storage/multi.go:43`)
 - `Engine.gcLoop()` — tombstone TTL edge cases (`internal/transport/engine.go:453`)
 - `Engine.pollLoop()` — empty poll backoff reset (`internal/transport/engine.go:305`)
-- PBKDF2 test speed — 600K iters × 12 calls ≈ 9s/test. Expose test-only iter count (`internal/config/crypto.go:15`)
-
 > Remove entries from this list once fixed.
 
 ## Backlog
 
 | Tag | Priority | Item | Notes |
 |-----|----------|------|-------|
-| 🔒 | P0 | **Decompression limits** — wrap gzip in `io.LimitedReader` | `internal/transport/crypto.go:44-51`, 2 lines, prevents zip-bomb OOM |
-| 🔒 | P0 | **PBKDF2 test speed** — expose test-only var for iterations | `internal/config/crypto.go:15`, 1 line, 40× faster `make test` |
-| 🔒 | P1 | **`readWake` in `readRxChan` select** | `internal/transport/conn.go:90-131`, 3 lines, fixes `net.Conn` contract |
-| ✅ | P1 | **Protocol version field** in envelope | `internal/transport/envelope.go:40-87`, ~10 lines, zero wire overhead (1 extra byte) |
-| ✅ | P2 | **Protocol documentation** (`protocol.md`) | No runtime impact |
-| 🔒 | P2 | **Wire `max_sessions` through config** | 3 lines, defense-in-depth |
+| 📋 | P1 | **Protocol version field** in envelope | `internal/transport/envelope.go:40-87`, ~10 lines, zero wire overhead (1 extra byte) |
+| 📋 | P2 | **Protocol documentation** (`protocol.md`) | No runtime impact |
 | ⚠️ | P2 | **Local-only metrics** — extend `Stats()` with queue depth, retry counters. Serve on `health_port` ONLY (localhost). | medium effort. **Never** add remote scrape endpoints. |
-| ✅ | ++ | **Fixed-size envelope mode** — optional padding | Medium priority. Reduces payload-size correlation. |
-| ✅ | ++ | **OpenWrt cross-build** | Low priority. No profile impact. |
+| 📋 | ++ | **Fixed-size envelope mode** — optional padding | Medium priority. Reduces payload-size correlation. |
+| 📋 | ++ | **OpenWrt cross-build** | Low priority. No profile impact. |
 | ⚠️ | ++ | **Generic transport providers** (S3, IMAP) | Medium priority. Each provider has distinct traffic patterns — verify against profile goals. |
 | ⚠️ | ++ | **Buffer pooling** — `sync.Pool` for txBuf | Low priority. No network impact. |
 | ⚠️ | ++ | **Fuzz testing** | Low priority. Dev-only, no runtime impact. |

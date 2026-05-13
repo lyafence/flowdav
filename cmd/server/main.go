@@ -87,6 +87,9 @@ func main() {
 	if appCfg.FlushRateMs > 0 {
 		engine.SetFlushRate(appCfg.FlushRateMs)
 	}
+	if appCfg.MaxSessions > 0 {
+		engine.SetMaxSessions(appCfg.MaxSessions)
+	}
 
 	// Called by polling loop when a new incoming session file is found
 	engine.OnNewSession = func(sessionID, targetAddr string, session *transport.Session) {

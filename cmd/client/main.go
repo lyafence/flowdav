@@ -106,6 +106,9 @@ func main() {
 	if appCfg.FlushRateMs > 0 {
 		engine.SetFlushRate(appCfg.FlushRateMs)
 	}
+	if appCfg.MaxSessions > 0 {
+		engine.SetMaxSessions(appCfg.MaxSessions)
+	}
 	engine.Start(ctx)
 
 	// Log session endings

@@ -10,11 +10,14 @@ import (
 )
 
 const (
-	saltLen    = 32
-	nonceLen   = 12
-	pbkdf2Iter = 600000
-	keyLen     = 32
+	saltLen  = 32
+	nonceLen = 12
+	keyLen   = 32
 )
+
+// pbkdf2Iter is a var so tests can override it for speed.
+// Production value: 600000 iterations (~750ms per call).
+var pbkdf2Iter = 600000
 
 type EncryptedConfig struct {
 	Salt       []byte

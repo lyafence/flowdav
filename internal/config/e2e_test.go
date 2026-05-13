@@ -45,10 +45,9 @@ func TestEncryptedConfigEndToEnd(t *testing.T) {
 		ListenAddr:  "0.0.0.0:11080",
 		StorageType: "webdav",
 		WebDAV: &WebDAVConfig{
-			Provider: "custom",
-			URL:      "http://127.0.0.1:18080",
-			Login:    "user",
-			Token:    "test",
+			URL:   "http://127.0.0.1:18080",
+			Login: "user",
+			Token: "test",
 		},
 		RefreshRateMs: 500,
 		FlushRateMs:   500,

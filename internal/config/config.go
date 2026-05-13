@@ -74,7 +74,6 @@ func validateBasePath(basePath string, field string) error {
 // WebDAVConfig defines the WebDAV storage configuration.
 // Supports single backend or multiple backends for round-robin.
 type WebDAVConfig struct {
-	Provider string         `json:"provider"`
 	URL      string         `json:"url,omitempty"`
 	Login    string         `json:"login"`
 	Token    string         `json:"token"`
@@ -137,6 +136,9 @@ type AppConfig struct {
 	// Default 100 if not specified.
 	MaxConnections int `json:"max_connections,omitempty"`
 
+	// MaxSessions limits concurrent WebDAV sessions. 0 = unlimited (default).
+	MaxSessions int `json:"max_sessions,omitempty"`
+
 	// MaxMessageSize limits the maximum envelope payload size in bytes.
 	// Default 16777216 (16MB). Must be ≥65536 (64KB). Applied to both
 	// transport.MaxMessageSize and storage.MaxFileSize.
@@ -190,9 +192,6 @@ func Load(path string) (*AppConfig, error) {
 			return nil, fmt.Errorf("webdav.backends requires at least 2 backends, got %d", len(cfg.WebDAV.Backends))
 		}
 		for i, be := range cfg.WebDAV.Backends {
-			if be.Provider != "custom" {
-				return nil, fmt.Errorf("webdav.backends[%d]: only 'custom' provider is supported", i)
-			}
 			if be.BasePath != "" {
 				if err := validateBasePath(be.BasePath, fmt.Sprintf("webdav.backends[%d].base_path", i)); err != nil {
 					return nil, err
@@ -201,9 +200,6 @@ func Load(path string) (*AppConfig, error) {
 		}
 	} else if hasLegacyBackend {
 		// Single backend mode (legacy format)
-		if cfg.WebDAV.Provider != "custom" {
-			return nil, fmt.Errorf("only 'custom' provider is supported for webdav")
-		}
 		if cfg.WebDAV.BasePath != "" {
 			if err := validateBasePath(cfg.WebDAV.BasePath, "webdav.base_path"); err != nil {
 				return nil, err

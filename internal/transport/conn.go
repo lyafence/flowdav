@@ -92,11 +92,22 @@ func (v *VirtualConn) readRxChan() ([]byte, error) {
 	rd := v.readDeadline
 	if rd.IsZero() {
 		v.deadlineMu.Unlock()
-		data, ok := <-v.session.RxChan
-		if !ok {
+		select {
+		case data, ok := <-v.session.RxChan:
+			if !ok {
+				return nil, io.EOF
+			}
+			return data, nil
+		case <-v.readWake:
+			select {
+			case data, ok := <-v.session.RxChan:
+				if ok {
+					return data, nil
+				}
+			default:
+			}
 			return nil, io.EOF
 		}
-		return data, nil
 	}
 
 	d := time.Until(rd)
@@ -127,6 +138,21 @@ func (v *VirtualConn) readRxChan() ([]byte, error) {
 		return data, nil
 	case <-timer.C:
 		return nil, os.ErrDeadlineExceeded
+	case <-v.readWake:
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		select {
+		case data, ok := <-v.session.RxChan:
+			if ok {
+				return data, nil
+			}
+		default:
+		}
+		return nil, io.EOF
 	}
 }
 

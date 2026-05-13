@@ -1,20 +1,10 @@
 {
   "listen_addr": "127.0.0.1:1080",
-  "storage_type": "webdav",
   "webdav": {
-    "provider": "custom",
-    "url": "https://your-webdav-server:8080",
+    "url": "https://webdav.example.com:8080",
     "login": "username",
-    "token": "password",
-    "base_path": "data_sync"
+    "token": "YOUR_WEBDAV_TOKEN"
   },
   "enc_key": "PasteYour32ByteBase64EncodedAES256KeyHere==",
-  "hmac_key": "PasteYour32ByteBase64EncodedHMACSHA256KeyHere==",
-  "socks5_user": "",
-  "socks5_pass": "",
-  "max_connections": 100,
-  "refresh_rate_ms": 500,
-  "flush_rate_ms": 500,
-  "log_level": "info",
-  "health_port": "127.0.0.1:9191"
+  "hmac_key": "PasteYour32ByteBase64EncodedHMACSHA256KeyHere=="
 }

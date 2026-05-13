@@ -115,15 +115,8 @@ func TestValidateNotPrivateURL(t *testing.T) {
 	}
 }
 
-func TestNewWebDAVBackendInvalidProvider(t *testing.T) {
-	_, err := NewWebDAVBackend("google", "", "", "", "")
-	if err == nil {
-		t.Fatal("expected error for non-custom provider")
-	}
-}
-
 func TestNewWebDAVBackendEmptyURL(t *testing.T) {
-	_, err := NewWebDAVBackend("custom", "", "", "", "")
+	_, err := NewWebDAVBackend("", "", "", "")
 	if err == nil {
 		t.Fatal("expected error for empty URL")
 	}

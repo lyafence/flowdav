@@ -108,6 +108,68 @@ func TestVirtualConnWriteNormalFlow(t *testing.T) {
 	}
 }
 
+// TestVirtualConnCloseUnblocksRead verifies that Close() unblocks a
+// concurrent Read() call. Without readWake in the readRxChan select,
+// Read() blocks forever on <-session.RxChan after Close().
+func TestVirtualConnCloseUnblocksRead(t *testing.T) {
+	s := NewSession("test-close-read")
+	v := NewVirtualConn(s, nil)
+
+	readDone := make(chan error, 1)
+	go func() {
+		_, err := v.Read(make([]byte, 1024))
+		readDone <- err
+	}()
+
+	// Let Read() settle into readRxChan
+	time.Sleep(50 * time.Millisecond)
+
+	v.Close()
+
+	select {
+	case err := <-readDone:
+		if err != io.EOF {
+			t.Fatalf("expected io.EOF after Close, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Read blocked forever after Close — readWake not in select")
+	}
+}
+
+// TestVirtualConnCloseDrainsRxChan verifies that when Close() is called
+// concurrently with data in RxChan, the data is returned before EOF.
+// Without the drain in the readWake case, data would be lost on a race.
+func TestVirtualConnCloseDrainsRxChan(t *testing.T) {
+	s := NewSession("test-close-drain")
+	v := NewVirtualConn(s, nil)
+
+	expected := []byte("data before close")
+	s.RxChan <- expected
+
+	readDone := make(chan struct{})
+	var got []byte
+	go func() {
+		buf := make([]byte, 1024)
+		n, _ := v.Read(buf)
+		got = append([]byte{}, buf[:n]...)
+		close(readDone)
+	}()
+
+	// Let Read() settle into readRxChan (RxChan already has data)
+	time.Sleep(50 * time.Millisecond)
+
+	v.Close()
+
+	select {
+	case <-readDone:
+		if string(got) != string(expected) {
+			t.Fatalf("expected %q from drain, got %q", expected, got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Read blocked — drain in readWake not working")
+	}
+}
+
 // TestVirtualConnDoubleClose verifies that calling Close() twice does not
 // block or panic, fixing a deadlock where onClose (e.g. connLimit receive)
 // would block forever on the second invocation.

@@ -69,18 +69,12 @@ The server runs at home and opens real TCP connections. It has no `listen_addr`:
 {
   "storage_type": "webdav",
   "webdav": {
-    "provider": "custom",
     "url": "https://your-webdav-server:8080",
     "login": "username",
-    "token": "password",
-    "base_path": "data_sync"
+    "token": "YOUR_WEBDAV_TOKEN"
   },
   "enc_key": "paste enc_key here",
-  "hmac_key": "paste hmac_key here",
-  "refresh_rate_ms": 500,
-  "flush_rate_ms": 500,
-  "log_level": "info",
-  "health_port": "127.0.0.1:9190"
+  "hmac_key": "paste hmac_key here"
 }
 ```
 
@@ -93,26 +87,18 @@ The client runs at cafe and listens for SOCKS5 connections:
   "listen_addr": "127.0.0.1:1080",
   "storage_type": "webdav",
   "webdav": {
-    "provider": "custom",
     "url": "https://your-webdav-server:8080",
     "login": "username",
-    "token": "password",
-    "base_path": "data_sync"
+    "token": "YOUR_WEBDAV_TOKEN"
   },
   "enc_key": "paste enc_key here",
-  "hmac_key": "paste hmac_key here",
-  "refresh_rate_ms": 500,
-  "flush_rate_ms": 500,
-  "log_level": "info",
-  "socks5_user": "",
-  "socks5_pass": "",
-  "health_port": "127.0.0.1:9191"
+  "hmac_key": "paste hmac_key here"
 }
 ```
 
-> **Key differences between configs:** client has `listen_addr` (SOCKS5 port) and optional `socks5_user`/`socks5_pass`; server does not.
+> **Key difference:** client has `listen_addr` (SOCKS5 port); server does not.
 
-All configs support an optional `max_message_size` field (default 16777216 bytes / 16MB) to limit envelope payload size. Both `--version` and `-l <level>` flags are supported on all three binaries.
+All configs support optional fields: `max_message_size` (default 16MB), `max_sessions` (default 0 = unlimited), `health_port` (default: disabled). See the [Config Reference](#config-reference) table for the full list. Both `--version` and `-l <level>` flags are supported on all three binaries.
 
 For multiple WebDAV providers (round-robin), replace the single backend fields with a `backends` array:
 
@@ -120,8 +106,8 @@ For multiple WebDAV providers (round-robin), replace the single backend fields w
 {
   "webdav": {
     "backends": [
-      { "url": "https://webdav1.example.com", "login": "user", "token": "pass", "base_path": "data_sync" },
-      { "url": "https://webdav2.example.com", "login": "user", "token": "pass", "base_path": "data_sync" }
+      { "url": "https://webdav1.example.com", "login": "user", "token": "pass" },
+      { "url": "https://webdav2.example.com", "login": "user", "token": "pass" }
     ]
   }
 }
@@ -184,12 +170,32 @@ export ALL_PROXY=socks5://127.0.0.1:1080
 
 ## Config Files
 
-| File | Type | listen_addr | Health Port | Storage |
-|------|------|-------------|-------------|---------|
-| `flowdav_client.json.example` | Client | `127.0.0.1:1080` | `127.0.0.1:9191` | WebDAV |
-| `flowdav_server.json.example` | Server | No | `127.0.0.1:9190` | WebDAV |
+| File | Type | listen_addr | Health Port |
+|------|------|-------------|-------------|
+| `flowdav_client.json.example` | Client | `127.0.0.1:1080` | `127.0.0.1:9191` |
+| `flowdav_server.json.example` | Server | No | `127.0.0.1:9190` |
 
-**Rule:** Client has `listen_addr` (SOCKS5 port), server does NOT (only polls WebDAV).
+### Config Reference
+
+| Field | Type | Default | Client | Server | Description |
+|-------|------|---------|--------|--------|-------------|
+| `storage_type` | string | `"webdav"` | ✓ | ✓ | Backend type |
+| `webdav` | object | — | ✓ | ✓ | WebDAV connection (see example) |
+| `enc_key` | string | — | ✓ | ✓ | 32-byte AES-256 key, base64 |
+| `hmac_key` | string | — | ✓ | ✓ | 32-byte HMAC-SHA256 key, base64 |
+| `listen_addr` | string | — | ✓ | | SOCKS5 listener (`host:port`) |
+| `socks5_user` | string | `""` | ✓ | | SOCKS5 auth username |
+| `socks5_pass` | string | `""` | ✓ | | SOCKS5 auth password |
+| `max_connections` | int | `100` | ✓ | | Max concurrent SOCKS5 conns |
+| `refresh_rate_ms` | int | `500` | ✓ | ✓ | Poll interval |
+| `min_poll_ms` | int | `100` | ✓ | ✓ | Min poll jitter floor |
+| `max_poll_ms` | int | `5000` | ✓ | ✓ | Max poll jitter ceiling |
+| `flush_rate_ms` | int | `500` | ✓ | ✓ | Flush interval |
+| `max_sessions` | int | `0` (∞) | ✓ | ✓ | Max WebDAV sessions |
+| `max_message_size` | int | `16777216` | ✓ | ✓ | Max payload (bytes) |
+| `health_port` | string | `""` | ✓ | ✓ | Health endpoint (`host:port`) |
+
+Client-only fields (`listen_addr`, `socks5_user`, `socks5_pass`, `max_connections`) are absent from server configs. Unset fields use defaults.
 
 ## Health Check
 
@@ -207,7 +213,7 @@ Both the client and server support an optional HTTP health endpoint. Set `health
 Multi-platform release archives are built automatically by CI on each tag (`v*`).
 Download the latest archive from [GitHub Releases](https://github.com/lyafence/flowdav/releases).
 
-Each archive contains: `flowdav-client`, `flowdav-server`, `flowdav-encrypt`, example configs, and README.
+Each archive contains: `flowdav-client`, `flowdav-server`, `flowdav-encrypt`, two example configs (`flowdav_client.json.example`, `flowdav_server.json.example`), and README.
 
 All binaries accept `--version` to print the release version.
 
