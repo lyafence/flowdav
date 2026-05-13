@@ -110,6 +110,7 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 |-----|----------|------|-------|
 | 📋 | P1 | **Protocol version field** in envelope | `internal/transport/envelope.go:40-87`, ~10 lines, zero wire overhead (1 extra byte) |
 | 📋 | P2 | **Protocol documentation** (`protocol.md`) | No runtime impact |
+| ⚠️ | P2 | **Optional ACK/retransmit** — `"reliable": true` flag, ackPending map, retransmit timer, gc cleanup, FlagAck envelope. ~150 lines + tests. Off by default — user opts into predictability. | `internal/transport/envelope.go:38-42`, `internal/transport/session.go`, `internal/transport/pool.go`, `internal/transport/engine.go`. Known Weakness: envelope loss = data loss. |
 | ⚠️ | P2 | **Local-only metrics** — extend `Stats()` with queue depth, retry counters. Serve on `health_port` ONLY (localhost). | medium effort. **Never** add remote scrape endpoints. |
 | 📋 | ++ | **Fixed-size envelope mode** — optional padding | Medium priority. Reduces payload-size correlation. |
 | 📋 | ++ | **OpenWrt cross-build** | Low priority. No profile impact. |
