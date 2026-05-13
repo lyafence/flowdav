@@ -41,6 +41,7 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 - DNS leak protection: raw resolver, UDP explicitly blocked.
 - Multi-WebDAV: random session assignment, round-robin upload fallback.
 - No global state.
+- **Operational philosophy:** minimize external observability, avoid predictable patterns. When adding anything network-facing: is it optional? bounded? indistinguishable from noise?
 
 ## Config Quick Reference
 
@@ -86,23 +87,40 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 - **Don't clean what you don't understand** — double-select shutdown, redundant Store guards — often intentional.
 - **No cargo cult** — understand why a pattern exists before copying it. Just because it's in the codebase doesn't mean it belongs in your change.
 - **YAGNI** — don't add features "just in case". If you don't need it today, you probably won't need it tomorrow. Adding it later is cheaper than maintaining it now.
+- **ACK/retransmission** — control packets add predictable patterns. Best-effort is deliberate.
+- **Persistent state / SQLite** — local artifacts and disk writes, no need.
+- **Verbose logging / event tracing** — if ever needed: local-only, off by default.
+- **Remote metrics (Prometheus, etc.)** — if ever needed: local-only, off by default.
+- **Config flag creep** — not every internal constant needs a user-facing flag. Defaults are meant to be defaults.
 
 ## Known Weaknesses
 
 - **Memory buffering:** all proxied traffic kept in memory (txBuf, full file content).
 - **ACK/retransmit:** no reliability beyond Seq ordering. Envelope loss = data loss.
+- **`VirtualConn.Read()` not woken by `Close()`:** `readRxChan()` blocks on `<-session.RxChan` without selecting on `v.readWake`. Goroutine leaks until process exit. Fix: add `readWake` to select in `conn.go:readRxChan`. Low impact (channel-receive uses zero CPU).
 
 ## Test Gaps
 
-- `MultiBackend.isAvailable()` — cooldown expiration path
-- `Engine.gcLoop()` — tombstone TTL expiry edge cases
-- `Engine.pollLoop()` — empty poll backoff reset to minPollInterval
+- `MultiBackend.isAvailable()` — cooldown expiry (`internal/storage/multi.go:43`)
+- `Engine.gcLoop()` — tombstone TTL edge cases (`internal/transport/engine.go:453`)
+- `Engine.pollLoop()` — empty poll backoff reset (`internal/transport/engine.go:305`)
+- PBKDF2 test speed — 600K iters × 12 calls ≈ 9s/test. Expose test-only iter count (`internal/config/crypto.go:15`)
 
 > Remove entries from this list once fixed.
 
 ## Backlog
 
-- **OpenWrt cross-build** — add `GOARCH=mips`/`mipsle`/`arm` to release matrix for travel router use. Low priority.
-- **Generic transport providers** — formalize `storage.Backend` contract; add S3, IMAP, filesystem relay backends. Medium priority.
-- **Persistent state** — optional SQLite metadata layer for crash recovery, durable queues, resumable delivery. Low priority (not needed yet).
-- **Fixed-size envelope mode** — optional padding to fixed envelope sizes. Reduces payload-size correlation analysis. Medium complexity, low priority.
+| Tag | Priority | Item | Notes |
+|-----|----------|------|-------|
+| 🔒 | P0 | **Decompression limits** — wrap gzip in `io.LimitedReader` | `internal/transport/crypto.go:44-51`, 2 lines, prevents zip-bomb OOM |
+| 🔒 | P0 | **PBKDF2 test speed** — expose test-only var for iterations | `internal/config/crypto.go:15`, 1 line, 40× faster `make test` |
+| 🔒 | P1 | **`readWake` in `readRxChan` select** | `internal/transport/conn.go:90-131`, 3 lines, fixes `net.Conn` contract |
+| ✅ | P1 | **Protocol version field** in envelope | `internal/transport/envelope.go:40-87`, ~10 lines, zero wire overhead (1 extra byte) |
+| ✅ | P2 | **Protocol documentation** (`protocol.md`) | No runtime impact |
+| 🔒 | P2 | **Wire `max_sessions` through config** | 3 lines, defense-in-depth |
+| ⚠️ | P2 | **Local-only metrics** — extend `Stats()` with queue depth, retry counters. Serve on `health_port` ONLY (localhost). | medium effort. **Never** add remote scrape endpoints. |
+| ✅ | ++ | **Fixed-size envelope mode** — optional padding | Medium priority. Reduces payload-size correlation. |
+| ✅ | ++ | **OpenWrt cross-build** | Low priority. No profile impact. |
+| ⚠️ | ++ | **Generic transport providers** (S3, IMAP) | Medium priority. Each provider has distinct traffic patterns — verify against profile goals. |
+| ⚠️ | ++ | **Buffer pooling** — `sync.Pool` for txBuf | Low priority. No network impact. |
+| ⚠️ | ++ | **Fuzz testing** | Low priority. Dev-only, no runtime impact. |
