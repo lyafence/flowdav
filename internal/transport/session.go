@@ -42,7 +42,6 @@ type Session struct {
 	rxClosed     bool // Safely tracks if RxChan was successfully closed
 	rxOnce       sync.Once
 	TargetAddr   string
-	ClientID     string
 
 	// Backpressure: blocked when txBuf is too large
 	// txWait is a channel closed to wake up waiters; replaced after each wakeup.
@@ -127,13 +126,6 @@ func (s *Session) ExtractTxBatch(isClient bool) (payload []byte, seq uint64, clo
 	s.txSeq++
 	closed = s.closed
 	return payload, seq, closed, true
-}
-
-func (s *Session) ClearTx() {
-	s.mu.Lock()
-	s.txBuf = nil
-	s.mu.Unlock()
-	s.wakeupTx()
 }
 
 func (s *Session) ProcessRx(env *Envelope) {

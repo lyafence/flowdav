@@ -19,7 +19,6 @@ type Engine struct {
 	backend storage.Backend
 	myDir   Direction // DirReq for client, DirRes for server
 	peerDir Direction // DirRes for client, DirReq for server
-	id      string    // ClientID for client, empty for server
 
 	sessions  map[string]*Session
 	sessionMu sync.RWMutex
@@ -74,10 +73,9 @@ type uploadJob struct {
 	backendIdx uint8
 }
 
-func NewEngine(backend storage.Backend, isClient bool, clientID string, cryptoCfg *CryptoConfig) *Engine {
+func NewEngine(backend storage.Backend, isClient bool, cryptoCfg *CryptoConfig) *Engine {
 	e := &Engine{
 		backend:        backend,
-		id:             clientID,
 		sessions:       make(map[string]*Session),
 		closedSessions: make(map[string]time.Time),
 		processed:      make(map[string]time.Time),

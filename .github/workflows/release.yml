@@ -35,6 +35,11 @@ jobs:
             arch: arm64
             goos: linux
             goarch: arm64
+          - os: linux
+            arch: mipsle
+            goos: linux
+            goarch: mipsle
+            gomips: softfloat
 
     steps:
       - name: Checkout code
@@ -57,13 +62,13 @@ jobs:
             SUFFIX=".exe"
           fi
 
-          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build \
+          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} GOMIPS=${{ matrix.gomips }} go build \
             -trimpath -ldflags="-s -w -X main.version=${VERSION}" \
             -o $FOLDER_NAME/flowdav-client$SUFFIX ./cmd/client
-          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build \
+          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} GOMIPS=${{ matrix.gomips }} go build \
             -trimpath -ldflags="-s -w -X main.version=${VERSION}" \
             -o $FOLDER_NAME/flowdav-server$SUFFIX ./cmd/server
-          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build \
+          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} GOMIPS=${{ matrix.gomips }} go build \
             -trimpath -ldflags="-s -w -X main.version=${VERSION}" \
             -o $FOLDER_NAME/flowdav-encrypt$SUFFIX ./cmd/encrypt
 

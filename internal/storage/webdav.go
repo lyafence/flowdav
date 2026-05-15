@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -28,11 +27,12 @@ var (
 )
 
 type WebDAVBackend struct {
-	client   *gowebdav.Client
-	token    string
-	login    string
-	rootURL  string
-	basePath string
+	client     *gowebdav.Client
+	httpClient *http.Client
+	token      string
+	login      string
+	rootURL    string
+	basePath   string
 }
 
 func NewWebDAVBackend(login, token, basePath, url string) (*WebDAVBackend, error) {
@@ -57,20 +57,28 @@ func NewWebDAVBackend(login, token, basePath, url string) (*WebDAVBackend, error
 	// Connect directly to the rootURL (rclone serve webdav /data makes /data the root)
 	client := gowebdav.NewClient(rootURL, login, token)
 	transport := &http.Transport{
-		MaxIdleConnsPerHost: 64,
-		IdleConnTimeout:     90 * time.Second,
-		DisableCompression:  true,
+		MaxIdleConnsPerHost:   64,
+		IdleConnTimeout:       90 * time.Second,
+		DisableCompression:    true,
+		ResponseHeaderTimeout: 30 * time.Second,
+		ExpectContinueTimeout: 5 * time.Second,
 	}
 	client.SetTransport(transport)
+	client.SetTimeout(90 * time.Second)
+	httpClient := &http.Client{
+		Timeout:   90 * time.Second,
+		Transport: transport,
+	}
 	backend := &WebDAVBackend{
-		client:  client,
-		token:   token,
-		login:   login,
-		rootURL: rootURL,
-		basePath: basePath,
+		client:     client,
+		httpClient: httpClient,
+		token:      token,
+		login:      login,
+		rootURL:    rootURL,
+		basePath:   basePath,
 	}
 
-	// Test connection
+	// Test connection and create directories
 	ctx := context.Background()
 	if err := backend.Login(ctx); err != nil {
 		return nil, fmt.Errorf("WebDAV login failed: %w", err)
@@ -274,23 +282,49 @@ func (w *WebDAVBackend) Upload(ctx context.Context, filename string, data io.Rea
 }
 
 func (w *WebDAVBackend) Download(ctx context.Context, filename string) (io.ReadCloser, error) {
-	// Note: gowebdav client.Read returns []byte, so we can't do true streaming
-	// For large files, consider using a different WebDAV library or direct HTTP
 	full, err := w.fullPath(filename)
 	if err != nil {
 		return nil, fmt.Errorf("download error: %w", err)
 	}
-	content, err := w.client.Read(full)
+
+	u, err := url.Parse(w.rootURL)
 	if err != nil {
 		return nil, fmt.Errorf("download error: %w", err)
 	}
-	
-	// Limit the size to prevent memory issues
-	if len(content) > MaxFileSize {
-		return nil, fmt.Errorf("file too large: %d bytes (max %d)", len(content), MaxFileSize)
+	u = u.JoinPath(full)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("download error: %w", err)
 	}
-	
-	return io.NopCloser(bytes.NewReader(content)), nil
+	req.SetBasicAuth(w.login, w.token)
+
+	resp, err := w.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("download error: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, fmt.Errorf("download error: HTTP %d", resp.StatusCode)
+	}
+	if resp.ContentLength > int64(MaxFileSize) {
+		resp.Body.Close()
+		return nil, fmt.Errorf("download error: file too large: %d bytes (max %d)", resp.ContentLength, MaxFileSize)
+	}
+
+	return newLimitReadCloser(resp.Body, int64(MaxFileSize)+1), nil
+}
+
+type limitReadCloser struct {
+	io.Reader
+	io.Closer
+}
+
+func newLimitReadCloser(r io.ReadCloser, limit int64) io.ReadCloser {
+	return &limitReadCloser{
+		Reader: io.LimitReader(r, limit),
+		Closer: r,
+	}
 }
 
 func (w *WebDAVBackend) Delete(ctx context.Context, filename string) error {

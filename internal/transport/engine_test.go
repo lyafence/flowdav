@@ -52,7 +52,7 @@ func (m *mockBackend) DownloadByIndex(ctx context.Context, name string, idx uint
 }
 func TestEngineStop(t *testing.T) {
 	backend := &mockBackend{}
-	engine := NewEngine(backend, true, "test-client", nil)
+	engine := NewEngine(backend, true, nil)
 	engine.SetPollRate(50)
 	engine.SetFlushRate(50)
 
@@ -71,7 +71,7 @@ func TestEngineStop(t *testing.T) {
 
 func TestEngineStopMultipleCalls(t *testing.T) {
 	backend := &mockBackend{}
-	engine := NewEngine(backend, true, "test-client", nil)
+	engine := NewEngine(backend, true, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	engine.Start(ctx)
@@ -86,7 +86,7 @@ func TestEngineStopMultipleCalls(t *testing.T) {
 
 func TestEngineStartStopCycle(t *testing.T) {
 	backend := &mockBackend{}
-	engine := NewEngine(backend, true, "test-client", nil)
+	engine := NewEngine(backend, true, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	engine.Start(ctx)
@@ -97,7 +97,7 @@ func TestEngineStartStopCycle(t *testing.T) {
 
 	cancel()
 
-	engine2 := NewEngine(backend, true, "test-client2", nil)
+	engine2 := NewEngine(backend, true, nil)
 	ctx2, cancel2 := context.WithCancel(context.Background())
 	engine2.Start(ctx2)
 	time.Sleep(50 * time.Millisecond)
@@ -107,7 +107,7 @@ func TestEngineStartStopCycle(t *testing.T) {
 
 func TestEngineFastShutdownOnStopSignal(t *testing.T) {
 	backend := &mockBackend{}
-	engine := NewEngine(backend, true, "test-client", nil)
+	engine := NewEngine(backend, true, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	engine.Start(ctx)
@@ -131,7 +131,7 @@ func TestEngineFastShutdownOnStopSignal(t *testing.T) {
 // Re-seeds txBuf after each flushAll so all iterations exercise the read path.
 func TestBackendIdxDataRace(t *testing.T) {
 	be := &mockBackend{}
-	engine := NewEngine(be, true, "test-client", nil)
+	engine := NewEngine(be, true, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -196,7 +196,7 @@ func TestBackendIdxDataRace(t *testing.T) {
 // on len(e.sessions) after releasing the sessionMu lock.
 func TestRemoveSessionDataRace(t *testing.T) {
 	backend := &mockBackend{}
-	engine := NewEngine(backend, true, "test-client", nil)
+	engine := NewEngine(backend, true, nil)
 
 	for i := 0; i < 100; i++ {
 		s := NewSession(fmt.Sprintf("session-%d", i))
@@ -222,7 +222,7 @@ func TestRemoveSessionDataRace(t *testing.T) {
 // preventing silent truncation of data by WebDAV upload limits.
 func TestFlushAllSplitsOversizedMux(t *testing.T) {
 	be := &mockBackend{}
-	engine := NewEngine(be, false, "server", nil)
+	engine := NewEngine(be, false, nil)
 	engine.SetPollRate(50)
 	engine.SetFlushRate(50)
 
@@ -236,11 +236,10 @@ func TestFlushAllSplitsOversizedMux(t *testing.T) {
 
 	// Bypass EnqueueTx backpressure by writing directly to txBuf.
 	// Use small payloads (1MB) but enough sessions to exceed the 14MB split threshold.
-	// All sessions share the same ClientID and BackendIdx for multiplexing.
+	// All sessions share the same BackendIdx for multiplexing.
 	payload := make([]byte, 1*1024*1024)
 	for i := 0; i < 20; i++ {
 		s := NewSession(fmt.Sprintf("session-%d", i))
-		s.ClientID = "shared-client" // same client → same mux key → triggers split
 		s.TargetAddr = "example.com:80"
 		s.mu.Lock()
 		s.txBuf = append(s.txBuf, payload...)
@@ -326,7 +325,7 @@ func TestJitterPollInterval(t *testing.T) {
 // showing that data is preserved across multiple chunked uploads.
 func TestFlushAllDataIntegrity(t *testing.T) {
 	be := &dataTrackingBackend{}
-	engine := NewEngine(be, false, "server", nil)
+	engine := NewEngine(be, false, nil)
 	engine.SetPollRate(50)
 	engine.SetFlushRate(50)
 
@@ -345,7 +344,6 @@ func TestFlushAllDataIntegrity(t *testing.T) {
 			payload[j] = byte(i)
 		}
 		s := NewSession(fmt.Sprintf("session-%d", i))
-		s.ClientID = "shared-client"
 		s.TargetAddr = "example.com:80"
 		s.mu.Lock()
 		s.txBuf = append(s.txBuf, payload...)

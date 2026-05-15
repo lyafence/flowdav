@@ -86,8 +86,8 @@ type AppConfig struct {
 	// ListenAddr is the SOCKS5 listening address for the client. E.g., "127.0.0.1:1080"
 	ListenAddr string `json:"listen_addr,omitempty"`
 
-	// StorageType defines the backend. Only "webdav" is supported.
-	StorageType string `json:"storage_type"`
+	// StorageType defines the backend. Only "webdav" is supported (default).
+	StorageType string `json:"storage_type,omitempty"`
 
 	// WebDAV contains the WebDAV configuration.
 	// Can contain single backend or multiple backends (auto-detected).
@@ -167,12 +167,9 @@ func Load(path string) (*AppConfig, error) {
 		return nil, fmt.Errorf("failed to parse config JSON: %w", err)
 	}
 
-	// Validate required fields
+	// Only WebDAV storage is supported; default to it if not set.
 	if cfg.StorageType == "" {
-		return nil, fmt.Errorf("storage_type is required")
-	}
-	if cfg.StorageType != "webdav" {
-		return nil, fmt.Errorf("only 'webdav' storage type is supported, got: %s", cfg.StorageType)
+		cfg.StorageType = "webdav"
 	}
 	if cfg.WebDAV == nil {
 		return nil, fmt.Errorf("webdav config is required")

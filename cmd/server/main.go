@@ -61,9 +61,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to init WebDAV storage: %v", err)
 	}
-	if err := backend.Login(ctx); err != nil {
-		log.Fatalf("Backend login failed: %v", err)
-	}
 
 	if appCfg.MaxMessageSize > 0 {
 		transport.MaxMessageSize = appCfg.MaxMessageSize
@@ -74,7 +71,7 @@ func main() {
 		EncKey:  appCfg.EncKeyDecoded,
 		HMacKey: appCfg.HMacKeyDecoded,
 	}
-	engine := transport.NewEngine(backend, false, "", cryptoCfg)
+	engine := transport.NewEngine(backend, false, cryptoCfg)
 	if appCfg.RefreshRateMs > 0 {
 		engine.SetPollRate(appCfg.RefreshRateMs)
 	}

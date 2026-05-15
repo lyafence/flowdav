@@ -33,7 +33,7 @@ func (d *deleteRecordingBackend) Delete(ctx context.Context, name string) error 
 // when stopCh is already closed (no deadlock on shutdown).
 func TestPoolSubmitAfterStop(t *testing.T) {
 	be := &deleteRecordingBackend{failDelete: true}
-	engine := NewEngine(be, false, "", nil)
+	engine := NewEngine(be, false, nil)
 	engine.SetPollRate(50)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -84,7 +84,7 @@ func TestPoolStartStopLifecycle(t *testing.T) {
 // the processed entry is NOT removed, allowing TTL-based retry.
 func TestDeleteErrorPreservesProcessedEntry(t *testing.T) {
 	be := &deleteRecordingBackend{failDelete: true}
-	engine := NewEngine(be, false, "", nil)
+	engine := NewEngine(be, false, nil)
 	engine.SetPollRate(50)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -118,7 +118,7 @@ func TestDeleteErrorPreservesProcessedEntry(t *testing.T) {
 // when Delete succeeds, the processed entry IS removed.
 func TestDeleteSuccessRemovesProcessedEntry(t *testing.T) {
 	be := &deleteRecordingBackend{failDelete: false}
-	engine := NewEngine(be, false, "", nil)
+	engine := NewEngine(be, false, nil)
 	engine.SetPollRate(50)
 
 	ctx, cancel := context.WithCancel(context.Background())

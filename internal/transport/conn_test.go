@@ -11,7 +11,7 @@ import (
 
 func TestVirtualConnWriteClosed(t *testing.T) {
 	s := NewSession("test-write-closed")
-	v := NewVirtualConn(s, nil)
+	v := NewVirtualConnWithOnClose(s, nil, nil)
 	s.mu.Lock()
 	s.closed = true
 	s.mu.Unlock()
@@ -27,7 +27,7 @@ func TestVirtualConnWriteClosed(t *testing.T) {
 
 func TestVirtualConnClosePreservesSessionForFlush(t *testing.T) {
 	backend := &mockBackend{}
-	engine := NewEngine(backend, true, "test-client", nil)
+	engine := NewEngine(backend, true, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	engine.Start(ctx)
 	defer engine.Stop()
@@ -35,7 +35,7 @@ func TestVirtualConnClosePreservesSessionForFlush(t *testing.T) {
 
 	s := NewSession("test-close-preserve")
 	engine.AddSession(s)
-	v := NewVirtualConn(s, engine)
+	v := NewVirtualConnWithOnClose(s, engine, nil)
 	v.Write([]byte("final data"))
 	v.Close()
 
@@ -55,7 +55,7 @@ func TestVirtualConnClosePreservesSessionForFlush(t *testing.T) {
 
 func TestVirtualConnWriteDeadlineExpired(t *testing.T) {
 	s := NewSession("test-deadline")
-	v := NewVirtualConn(s, nil)
+	v := NewVirtualConnWithOnClose(s, nil, nil)
 	v.SetWriteDeadline(time.Now().Add(-1 * time.Second))
 
 	n, err := v.Write([]byte("data"))
@@ -69,7 +69,7 @@ func TestVirtualConnWriteDeadlineExpired(t *testing.T) {
 
 func TestVirtualConnReadDeadlineExpired(t *testing.T) {
 	s := NewSession("test-read-deadline")
-	v := NewVirtualConn(s, nil)
+	v := NewVirtualConnWithOnClose(s, nil, nil)
 	v.SetReadDeadline(time.Now().Add(-1 * time.Second))
 
 	_, err := v.Read(make([]byte, 1024))
@@ -80,7 +80,7 @@ func TestVirtualConnReadDeadlineExpired(t *testing.T) {
 
 func TestVirtualConnReadWithData(t *testing.T) {
 	s := NewSession("test-read-data")
-	v := NewVirtualConn(s, nil)
+	v := NewVirtualConnWithOnClose(s, nil, nil)
 
 	expected := []byte("hello proxy")
 	s.RxChan <- expected
@@ -97,7 +97,7 @@ func TestVirtualConnReadWithData(t *testing.T) {
 
 func TestVirtualConnWriteNormalFlow(t *testing.T) {
 	s := NewSession("test-write-normal")
-	v := NewVirtualConn(s, nil)
+	v := NewVirtualConnWithOnClose(s, nil, nil)
 
 	n, err := v.Write([]byte("test data"))
 	if err != nil {
@@ -113,7 +113,7 @@ func TestVirtualConnWriteNormalFlow(t *testing.T) {
 // Read() blocks forever on <-session.RxChan after Close().
 func TestVirtualConnCloseUnblocksRead(t *testing.T) {
 	s := NewSession("test-close-read")
-	v := NewVirtualConn(s, nil)
+	v := NewVirtualConnWithOnClose(s, nil, nil)
 
 	readDone := make(chan error, 1)
 	go func() {
@@ -141,7 +141,7 @@ func TestVirtualConnCloseUnblocksRead(t *testing.T) {
 // Without the drain in the readWake case, data would be lost on a race.
 func TestVirtualConnCloseDrainsRxChan(t *testing.T) {
 	s := NewSession("test-close-drain")
-	v := NewVirtualConn(s, nil)
+	v := NewVirtualConnWithOnClose(s, nil, nil)
 
 	expected := []byte("data before close")
 	s.RxChan <- expected

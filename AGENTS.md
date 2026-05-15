@@ -11,6 +11,8 @@
 | `make docker-e2e` | Full-stack Podman |
 | `make encrypt FILE=config.json` | Encrypt config (also: `FLOWDAV_PASSWORD=secret make encrypt FILE=config.json`) |
 | `make release` | Release archives |
+| `make openwrt` | Cross-compile for OpenWrt (MIPS little-endian, softfloat) |
+| `make fuzz` | Run fuzz tests (envelope parser, crypto, config loader) |
 | `flowdav-* --version` | Show version (client, server, encrypt) |
 | `curl --socks5h://127.0.0.1:11080 https://api.ipify.org` | Test SOCKS5 proxy |
 
@@ -37,10 +39,10 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 - Server has **zero listening ports** for data — all data via WebDAV storage (optional health endpoint on loopback only).
 - WebDAV is passive dumb storage; client encrypts/muxes, server decrypts/demuxes.
 - AES-256-GCM + HMAC-SHA256 on all data.
-- Random filenames `{dir_byte}{16_hex}` — no metadata leaks.
+- Random filenames `{dir_byte}{16_hex}` — no metadata leaks. Mapped to `{subdir}/{uppercase_hex}` on storage (direction byte → subdirectory: `r`→`invoices`, `s`→`receipts`).
 - DNS leak protection: raw resolver, UDP explicitly blocked.
 - Multi-WebDAV: random session assignment, round-robin upload fallback.
-- No global state.
+- No global state (exception: `transport.MaxMessageSize` / `storage.MaxFileSize` — package-level vars set at startup, justified by OOM prevention per `crypto.go:120`).
 - **Operational philosophy:** minimize external observability, avoid predictable patterns. When adding anything network-facing: is it optional? bounded? indistinguishable from noise?
 
 ## Config Quick Reference
@@ -87,30 +89,17 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 - **Don't clean what you don't understand** — double-select shutdown, redundant Store guards — often intentional.
 - **No cargo cult** — understand why a pattern exists before copying it. Just because it's in the codebase doesn't mean it belongs in your change.
 - **YAGNI** — don't add features "just in case". If you don't need it today, you probably won't need it tomorrow. Adding it later is cheaper than maintaining it now.
+- **Memory buffering** — txBuf per session is deliberate (2MB cap, blocks on backpressure instead of extra HTTP calls). `sync.Pool` for txBuf is premature without profiling.
 - **ACK/retransmission** — control packets add predictable patterns. Best-effort is deliberate.
 - **Persistent state / SQLite** — local artifacts and disk writes, no need.
 - **Verbose logging / event tracing** — if ever needed: local-only, off by default.
 - **Remote metrics (Prometheus, etc.)** — if ever needed: local-only, off by default.
 - **Config flag creep** — not every internal constant needs a user-facing flag. Defaults are meant to be defaults.
 
-## Known Weaknesses
-
-- **Memory buffering:** all proxied traffic kept in memory (txBuf, full file content).
-- **ACK/retransmit:** no reliability beyond Seq ordering. Envelope loss = data loss.
-## Test Gaps
-
-- `MultiBackend.isAvailable()` — cooldown expiry (`internal/storage/multi.go:43`)
-- `Engine.gcLoop()` — tombstone TTL edge cases (`internal/transport/engine.go:453`)
-- `Engine.pollLoop()` — empty poll backoff reset (`internal/transport/engine.go:305`)
-> Remove entries from this list once fixed.
-
 ## Backlog
 
-| Tag | Priority | Item | Notes |
-|-----|----------|------|-------|
-| 📋 | P2 | **Protocol documentation** (`protocol.md`) | No runtime impact |
-| ⚠️ | P2 | **Local-only metrics** — extend `Stats()` with queue depth, retry counters. Serve on `health_port` ONLY (localhost). | medium effort. **Never** add remote scrape endpoints. |
-| 📋 | ++ | **Fixed-size envelope mode** — optional padding | Medium priority. Reduces payload-size correlation. |
-| 📋 | ++ | **OpenWrt cross-build** | Low priority. No profile impact. |
-| ⚠️ | ++ | **Buffer pooling** — `sync.Pool` for txBuf | Low priority. No network impact. |
-| ⚠️ | ++ | **Fuzz testing** | Low priority. Dev-only, no runtime impact. |
+| Priority | Item | Effort |
+|----------|------|--------|
+| P2 | **Protocol documentation** (`protocol.md`) — binary format, crypto, direction byte | low |
+| P2 | **Local-only metrics** — queue depth, retry counters on `health_port`. No remote scrape endpoints | medium |
+| P3 | **Fixed-size envelope mode** — optional padding against payload-size correlation | high |

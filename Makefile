@@ -17,6 +17,11 @@ build-all: build
 	go build $(BUILD_FLAGS) -o $(BIN_DIR)/flowdav-server-linux-amd64 ./cmd/server
 	go build $(BUILD_FLAGS) -o $(BIN_DIR)/flowdav-encrypt-linux-amd64 ./cmd/encrypt
 
+openwrt:
+	CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build $(BUILD_FLAGS) -o $(BIN_DIR)/flowdav-client-mipsle ./cmd/client
+	CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build $(BUILD_FLAGS) -o $(BIN_DIR)/flowdav-server-mipsle ./cmd/server
+	CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build $(BUILD_FLAGS) -o $(BIN_DIR)/flowdav-encrypt-mipsle ./cmd/encrypt
+
 # Run tests
 test:
 	go test -race -count=1 -timeout 120s ./...
@@ -29,6 +34,11 @@ test-e2e:
 
 test-e2e-encrypted:
 	bash scripts/test_e2e.sh --encrypted
+
+fuzz:
+	go test -fuzztime=30s -fuzz FuzzEnvelopeUnmarshalBinary ./internal/transport/
+	go test -fuzztime=30s -fuzz FuzzEnvelopeDecode ./internal/transport/
+	go test -fuzztime=30s -fuzz FuzzDecodeEnvelopeWithCryptoNoCrypto ./internal/transport/
 
 # Static analysis
 lint:
@@ -66,15 +76,19 @@ image-to-bin: docker-build
 	chmod +x $(BIN_DIR)/flowdav-client $(BIN_DIR)/flowdav-server $(BIN_DIR)/flowdav-encrypt
 	@echo "Extracted binaries from image to $(BIN_DIR)/"
 
-# Release archives
+# Release archives (matches CI: ./github/workflows/release.yml)
 release:
-	mkdir -p $(RELEASE_DIR)
-	rm -rf $(RELEASE_DIR)/*
 	$(MAKE) build
-	tar -czf $(RELEASE_DIR)/flowdav-$(VERSION)-linux-amd64.tar.gz \
-		-C $(BIN_DIR) flowdav-client flowdav-server flowdav-encrypt \
-		-C $(CURDIR) README.md \
-		-C $(CURDIR)/configs flowdav_client.json.example flowdav_server.json.example
+	rm -rf $(RELEASE_DIR)/*
+	FOLDER=flowdav-$(VERSION)-linux-amd64; \
+	mkdir -p $(RELEASE_DIR)/$$FOLDER; \
+	cp $(BIN_DIR)/flowdav-client $(BIN_DIR)/flowdav-server $(BIN_DIR)/flowdav-encrypt \
+		$(RELEASE_DIR)/$$FOLDER/; \
+	cp README.md $(RELEASE_DIR)/$$FOLDER/; \
+	cp configs/flowdav_client.json.example configs/flowdav_server.json.example \
+		$(RELEASE_DIR)/$$FOLDER/; \
+	cd $(RELEASE_DIR) && tar -czf $$FOLDER.tar.gz $$FOLDER && \
+	rm -rf $$FOLDER
 
 clean:
 	rm -rf $(BIN_DIR) $(RELEASE_DIR)

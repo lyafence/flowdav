@@ -29,14 +29,6 @@ type VirtualConn struct {
 	readWake  chan struct{} // closed on Close() to unblock Read
 }
 
-func NewVirtualConn(s *Session, e *Engine) *VirtualConn {
-	return &VirtualConn{
-		session:  s,
-		engine:   e,
-		readWake: make(chan struct{}),
-	}
-}
-
 func NewVirtualConnWithOnClose(s *Session, e *Engine, fn func()) *VirtualConn {
 	return &VirtualConn{
 		session:  s,

@@ -79,11 +79,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to init WebDAV storage: %v", err)
 	}
-	if err := backend.Login(ctx); err != nil {
-		log.Fatalf("Backend login failed: %v", err)
-	}
 
-	cid := generateSessionID()[:8]
 	cryptoCfg := &transport.CryptoConfig{
 		EncKey:  appCfg.EncKeyDecoded,
 		HMacKey: appCfg.HMacKeyDecoded,
@@ -93,7 +89,7 @@ func main() {
 		storage.MaxFileSize = appCfg.MaxMessageSize
 	}
 
-	engine := transport.NewEngine(backend, true, cid, cryptoCfg)
+	engine := transport.NewEngine(backend, true, cryptoCfg)
 	if appCfg.RefreshRateMs > 0 {
 		engine.SetPollRate(appCfg.RefreshRateMs)
 	}
@@ -152,7 +148,6 @@ func main() {
 	// Create the library SOCKS5 server wrapping our custom WebDAV Engine tunnel
 	// Build server options
 	serverOpts := []socks5.Option{
-		socks5.WithAuthMethods([]socks5.Authenticator{}), // Initialize with empty slice
 		socks5.WithDial(func(dc context.Context, network, addr string) (net.Conn, error) {
 			sessionID := generateSessionID()
 
