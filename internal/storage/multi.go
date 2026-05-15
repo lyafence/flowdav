@@ -40,19 +40,18 @@ func (m *MultiBackend) NumBackends() int {
 	return len(m.backends)
 }
 
-func (m *MultiBackend) isAvailable(idx int) bool {
+func (m *MultiBackend) isAvailable(idx int) (ok bool, resetNow bool) {
 	if idx >= len(m.health) {
-		return false
+		return false, false
 	}
 	h := &m.health[idx]
 	if h.failures < cbThreshold {
-		return true
+		return true, false
 	}
 	if time.Since(h.lastFail) > cbCooldown {
-		h.failures = 0
-		return true
+		return true, true
 	}
-	return false
+	return false, false
 }
 
 func (m *MultiBackend) recordFailure(idx int) {
@@ -78,7 +77,10 @@ func (m *MultiBackend) nextAvailableBackend() (Backend, int) {
 	for i := 0; i < n; i++ {
 		idx := int(m.rrCounter % uint64(n))
 		m.rrCounter++
-		if m.isAvailable(idx) {
+		if ok, expired := m.isAvailable(idx); ok {
+			if expired {
+				m.health[idx].failures = 0
+			}
 			return m.backends[idx], idx
 		}
 	}
@@ -104,9 +106,11 @@ func (m *MultiBackend) backendByIndexLocked(idx uint8) Backend {
 		return nil
 	}
 	i := int(idx) % n
-	if !m.isAvailable(i) {
+	if ok, expired := m.isAvailable(i); !ok {
 		logger.Info("MultiBackend: backend %d unavailable (circuit open)", i)
 		return nil
+	} else if expired {
+		m.health[i].failures = 0
 	}
 	return m.backends[i]
 }

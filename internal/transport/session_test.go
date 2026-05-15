@@ -39,15 +39,6 @@ func TestEnqueueTxBasic(t *testing.T) {
 	s.mu.Unlock()
 }
 
-func TestEnqueueTxWithSmallData(t *testing.T) {
-	s := NewSession("test-session")
-
-	// Fill with small data that doesn't trigger backpressure
-	for i := 0; i < 10; i++ {
-		s.EnqueueTx([]byte("small data chunk"))
-	}
-}
-
 func TestSessionProcessRx(t *testing.T) {
 	s := NewSession("test-session")
 

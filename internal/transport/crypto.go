@@ -118,8 +118,8 @@ func (e *Envelope) EncodeWithCrypto(w io.Writer, cfg *CryptoConfig) error {
 }
 
 // MaxMessageSize defines the maximum allowed message size to prevent OOM attacks.
-// This is the sole package-level variable (set once at startup before any goroutines
-// begin). All other state lives inside structs — no global state.
+// Set once at startup before any goroutines begin. All other state lives inside
+// structs — no global state.
 var MaxMessageSize = 16 * 1024 * 1024 // 16 MB
 
 // DecodeEnvelopeWithCrypto reads and decrypts an envelope from the reader

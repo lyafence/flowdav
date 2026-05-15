@@ -82,14 +82,6 @@ func (p *DownloadWorkerPool) Start(ctx context.Context, stopCh <-chan struct{}) 
 					return
 				case <-stopCh:
 					return
-				default:
-				}
-
-				select {
-				case <-ctx.Done():
-					return
-				case <-stopCh:
-					return
 				case job, ok := <-p.jobs:
 					if !ok {
 						return

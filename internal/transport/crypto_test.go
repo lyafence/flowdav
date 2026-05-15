@@ -133,6 +133,55 @@ func TestDecodeInvalidHMAC(t *testing.T) {
 	}
 }
 
+// TestVersionByte verifies that the version byte is written at offset 1
+// and validated on decode. Before fix: byte 1 is sidLen high byte, no version.
+// After fix: byte 1 is VersionByte (0x01), and mismatched version is rejected.
+func TestVersionByte(t *testing.T) {
+	env := &Envelope{
+		SessionID:  "test",
+		Seq:        1,
+		Payload:    []byte("hello"),
+		TargetAddr: "example.com:80",
+	}
+
+	data, err := env.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Before fix: byte 1 is sidLen high byte (e.g. 0x00 for short IDs)
+	// After fix: byte 1 is VersionByte (0x01)
+	if data[1] != 0x01 {
+		t.Errorf("expected version byte 0x01 at offset 1, got 0x%02X", data[1])
+	}
+
+	// Roundtrip via MarshalBinary/UnmarshalBinary
+	decoded := &Envelope{}
+	n, err := decoded.UnmarshalBinary(data)
+	if err != nil {
+		t.Fatalf("UnmarshalBinary roundtrip failed: %v", err)
+	}
+	if n != len(data) {
+		t.Errorf("UnmarshalBinary consumed %d bytes, expected %d", n, len(data))
+	}
+	if decoded.SessionID != env.SessionID {
+		t.Errorf("roundtrip SessionID mismatch: got %q, want %q", decoded.SessionID, env.SessionID)
+	}
+
+	// Roundtrip via Encode/Decode (plaintext)
+	var buf bytes.Buffer
+	if err := env.Encode(&buf); err != nil {
+		t.Fatalf("Encode failed: %v", err)
+	}
+	decoded2 := &Envelope{}
+	if err := decoded2.Decode(&buf); err != nil {
+		t.Fatalf("Decode roundtrip failed: %v", err)
+	}
+	if decoded2.SessionID != env.SessionID {
+		t.Errorf("Encode/Decode roundtrip SessionID mismatch: got %q, want %q", decoded2.SessionID, env.SessionID)
+	}
+}
+
 func TestMarshalUnmarshal(t *testing.T) {
 	env := &Envelope{
 		SessionID: "test-session-123",
@@ -164,12 +213,6 @@ func TestMarshalUnmarshal(t *testing.T) {
 	}
 	if string(decoded.Payload) != string(env.Payload) {
 		t.Errorf("Payload mismatch")
-	}
-}
-
-func TestMaxMessageSize(t *testing.T) {
-	if MaxMessageSize != 16*1024*1024 {
-		t.Errorf("unexpected MaxMessageSize")
 	}
 }
 

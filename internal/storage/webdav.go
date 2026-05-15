@@ -16,7 +16,10 @@ import (
 	gowebdav "github.com/studio-b12/gowebdav"
 )
 
-// MaxFileSize is the maximum file size allowed for upload/download (16MB)
+// MaxFileSize limits upload/download size to prevent OOM attacks.
+// Set once at startup (by cmd/ entrypoints) before any goroutines begin,
+// matching transport.MaxMessageSize. Exception to "no global state" by
+// the same rationale as transport.MaxMessageSize — OOM prevention.
 var MaxFileSize = 16 * 1024 * 1024
 
 var (

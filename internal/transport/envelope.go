@@ -30,7 +30,8 @@ type Envelope struct {
 }
 
 const (
-	MagicByte = 0x1F
+	MagicByte   = 0x1F
+	VersionByte = 0x01
 )
 
 // MaxStringLen is the maximum allowed length for SessionID and TargetAddr
@@ -40,24 +41,25 @@ const MaxStringLen = 65535 // uint16 max
 func (e *Envelope) MarshalBinary() ([]byte, error) {
 	// Validate string lengths
 	if len(e.SessionID) > MaxStringLen {
-		return nil, fmt.Errorf("SessionID too long: %d bytes (max %d)", len(e.SessionID), MaxStringLen)
+		return nil, fmt.Errorf("session ID too long: %d bytes (max %d)", len(e.SessionID), MaxStringLen)
 	}
 	if len(e.TargetAddr) > MaxStringLen {
-		return nil, fmt.Errorf("TargetAddr too long: %d bytes (max %d)", len(e.TargetAddr), MaxStringLen)
+		return nil, fmt.Errorf("target address too long: %d bytes (max %d)", len(e.TargetAddr), MaxStringLen)
 	}
 	if len(e.Payload) > MaxMessageSize {
-		return nil, fmt.Errorf("Payload too large: %d bytes (max %d)", len(e.Payload), MaxMessageSize)
+		return nil, fmt.Errorf("payload too large: %d bytes (max %d)", len(e.Payload), MaxMessageSize)
 	}
 
-	totalSize := 1 + 2 + len(e.SessionID) + 8 + 2 + len(e.TargetAddr) + 1 + 4 + len(e.Payload) + 1
+	totalSize := 1 + 1 + 2 + len(e.SessionID) + 8 + 2 + len(e.TargetAddr) + 1 + 4 + len(e.Payload) + 1
 	if totalSize < 0 {
 		return nil, fmt.Errorf("envelope too large: %d bytes (overflow)", totalSize)
 	}
 	buf := make([]byte, totalSize)
 	
 	buf[0] = MagicByte
-	binary.BigEndian.PutUint16(buf[1:], uint16(len(e.SessionID)))
-	offset := 3
+	buf[1] = VersionByte
+	binary.BigEndian.PutUint16(buf[2:], uint16(len(e.SessionID)))
+	offset := 4
 	copy(buf[offset:], e.SessionID)
 	offset += len(e.SessionID)
 	
@@ -90,22 +92,23 @@ func (e *Envelope) MarshalBinary() ([]byte, error) {
 func (e *Envelope) Encode(w io.Writer) error {
 	// Validate string lengths
 	if len(e.SessionID) > MaxStringLen {
-		return fmt.Errorf("SessionID too long: %d bytes (max %d)", len(e.SessionID), MaxStringLen)
+		return fmt.Errorf("session ID too long: %d bytes (max %d)", len(e.SessionID), MaxStringLen)
 	}
 	if len(e.TargetAddr) > MaxStringLen {
-		return fmt.Errorf("TargetAddr too long: %d bytes (max %d)", len(e.TargetAddr), MaxStringLen)
+		return fmt.Errorf("target address too long: %d bytes (max %d)", len(e.TargetAddr), MaxStringLen)
 	}
 	if len(e.Payload) > MaxMessageSize {
-		return fmt.Errorf("Payload too large: %d bytes (max %d)", len(e.Payload), MaxMessageSize)
+		return fmt.Errorf("payload too large: %d bytes (max %d)", len(e.Payload), MaxMessageSize)
 	}
 
-	// Header needs: 1 magic + 2 sidLen + sid + 8 seq + 2 addrLen + addr + 1 close + 4 payloadLen + 1 backendIdx
-	hdrSize := 1 + 2 + len(e.SessionID) + 8 + 2 + len(e.TargetAddr) + 1 + 4 + 1
+	// Header needs: 1 magic + 1 version + 2 sidLen + sid + 8 seq + 2 addrLen + addr + 1 close + 4 payloadLen + 1 backendIdx
+	hdrSize := 1 + 1 + 2 + len(e.SessionID) + 8 + 2 + len(e.TargetAddr) + 1 + 4 + 1
 	hdr := make([]byte, hdrSize)
 	
 	hdr[0] = MagicByte
-	binary.BigEndian.PutUint16(hdr[1:], uint16(len(e.SessionID)))
-	offset := 3
+	hdr[1] = VersionByte
+	binary.BigEndian.PutUint16(hdr[2:], uint16(len(e.SessionID)))
+	offset := 4
 	copy(hdr[offset:], e.SessionID)
 	offset += len(e.SessionID)
 
@@ -143,20 +146,23 @@ func (e *Envelope) Encode(w io.Writer) error {
 // UnmarshalBinary deserializes the envelope from the custom Flow binary format.
 // It returns the number of bytes read or an error.
 func (e *Envelope) UnmarshalBinary(data []byte) (int, error) {
-	if len(data) < 1 {
+	if len(data) < 2 {
 		return 0, io.ErrUnexpectedEOF
 	}
 	if data[0] != MagicByte {
 		return 0, fmt.Errorf("invalid magic byte: expected 0x%X, got 0x%X", MagicByte, data[0])
 	}
+	if data[1] != VersionByte {
+		return 0, fmt.Errorf("unsupported version: expected 0x%02X, got 0x%02X", VersionByte, data[1])
+	}
 	
-	offset := 1
+	offset := 2
 	if len(data) < offset+2 { return 0, io.ErrUnexpectedEOF }
 	sidLen := int(binary.BigEndian.Uint16(data[offset:]))
 	offset += 2
 	
 	if sidLen > MaxStringLen {
-		return 0, fmt.Errorf("SessionID too long: %d bytes (max %d)", sidLen, MaxStringLen)
+		return 0, fmt.Errorf("session ID too long: %d bytes (max %d)", sidLen, MaxStringLen)
 	}
 	if len(data) < offset+sidLen { return 0, io.ErrUnexpectedEOF }
 	e.SessionID = string(data[offset : offset+sidLen])
@@ -171,7 +177,7 @@ func (e *Envelope) UnmarshalBinary(data []byte) (int, error) {
 	offset += 2
 	
 	if addrLen > MaxStringLen {
-		return 0, fmt.Errorf("TargetAddr too long: %d bytes (max %d)", addrLen, MaxStringLen)
+		return 0, fmt.Errorf("target address too long: %d bytes (max %d)", addrLen, MaxStringLen)
 	}
 	if len(data) < offset+addrLen { return 0, io.ErrUnexpectedEOF }
 	e.TargetAddr = string(data[offset : offset+addrLen])
@@ -212,13 +218,21 @@ func (e *Envelope) Decode(r io.Reader) error {
 		return fmt.Errorf("invalid magic byte: 0x%X", magicBuf[0])
 	}
 
+	var verBuf [1]byte
+	if _, err := io.ReadFull(r, verBuf[:]); err != nil {
+		return err
+	}
+	if verBuf[0] != VersionByte {
+		return fmt.Errorf("unsupported version: expected 0x%02X, got 0x%02X", VersionByte, verBuf[0])
+	}
+
 	var sidLenBuf [2]byte
 	if _, err := io.ReadFull(r, sidLenBuf[:]); err != nil {
 		return err
 	}
 	sidLen := int(binary.BigEndian.Uint16(sidLenBuf[:]))
 	if sidLen > MaxStringLen {
-		return fmt.Errorf("SessionID too long: %d bytes (max %d)", sidLen, MaxStringLen)
+		return fmt.Errorf("session ID too long: %d bytes (max %d)", sidLen, MaxStringLen)
 	}
 	sidBuf := make([]byte, sidLen)
 	if _, err := io.ReadFull(r, sidBuf); err != nil {
@@ -238,7 +252,7 @@ func (e *Envelope) Decode(r io.Reader) error {
 	}
 	addrLen := int(binary.BigEndian.Uint16(addrLenBuf[:]))
 	if addrLen > MaxStringLen {
-		return fmt.Errorf("TargetAddr too long: %d bytes (max %d)", addrLen, MaxStringLen)
+		return fmt.Errorf("target address too long: %d bytes (max %d)", addrLen, MaxStringLen)
 	}
 	addrBuf := make([]byte, addrLen)
 	if _, err := io.ReadFull(r, addrBuf); err != nil {

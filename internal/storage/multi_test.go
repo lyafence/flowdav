@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -288,6 +289,34 @@ func TestMultiBackendDeleteAllAdversarial(t *testing.T) {
 		!strings.Contains(err.Error(), "backend 2 timeout") ||
 		!strings.Contains(err.Error(), "backend 3 timeout") {
 		t.Errorf("Delete error should aggregate all backend failures, got: %v", err)
+	}
+}
+
+// TestIsAvailableNoSideEffect verifies that isAvailable is a pure query
+// with no side effects. Before fix: isAvailable mutates h.failures = 0,
+// violating command-query separation. After fix: it only reads state.
+func TestIsAvailableNoSideEffect(t *testing.T) {
+	m := NewMultiBackend([]Backend{&mockBackend{}})
+
+	m.mu.Lock()
+	m.health[0].failures = cbThreshold
+	m.health[0].lastFail = time.Now().Add(-cbCooldown * 2) // cooldown well past
+	expectedFailures := m.health[0].failures
+	m.mu.Unlock()
+
+	m.mu.Lock()
+	ok, expired := m.isAvailable(0)
+	failuresAfter := m.health[0].failures
+	m.mu.Unlock()
+
+	if !ok {
+		t.Error("isAvailable should return true after cooldown")
+	}
+	if !expired {
+		t.Error("isAvailable should report cooldown expired")
+	}
+	if failuresAfter != expectedFailures {
+		t.Errorf("isAvailable mutated health.failures: got %d, want %d (query method must have no side effects)", failuresAfter, expectedFailures)
 	}
 }
 

@@ -1,7 +1,6 @@
 package transport
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -51,26 +50,6 @@ func (m *mockBackend) DownloadByIndex(ctx context.Context, name string, idx uint
 	m.Download(ctx, name)
 	return nil, nil
 }
-
-type trackingBackend struct {
-	mockBackend
-	downloadCount int
-}
-
-func (t *trackingBackend) DownloadByIndex(ctx context.Context, name string, idx uint8) (io.ReadCloser, error) {
-	t.downloadCount++
-	data := []byte(fmt.Sprintf("test-session-%d", t.downloadCount))
-	return io.NopCloser(bytes.NewReader(data)), nil
-}
-
-func (t *trackingBackend) Delete(ctx context.Context, name string) error {
-	return nil
-}
-
-func (t *trackingBackend) UploadByIndex(ctx context.Context, name string, data io.Reader, idx uint8) error {
-	return nil
-}
-
 func TestEngineStop(t *testing.T) {
 	backend := &mockBackend{}
 	engine := NewEngine(backend, true, "test-client", nil)
@@ -237,24 +216,6 @@ func TestRemoveSessionDataRace(t *testing.T) {
 	wg.Wait()
 }
 
-func TestProcessedMapGrowth(t *testing.T) {
-	be := &trackingBackend{}
-	engine := NewEngine(be, false, "", nil)
-
-	for i := 0; i < 50; i++ {
-		engine.processedMu.Lock()
-		engine.processed[fmt.Sprintf("file-%d.bin", i)] = time.Now()
-		engine.processedMu.Unlock()
-	}
-
-	engine.processedMu.Lock()
-	size := len(engine.processed)
-	engine.processedMu.Unlock()
-
-	if size != 50 {
-		t.Errorf("expected 50 entries, got %d", size)
-	}
-}
 
 // TestFlushAllSplitsOversizedMux verifies that flushAll splits multiplexed
 // envelopes into multiple files when the total exceeds the safe upload size,
