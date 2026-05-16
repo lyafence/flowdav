@@ -5,7 +5,7 @@ BUILD_FLAGS := -trimpath -ldflags="-s -w -X main.version=$(VERSION)"
 COMPOSE_FILE := docker-compose.yml
 
 .PHONY: build test lint encrypt clean docker-build docker-e2e image-to-bin release \
-        compose-down clean-images clean-all nuke check hooks
+        compose-down clean-images clean-all nuke check hooks android-aar android-apk
 
 # Build binaries
 build:
@@ -93,6 +93,7 @@ release:
 clean:
 	rm -rf $(BIN_DIR) $(RELEASE_DIR)
 	rm -f configs/flowdav_test_*.json configs/.env
+	rm -f android/app/libs/flowdav.aar
 
 # Podman Compose lifecycle
 compose-down:
@@ -106,6 +107,23 @@ clean-images:
 nuke: compose-down clean-images clean
 	podman system prune -f 2>/dev/null || true
 	@echo "Environment reset complete. Run 'make docker-build && make docker-e2e' to rebuild."
+
+# Android AAR via gomobile (requires NDK + gomobile)
+#   ANDROID_HOME must be set. Install gomobile: go install golang.org/x/mobile/cmd/gomobile@latest
+#   Then: gomobile init
+android-aar:
+	go get golang.org/x/mobile@latest
+	gomobile bind -target=android -androidapi 21 -javapkg com.flowdav.app \
+		-o android/app/libs/flowdav.aar \
+		-trimpath -ldflags="-s -w" \
+		./cmd/android
+
+# Android APK (AAR + Gradle assemble)
+# Requires: ANDROID_HOME + OpenJDK 17+
+# Builds debug APK (auto-signed). For release APK, set up signing key in build.gradle.kts.
+android-apk: android-aar
+	cd android && ./gradlew assembleDebug --no-daemon
+	@echo "APK: android/app/build/outputs/apk/debug/app-debug.apk"
 
 # Install pre-commit hooks
 check: vet lint build test

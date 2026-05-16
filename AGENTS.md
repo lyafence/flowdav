@@ -5,16 +5,19 @@
 | Command | What |
 |---------|------|
 | `make build` | Build all binaries → `./bin/` |
+| `make check` | Full verification: vet → lint → build → test |
 | `make test` | Unit tests with race detector |
-| `make test-e2e` | E2E tests |
+| `make test-short` | Unit tests without race detector |
+| `make test-e2e` | E2E tests (requires podman/docker) |
 | `make test-e2e-encrypted` | E2E + encrypted configs |
-| `make docker-e2e` | Full-stack Podman |
-| `make encrypt FILE=config.json` | Encrypt config (also: `FLOWDAV_PASSWORD=secret make encrypt FILE=config.json`) |
+| `make docker-e2e` | Build + E2E via podman |
+| `make encrypt FILE=config.json` | Encrypt config (also: `FLOWDAV_PASSWORD=secret make encrypt`) |
+| `make fuzz` | Run fuzz tests (30s each: envelope, crypto, config) |
 | `make release` | Release archives |
-| `make openwrt` | Cross-compile for OpenWrt (MIPS little-endian, softfloat) |
-| `make fuzz` | Run fuzz tests (envelope parser, crypto, config loader) |
+| `make openwrt` | Cross-compile for MIPS little-endian, softfloat |
+| `make hooks` | Install pre-commit hooks (recommended) |
 | `flowdav-* --version` | Show version (client, server, encrypt) |
-| `curl --socks5h://127.0.0.1:11080 https://api.ipify.org` | Test SOCKS5 proxy |
+| `curl --socks5h://127.0.0.1:11080 https://api.ipify.org` | Test SOCKS5 via docker-compose |
 
 ## Package Map
 
@@ -42,8 +45,20 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 - Random filenames `{dir_byte}{16_hex}` — no metadata leaks. Mapped to `{subdir}/{uppercase_hex}` on storage (direction byte → subdirectory: `r`→`invoices`, `s`→`receipts`).
 - DNS leak protection: raw resolver, UDP explicitly blocked.
 - Multi-WebDAV: random session assignment, round-robin upload fallback.
-- No global state (exception: `transport.MaxMessageSize` / `storage.MaxFileSize` — package-level vars set at startup, justified by OOM prevention per `crypto.go:120`).
+- No global state (exception: `transport.MaxMessageSize` / `storage.MaxFileSize` — package-level vars set at startup, justified by OOM prevention per `internal/transport/crypto.go:120`).
 - **Operational philosophy:** minimize external observability, avoid predictable patterns. When adding anything network-facing: is it optional? bounded? indistinguishable from noise?
+
+## Pre-commit Hook
+
+The pre-commit hook (`.githooks/pre-commit`) checks:
+- `gofmt` on `cmd/ internal/`
+- `goimports` with `-local github.com/lyafence/flowdav`
+- `go vet ./...`
+- Bans `math/rand`, `os/exec` in production code
+- Bans `database/sql` without justification
+- Bans `sync.Pool` without benchmark
+
+Install with `make hooks`.
 
 ## Config Quick Reference
 
@@ -55,9 +70,9 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 
 | Document | Ships in archive | Audience | Constraint |
 |----------|-----------------|----------|------------|
-| `README.md` | 📋 Yes | End user | All commands must work from release tarball. **Never reference `make`, `go run`, or source tree paths.** |
-| `AGENTS.md` | ❌ No | Agent | Can reference `make`, scripts, Go toolchain. |
-| `CONTRIBUTING.md` | ❌ No | Developer / Agent | Development workflow, code style, PR guide. Overlaps with AGENTS.md by design — AGENTS.md is authoritative for agents. |
+| `README.md` | Yes | End user | All commands must work from release tarball. **Never reference `make`, `go run`, or source tree paths.** |
+| `AGENTS.md` | No | Agent | Can reference `make`, scripts, Go toolchain. |
+| `CONTRIBUTING.md` | No | Developer / Agent | Development workflow, code style, PR guide. AGENTS.md is authoritative for agents. |
 
 ## Coding Conventions
 
@@ -77,10 +92,10 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 ## Agent Workflow
 
 1. Read the relevant package before writing code.
-2. `make test` after any change — must pass with race detector.
-3. `make build` to verify compilation.
-4. SOCKS5/engine changes → `make test-e2e` or `make docker-e2e`.
-5. Encrypted config changes → `make test-e2e-encrypted`.
+2. `make check` after any change — full verification (vet → lint → build → test with race detector).
+3. SOCKS5/engine changes → `make test-e2e` or `make docker-e2e` (requires podman).
+4. Encrypted config changes → `make test-e2e-encrypted`.
+5. After adding/removing dependencies → `go mod tidy` (CI checks `git diff go.mod go.sum`).
 
 ## Anti-Patterns
 
@@ -100,5 +115,4 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 
 | Priority | Item | Effort |
 |----------|------|--------|
-| P2 | **Protocol documentation** (`protocol.md`) — binary format, crypto, direction byte | low |
 | P4 | **Fixed-size envelope mode** — optional padding against payload-size correlation. *Under question — TLS-level analysis bypasses padding anyway* | high |
