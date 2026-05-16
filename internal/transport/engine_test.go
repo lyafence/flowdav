@@ -247,12 +247,25 @@ func TestFlushAllSplitsOversizedMux(t *testing.T) {
 	// Call flushAll directly (this runs in the test goroutine)
 	engine.flushAll(ctx)
 
-	// Wait for upload workers to finish processing, then check results
+	// Wait for upload workers to finish all queued jobs before checking.
+	// Poll be.uploaded with timeout instead of relying on engine.Stop() —
+	// closing stopCh may cause workers to abandon jobs still in the uploadJobs buffer.
+	var uploadCount int
+	for i := 0; i < 50; i++ {
+		be.mu.Lock()
+		uploadCount = len(be.uploaded)
+		be.mu.Unlock()
+		if uploadCount >= 2 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
 	engine.Stop()
 
 	// 20 sessions × 1MB ≈ 20MB raw payload → must split into ≥2 files
-	if len(be.uploaded) < 2 {
-		t.Errorf("expected at least 2 uploaded files from oversized mux, got %d", len(be.uploaded))
+	if uploadCount < 2 {
+		t.Errorf("expected at least 2 uploaded files from oversized mux, got %d", uploadCount)
 	}
 }
 
