@@ -289,7 +289,7 @@ func LoadConfig(path, password string, askInteractive bool) (*AppConfig, error) 
 	if err == ErrEncryptedConfig {
 		if password == "" && askInteractive {
 			fmt.Print("Master password: ")
-			pass, err := term.ReadPassword(int(syscall.Stdin))
+			pass, err := term.ReadPassword(syscall.Stdin)
 			fmt.Println()
 			if err != nil {
 				return nil, fmt.Errorf("failed to read password: %w", err)

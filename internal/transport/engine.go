@@ -357,7 +357,9 @@ func (e *Engine) pollLoop(ctx context.Context) {
 			for _, entry := range files {
 				// GC: delete files older than 5 minutes
 				if time.Since(entry.ModTime) > 5*time.Minute {
-					e.backend.Delete(ctx, entry.Filename)
+					if err := e.backend.Delete(ctx, entry.Filename); err != nil {
+						logger.Info("GC delete error %s: %v", entry.Filename, err)
+					}
 					continue
 				}
 

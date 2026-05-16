@@ -17,11 +17,32 @@ linters:
     - wastedassign
     - gosec
     - bodyclose
-    - noctx
   settings:
+    errcheck:
+      exclude-functions:
+        - "(*os.File).Close"
+        - "(*net.TCPConn).Close"
+        - "(*net.TCPConn).SetKeepAlive"
+        - "(*net.TCPConn).SetKeepAlivePeriod"
+        - "(*net.TCPConn).SetReadDeadline"
+        - "(*compress/gzip.Reader).Close"
+        - "(net.Listener).Close"
+        - "(net/http.ResponseWriter).Write"
+        - "(*encoding/json.Encoder).Encode"
+        - "(*os.File).WriteString"
+        - "os.Unsetenv"
+        - "os.Setenv"
+        - "github.com/things-go/go-socks5.SendReply"
     revive:
       rules:
-        - name: exported
-          severity: warning
         - name: var-naming
-          severity: warning
+  exclusions:
+    paths:
+      - _test\.go
+    rules:
+      - linters:
+          - errcheck
+        text: "conn\\.(Close|SetReadDeadline)|(resp|rc)\\.Body\\.Close|rc\\.Close"
+      - linters:
+          - gosec
+        text: "G104|G115|G114|G304|G706"

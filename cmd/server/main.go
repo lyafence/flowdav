@@ -110,7 +110,12 @@ func main() {
 			logger.Info("Health server listening on %s", appCfg.HealthPort)
 			defer ln.Close()
 			go func() {
-				if err := http.Serve(ln, &mux); err != nil && !errors.Is(err, net.ErrClosed) {
+				srv := &http.Server{
+					Handler:      &mux,
+					ReadTimeout:  5 * time.Second,
+					WriteTimeout: 5 * time.Second,
+				}
+				if err := srv.Serve(ln); err != nil && !errors.Is(err, net.ErrClosed) {
 					logger.Info("Health server error: %v", err)
 				}
 			}()

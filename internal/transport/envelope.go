@@ -128,7 +128,6 @@ func (e *Envelope) Encode(w io.Writer) error {
 	offset++
 
 	binary.BigEndian.PutUint32(hdr[offset:], uint32(len(e.Payload)))
-	offset += 4
 
 	if _, err := w.Write(hdr); err != nil {
 		return err
