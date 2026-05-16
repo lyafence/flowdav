@@ -48,8 +48,8 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 ## Config Quick Reference
 
 - Flags: `-c config.json`, `-l loglevel`, `-p master_password`, `--version`
-- Fields: `enc_key` / `hmac_key` (32-byte base64), `max_message_size` (default 16MB), `max_sessions` (default 0 = unlimited), `webdav.backends` (array), `health_port` (e.g. `"127.0.0.1:9191"`)
-- Health: `GET /health` on `health_port` → JSON stats
+- Fields: `enc_key` / `hmac_key` (32-byte base64), `max_message_size` (default 16MB), `max_sessions` (default 0 = unlimited), `webdav.backends` (array), `health_port` (e.g. `"127.0.0.1:9191"`), `log_level` (`debug`, `info`, `warn`, `error`)
+- Health: `GET /health` on `health_port` → JSON stats (active sessions, retry counters, tx queue depth, per-backend circuit breaker state)
 
 ## Documentation Audiences
 
@@ -101,5 +101,4 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 | Priority | Item | Effort |
 |----------|------|--------|
 | P2 | **Protocol documentation** (`protocol.md`) — binary format, crypto, direction byte | low |
-| P2 | **Local-only metrics** — queue depth, retry counters on `health_port`. No remote scrape endpoints | medium |
-| P3 | **Fixed-size envelope mode** — optional padding against payload-size correlation | high |
+| P4 | **Fixed-size envelope mode** — optional padding against payload-size correlation. *Under question — TLS-level analysis bypasses padding anyway* | high |

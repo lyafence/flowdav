@@ -14,22 +14,21 @@ const (
 	retryBaseWait = 100 * time.Millisecond
 )
 
-func retryStorage(ctx context.Context, stopCh <-chan struct{}, desc string, fn func() error) error {
-	var err error
+func retryStorage(ctx context.Context, stopCh <-chan struct{}, desc string, fn func() error) (attempts int, err error) {
 	for attempt := 0; attempt < retryAttempts; attempt++ {
 		if attempt > 0 {
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				return attempt, ctx.Err()
 			case <-stopCh:
-				return context.Canceled
+				return attempt, context.Canceled
 			default:
 			}
 		}
 
 		err = fn()
 		if err == nil {
-			return nil
+			return attempt + 1, nil
 		}
 
 		if attempt < retryAttempts-1 {
@@ -40,15 +39,15 @@ func retryStorage(ctx context.Context, stopCh <-chan struct{}, desc string, fn f
 			case <-timer.C:
 			case <-ctx.Done():
 				timer.Stop()
-				return ctx.Err()
+				return attempt + 1, ctx.Err()
 			case <-stopCh:
 				timer.Stop()
-				return context.Canceled
+				return attempt + 1, context.Canceled
 			}
 		}
 	}
 	logger.Info("retry %s: all %d attempts failed: %v", desc, retryAttempts, err)
-	return err
+	return retryAttempts, err
 }
 
 type downloadJob struct {
@@ -129,11 +128,14 @@ func (p *DownloadWorkerPool) processDownload(ctx context.Context, stopCh <-chan 
 	}
 
 	var rc io.ReadCloser
-	err := retryStorage(ctx, stopCh, "download "+job.filename, func() error {
+	attempts, err := retryStorage(ctx, stopCh, "download "+job.filename, func() error {
 		var err error
 		rc, err = e.backend.DownloadByIndex(ctx, job.filename, job.backendIdx)
 		return err
 	})
+	if attempts > 1 {
+		e.downloadRetries.Add(int64(attempts - 1))
+	}
 	if err != nil {
 		if rc != nil {
 			rc.Close()
@@ -197,7 +199,7 @@ func (p *DownloadWorkerPool) processDownload(ctx context.Context, stopCh <-chan 
 		}
 	}
 
-	if err := retryStorage(ctx, stopCh, "delete "+job.filename, func() error {
+	if _, err := retryStorage(ctx, stopCh, "delete "+job.filename, func() error {
 		return e.backend.Delete(ctx, job.filename)
 	}); err != nil {
 		logger.Info("delete error %s: %v — keeping processed entry for TTL-based retry", job.filename, err)

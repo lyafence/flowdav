@@ -122,7 +122,9 @@ fi
 
 # ── Phase 5: Start services ────────────────
 echo "--- Phase 5: Start Services ---"
-$COMPOSE -f "$PROJECT_DIR/docker-compose.yml" down 2>/dev/null || true
+# -v removes anonymous volumes (rclone /data writable layer), preventing
+# stale WebDAV files with mismatched encryption keys from polluting a new run.
+$COMPOSE -f "$PROJECT_DIR/docker-compose.yml" down -v 2>/dev/null || true
 if $ENCRYPTED; then
     export FLOWDAV_PASSWORD=$(grep FLOWDAV_PASSWORD "$PROJECT_DIR/configs/.env" | cut -d= -f2)
     $COMPOSE -f "$PROJECT_DIR/docker-compose.yml" up -d 2>&1
@@ -132,6 +134,7 @@ fi
 
 log_info "Waiting for services to become healthy..."
 wait_for_health "webdav" "webdav-test" 'wget -q --spider http://test:test@localhost:8080/' 15 2 || true
+wait_for_health "webdav4 (single)" "webdav-test-4" 'wget -q --spider http://test:test@localhost:8080/' 15 2 || true
 wait_for_health "flow-server" "flow-server" 'curl -sf http://127.0.0.1:9190/health' 10 3 || true
 wait_for_health "flow-client" "flow-client" 'curl -sf http://127.0.0.1:9191/health' 10 3 || true
 wait_for_health "flow-server-multi" "flow-server-multi" 'curl -sf http://127.0.0.1:9190/health' 10 3 || true
@@ -140,10 +143,18 @@ echo ""
 
 # ── Phase 6: SOCKS5 Proxy Tests ────────────
 echo "--- Phase 6: Proxy Connectivity Tests ---"
+log_info "Stabilizing for 5s after health checks..."
+sleep 5
+
+# Helper: safe_curl wraps curl with || true so set -e does not abort
+# the script on transient proxy delays. Test failures are tracked by log_fail.
+safe_curl() {
+    curl -s "$@" --max-time "$TIMEOUT" 2>&1 || true
+}
 
 # Test 1: Basic SOCKS5
 log_info "Test 1: Basic SOCKS5 proxy..."
-RESULT=$(curl -s --proxy socks5h://127.0.0.1:11080 https://api.ipify.org --max-time "$TIMEOUT" 2>&1)
+RESULT=$(safe_curl --proxy socks5h://127.0.0.1:11080 https://api.ipify.org)
 if [ -n "$RESULT" ] && [ ${#RESULT} -lt 20 ] && [[ "$RESULT" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     log_pass "Test 1: Got IP = $RESULT"
 else
@@ -152,8 +163,8 @@ fi
 
 # Test 2: HTTPS site
 log_info "Test 2: HTTPS (google.com)..."
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --proxy socks5h://127.0.0.1:11080 \
-    "https://www.google.com" --max-time "$TIMEOUT" --max-redirs 0 2>&1)
+HTTP_CODE=$(safe_curl -o /dev/null -w "%{http_code}" --proxy socks5h://127.0.0.1:11080 \
+    "https://www.google.com" --max-redirs 0)
 if [ "$HTTP_CODE" = "200" ]; then
     log_pass "Test 2: google.com 200"
 else
@@ -162,7 +173,7 @@ fi
 
 # Test 3: HTTP site
 log_info "Test 3: HTTP (example.com)..."
-RESULT=$(curl -s --proxy socks5h://127.0.0.1:11080 "http://example.com" --max-time "$TIMEOUT" 2>&1 | head -c 50)
+RESULT=$(safe_curl --proxy socks5h://127.0.0.1:11080 "http://example.com" | head -c 50)
 if [ -n "$RESULT" ] && [ ${#RESULT} -gt 10 ]; then
     log_pass "Test 3: HTTP via proxy (${#RESULT} bytes)"
 else
@@ -171,7 +182,7 @@ fi
 
 # Test 4: Direct IP (DNS leak check)
 log_info "Test 4: Direct IP..."
-RESULT=$(curl -s --proxy socks5h://127.0.0.1:11080 "http://216.239.38.120/" --max-time "$TIMEOUT" 2>&1 | head -c 50)
+RESULT=$(safe_curl --proxy socks5h://127.0.0.1:11080 "http://216.239.38.120/" | head -c 50)
 if [ -n "$RESULT" ] && [ ${#RESULT} -gt 10 ]; then
     log_pass "Test 4: Direct IP connection works"
 else
@@ -180,7 +191,7 @@ fi
 
 # Test 5: Multi-backend proxy
 log_info "Test 5: Multi-backend proxy..."
-RESULT=$(curl -s --proxy socks5h://127.0.0.1:11081 https://api.ipify.org --max-time "$TIMEOUT" 2>&1)
+RESULT=$(safe_curl --proxy socks5h://127.0.0.1:11081 https://api.ipify.org)
 if [ -n "$RESULT" ] && [[ "$RESULT" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     log_pass "Test 5: Multi-backend IP = $RESULT"
 else
@@ -191,7 +202,7 @@ fi
 echo ""
 echo "--- Cleanup ---"
 log_info "Stopping services..."
-$COMPOSE -f "$PROJECT_DIR/docker-compose.yml" down 2>&1 || true
+$COMPOSE -f "$PROJECT_DIR/docker-compose.yml" down -v 2>&1 || true
 log_info "Cleaning up test configs..."
 rm -f "$PROJECT_DIR"/configs/flowdav_test_*.json "$PROJECT_DIR"/configs/.env 2>/dev/null || true
 echo ""

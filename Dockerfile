@@ -1,6 +1,6 @@
 FROM golang:1.26.3-alpine AS builder
 
-RUN apk add --no-cache git make
+RUN apk --no-cache add git make
 
 WORKDIR /app
 COPY go.mod go.sum ./
@@ -28,6 +28,6 @@ RUN chown -R flow:flow /app/configs
 
 USER flow
 
-CMD ["sh", "-c", "echo 'flowdav - Usage:'; echo '  Copy and edit example config:'; echo '  cp /app/configs/flowdav_client.json.example /app/configs/config.json'; echo '  docker run --rm -v ./config.json:/app/configs/config.json flowdav flowdav-client -c /app/configs/config.json'; echo '  docker run --rm -v ./config.json:/app/configs/config.json flowdav flowdav-server -c /app/configs/config.json'"]
+CMD ["sh", "-c", "echo 'flowdav - Lightweight SOCKS5 proxy over WebDAV'; echo 'Images: https://github.com/lyafence/flowdav/pkgs/container/flowdav'; echo ''; echo 'Usage:'; echo '  docker run --rm -v ./config.json:/app/configs/config.json ghcr.io/lyafence/flowdav flowdav-client -c /app/configs/config.json'; echo '  docker run --rm -v ./config.json:/app/configs/config.json ghcr.io/lyafence/flowdav flowdav-server -c /app/configs/config.json'; echo '  docker run --rm ghcr.io/lyafence/flowdav flowdav-encrypt --gen-keys < config.json > config.enc'; echo ''; echo 'Example configs are in /app/configs/ (flowdav_client.json.example, flowdav_server.json.example).'; echo 'See README.md in /app/ for full documentation.'"]
 LABEL maintainer="lyafence" \
        description="Lightweight SOCKS5 proxy using WebDAV storage"

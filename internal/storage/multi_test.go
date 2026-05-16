@@ -132,29 +132,33 @@ func TestMultiBackend(t *testing.T) {
 	// Test NumBackends.
 	require.Equal(t, 3, multi.NumBackends(), "NumBackends should return the number of backends")
 
-	// Test RoundRobinBackend: first three calls should return mock1, mock2, mock3, then wrap.
-	first := multi.RoundRobinBackend()
-	second := multi.RoundRobinBackend()
-	third := multi.RoundRobinBackend()
-	fourth := multi.RoundRobinBackend()
+	// Test round-robin: first three calls should return mock1, mock2, mock3, then wrap.
+	multi.mu.Lock()
+	first, _ := multi.nextAvailableBackend()
+	second, _ := multi.nextAvailableBackend()
+	third, _ := multi.nextAvailableBackend()
+	fourth, _ := multi.nextAvailableBackend()
+	multi.mu.Unlock()
 
-	require.Equal(t, mock1, first, "First RoundRobinBackend should return mock1")
-	require.Equal(t, mock2, second, "Second RoundRobinBackend should return mock2")
-	require.Equal(t, mock3, third, "Third RoundRobinBackend should return mock3")
-	require.Equal(t, mock1, fourth, "Fourth RoundRobinBackend should wrap to mock1")
+	require.Equal(t, mock1, first, "First backend should return mock1")
+	require.Equal(t, mock2, second, "Second backend should return mock2")
+	require.Equal(t, mock3, third, "Third backend should return mock3")
+	require.Equal(t, mock1, fourth, "Fourth backend should wrap to mock1")
 
-	// Test BackendByIndex: index 0 -> mock1, 1 -> mock2, 2 -> mock3, 3 -> mock0 (wrap), etc.
-	b0 := multi.BackendByIndex(0)
-	b1 := multi.BackendByIndex(1)
-	b2 := multi.BackendByIndex(2)
-	b3 := multi.BackendByIndex(3)
-	b4 := multi.BackendByIndex(4)
+	// Test backendByIndexLocked: index 0 -> mock1, 1 -> mock2, 2 -> mock3, 3 -> mock0 (wrap), etc.
+	multi.mu.Lock()
+	b0 := multi.backendByIndexLocked(0)
+	b1 := multi.backendByIndexLocked(1)
+	b2 := multi.backendByIndexLocked(2)
+	b3 := multi.backendByIndexLocked(3)
+	b4 := multi.backendByIndexLocked(4)
+	multi.mu.Unlock()
 
-	require.Equal(t, mock1, b0, "BackendByIndex(0) should return mock1")
-	require.Equal(t, mock2, b1, "BackendByIndex(1) should return mock2")
-	require.Equal(t, mock3, b2, "BackendByIndex(2) should return mock3")
-	require.Equal(t, mock1, b3, "BackendByIndex(3) should wrap to mock1")
-	require.Equal(t, mock2, b4, "BackendByIndex(4) should wrap to mock2")
+	require.Equal(t, mock1, b0, "backendByIndexLocked(0) should return mock1")
+	require.Equal(t, mock2, b1, "backendByIndexLocked(1) should return mock2")
+	require.Equal(t, mock3, b2, "backendByIndexLocked(2) should return mock3")
+	require.Equal(t, mock1, b3, "backendByIndexLocked(3) should wrap to mock1")
+	require.Equal(t, mock2, b4, "backendByIndexLocked(4) should wrap to mock2")
 
 	// Test Login: should call Login on all backends.
 	mock1.LoginFunc = func(ctx context.Context) error { return nil }
@@ -343,10 +347,16 @@ func TestCircuitBreakerTripsOnFailures(t *testing.T) {
 	}
 
 	// Backend 0 should now be unavailable
-	require.Nil(t, multi.BackendByIndex(0), "backend 0 should be tripped")
+	multi.mu.Lock()
+	b0 := multi.backendByIndexLocked(0)
+	multi.mu.Unlock()
+	require.Nil(t, b0, "backend 0 should be tripped")
 
 	// Backend 1 unaffected
-	require.NotNil(t, multi.BackendByIndex(1), "backend 1 should still be available")
+	multi.mu.Lock()
+	b1 := multi.backendByIndexLocked(1)
+	multi.mu.Unlock()
+	require.NotNil(t, b1, "backend 1 should still be available")
 }
 
 func TestRandBackendIndex(t *testing.T) {

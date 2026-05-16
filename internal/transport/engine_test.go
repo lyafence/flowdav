@@ -164,7 +164,7 @@ func TestBackendIdxDataRace(t *testing.T) {
 				Payload:    []byte("hello"),
 				BackendIdx: uint8(i % 4),
 			}
-			if s := engine.GetSession(fmt.Sprintf("race-session-%d", i)); s != nil {
+			if s := engine.sessionByID(fmt.Sprintf("race-session-%d", i)); s != nil {
 				s.ProcessRx(env)
 			}
 		}
@@ -178,7 +178,7 @@ func TestBackendIdxDataRace(t *testing.T) {
 		for iter := 0; iter < 50; iter++ {
 			engine.flushAll(ctx)
 			for j := range numSessions {
-				if s := engine.GetSession(fmt.Sprintf("race-session-%d", j)); s != nil {
+				if s := engine.sessionByID(fmt.Sprintf("race-session-%d", j)); s != nil {
 					s.mu.Lock()
 					s.txBuf = []byte("more data")
 					s.mu.Unlock()

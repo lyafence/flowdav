@@ -52,8 +52,7 @@ gen_config "flowdav_test_client.json" '{
   "listen_addr": "0.0.0.0:11080",
   "storage_type": "webdav",
   "webdav": {
-    "provider": "custom",
-    "url": "http://webdav-test:8080",
+    "url": "http://webdav-test-4:8080",
     "login": "test",
     "token": "test",
     "base_path": "data_sync"
@@ -71,8 +70,7 @@ gen_config "flowdav_test_client.json" '{
 gen_config "flowdav_test_server.json" '{
   "storage_type": "webdav",
   "webdav": {
-    "provider": "custom",
-    "url": "http://webdav-test:8080",
+    "url": "http://webdav-test-4:8080",
     "login": "test",
     "token": "test",
     "base_path": "data_sync"
@@ -91,22 +89,19 @@ gen_config "flowdav_test_client_multi.json" '{
   "webdav": {
     "backends": [
       {
-        "provider": "custom",
-        "url": "http://webdav-test:8080",
+            "url": "http://webdav-test:8080",
         "login": "test",
         "token": "test",
         "base_path": "data_sync"
       },
       {
-        "provider": "custom",
-        "url": "http://webdav-test-2:8080",
+            "url": "http://webdav-test-2:8080",
         "login": "test",
         "token": "test",
         "base_path": "data_sync"
       },
       {
-        "provider": "custom",
-        "url": "http://webdav-test-3:8080",
+            "url": "http://webdav-test-3:8080",
         "login": "test",
         "token": "test",
         "base_path": "data_sync"
@@ -128,22 +123,19 @@ gen_config "flowdav_test_server_multi.json" '{
   "webdav": {
     "backends": [
       {
-        "provider": "custom",
-        "url": "http://webdav-test:8080",
+            "url": "http://webdav-test:8080",
         "login": "test",
         "token": "test",
         "base_path": "data_sync"
       },
       {
-        "provider": "custom",
-        "url": "http://webdav-test-2:8080",
+            "url": "http://webdav-test-2:8080",
         "login": "test",
         "token": "test",
         "base_path": "data_sync"
       },
       {
-        "provider": "custom",
-        "url": "http://webdav-test-3:8080",
+            "url": "http://webdav-test-3:8080",
         "login": "test",
         "token": "test",
         "base_path": "data_sync"

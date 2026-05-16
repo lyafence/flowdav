@@ -62,13 +62,37 @@ services:
     networks:
       - flow-net
 
+  # Dedicated WebDAV for single-backend tests (isolated from multi-backend
+  # to prevent cross-contamination — different encryption keys would cause
+  # HMAC failures and file deletion on the other pair).
+  webdav4:
+    image: docker.io/rclone/rclone:latest
+    container_name: webdav-test-4
+    mem_limit: 64m
+    command: serve webdav /data --addr 0.0.0.0:8080 --user test --pass test
+    ports:
+      - "8083:8080"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q --spider http://test:test@localhost:8080/ || exit 1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - flow-net
+
   flow-server:
     image: localhost/flowdav:latest
     container_name: flow-server
     stop_grace_period: 10s
     mem_limit: 64m
     depends_on:
-      webdav:
+      webdav4:
         condition: service_healthy
     volumes:
       - ./configs/flowdav_test_server.json:/app/configs/flowdav_test_server.json:Z
@@ -91,7 +115,7 @@ services:
     stop_grace_period: 10s
     mem_limit: 64m
     depends_on:
-      webdav:
+      webdav4:
         condition: service_healthy
       flow-server:
         condition: service_healthy

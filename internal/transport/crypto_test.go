@@ -168,14 +168,14 @@ func TestVersionByte(t *testing.T) {
 		t.Errorf("roundtrip SessionID mismatch: got %q, want %q", decoded.SessionID, env.SessionID)
 	}
 
-	// Roundtrip via Encode/Decode (plaintext)
-	var buf bytes.Buffer
-	if err := env.Encode(&buf); err != nil {
-		t.Fatalf("Encode failed: %v", err)
+	// Roundtrip via MarshalBinary/UnmarshalBinary (plaintext)
+	data2, err := env.MarshalBinary()
+	if err != nil {
+		t.Fatalf("MarshalBinary failed: %v", err)
 	}
 	decoded2 := &Envelope{}
-	if err := decoded2.Decode(&buf); err != nil {
-		t.Fatalf("Decode roundtrip failed: %v", err)
+	if _, err := decoded2.UnmarshalBinary(data2); err != nil {
+		t.Fatalf("UnmarshalBinary roundtrip failed: %v", err)
 	}
 	if decoded2.SessionID != env.SessionID {
 		t.Errorf("Encode/Decode roundtrip SessionID mismatch: got %q, want %q", decoded2.SessionID, env.SessionID)
@@ -247,7 +247,10 @@ func TestDecodeWithNilCrypto(t *testing.T) {
 
 	pr, pw := io.Pipe()
 	go func() {
-		env.Encode(pw)
+		data, err := env.MarshalBinary()
+		if err == nil {
+			pw.Write(data)
+		}
 		pw.Close()
 	}()
 

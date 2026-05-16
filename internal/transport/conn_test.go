@@ -40,7 +40,7 @@ func TestVirtualConnClosePreservesSessionForFlush(t *testing.T) {
 	v.Close()
 
 	// Session must remain in engine after Close for flushLoop to upload remaining txBuf
-	if engine.GetSession("test-close-preserve") == nil {
+	if engine.sessionByID("test-close-preserve") == nil {
 		t.Fatal("expected session to remain in engine after Close for pending flush")
 	}
 

@@ -17,15 +17,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/lyafence/flowdav/internal/config"
-
-	"github.com/lyafence/flowdav/internal/logger"
-
-	"github.com/lyafence/flowdav/internal/storage"
-
-	"github.com/lyafence/flowdav/internal/transport"
 	"github.com/things-go/go-socks5"
 	"github.com/things-go/go-socks5/statute"
+
+	"github.com/lyafence/flowdav/internal/config"
+	"github.com/lyafence/flowdav/internal/logger"
+	"github.com/lyafence/flowdav/internal/storage"
+	"github.com/lyafence/flowdav/internal/transport"
 )
 
 func generateSessionID() string {

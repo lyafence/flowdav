@@ -36,6 +36,8 @@ A lightweight SOCKS5 proxy that uses WebDAV as a transport layer. Route your tra
 
 ### 1. Install
 
+#### Option A — Binary archive
+
 Download the latest archive from [GitHub Releases](https://github.com/lyafence/flowdav/releases):
 
 ```bash
@@ -168,12 +170,35 @@ Or set it system-wide:
 export ALL_PROXY=socks5://127.0.0.1:1080
 ```
 
+### 4. Docker
+
+Images are published on [GitHub Container Registry](https://github.com/lyafence/flowdav/pkgs/container/flowdav).
+Run any binary by passing it as the command (`docker run` pulls automatically if not cached):
+
+```bash
+# start the server (at home)
+docker run --rm -v ./server.json:/app/configs/config.json \
+  ghcr.io/lyafence/flowdav flowdav-server -c /app/configs/config.json
+
+# start the client (at cafe), exposes SOCKS5 on 127.0.0.1:1080
+docker run --rm -v ./client.json:/app/configs/config.json \
+  ghcr.io/lyafence/flowdav flowdav-client -c /app/configs/config.json
+
+# generate encrypted config
+docker run --rm -i ghcr.io/lyafence/flowdav flowdav-encrypt --gen-keys < server.json > server.json.enc
+
+# run with encrypted config
+docker run --rm -v ./server.json.enc:/app/configs/server.json.enc \
+  -e FLOWDAV_PASSWORD=secret \
+  ghcr.io/lyafence/flowdav flowdav-server -p -c /app/configs/server.json.enc
+```
+
 ## Config Files
 
 | File | Type | listen_addr | Health Port |
 |------|------|-------------|-------------|
-| `flowdav_client.json.example` | Client | `127.0.0.1:1080` | `127.0.0.1:9191` |
-| `flowdav_server.json.example` | Server | No | `127.0.0.1:9190` |
+| `flowdav_client.json.example` | Client | `127.0.0.1:1080` | — |
+| `flowdav_server.json.example` | Server | No | — |
 
 ### Config Reference
 
@@ -184,6 +209,7 @@ export ALL_PROXY=socks5://127.0.0.1:1080
 | `enc_key` | string | — | ✓ | ✓ | 32-byte AES-256 key, base64 |
 | `hmac_key` | string | — | ✓ | ✓ | 32-byte HMAC-SHA256 key, base64 |
 | `listen_addr` | string | — | ✓ | | SOCKS5 listener (`host:port`) |
+| `log_level` | string | `"info"` | ✓ | ✓ | Log level (`debug`, `info`, `warn`, `error`) |
 | `socks5_user` | string | `""` | ✓ | | SOCKS5 auth username |
 | `socks5_pass` | string | `""` | ✓ | | SOCKS5 auth password |
 | `max_connections` | int | `100` | ✓ | | Max concurrent SOCKS5 conns |
@@ -199,7 +225,28 @@ Client-only fields (`listen_addr`, `socks5_user`, `socks5_pass`, `max_connection
 
 ## Health Check
 
-Both the client and server support an optional HTTP health endpoint. Set `health_port` in the config to enable it (e.g., `"127.0.0.1:9191"`). The endpoint `GET /health` returns JSON with engine statistics (active sessions, processed files, role, poll/flush rates).
+Both the client and server support an optional HTTP health endpoint. Set `health_port` in the config to enable it (e.g., `"127.0.0.1:9191"`). The endpoint `GET /health` returns JSON with engine statistics:
+
+```json
+{
+  "active_sessions": 0,
+  "upload_retries": 0,
+  "download_retries": 0,
+  "tx_queue_bytes": 0,
+  "tx_queue_sessions": 0,
+  "poll_ticker_ms": 500,
+  "flush_ticker_ms": 500,
+  "role": "client",
+  "backends": [
+    {"url": "http://webdav1:8080", "available": true, "failures": 0}
+  ]
+}
+```
+
+- `active_sessions` / `closed_sessions` — current and completed WebDAV sessions.
+- `upload_retries` / `download_retries` — cumulative storage retry counters (reset on restart).
+- `tx_queue_bytes` / `tx_queue_sessions` — transmit buffer backpressure: how much data is waiting to be uploaded.
+- `backends` — per-backend health for multi-WebDAV setups (circuit breaker state). Omitted for single-backend configs.
 
 ## Security
 

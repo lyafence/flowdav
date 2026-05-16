@@ -88,60 +88,6 @@ func (e *Envelope) MarshalBinary() ([]byte, error) {
 	return buf, nil
 }
 
-// Encode writes the envelope directly to an io.Writer.
-func (e *Envelope) Encode(w io.Writer) error {
-	// Validate string lengths
-	if len(e.SessionID) > MaxStringLen {
-		return fmt.Errorf("session ID too long: %d bytes (max %d)", len(e.SessionID), MaxStringLen)
-	}
-	if len(e.TargetAddr) > MaxStringLen {
-		return fmt.Errorf("target address too long: %d bytes (max %d)", len(e.TargetAddr), MaxStringLen)
-	}
-	if len(e.Payload) > MaxMessageSize {
-		return fmt.Errorf("payload too large: %d bytes (max %d)", len(e.Payload), MaxMessageSize)
-	}
-
-	// Header needs: 1 magic + 1 version + 2 sidLen + sid + 8 seq + 2 addrLen + addr + 1 close + 4 payloadLen + 1 backendIdx
-	hdrSize := 1 + 1 + 2 + len(e.SessionID) + 8 + 2 + len(e.TargetAddr) + 1 + 4 + 1
-	hdr := make([]byte, hdrSize)
-
-	hdr[0] = MagicByte
-	hdr[1] = VersionByte
-	binary.BigEndian.PutUint16(hdr[2:], uint16(len(e.SessionID)))
-	offset := 4
-	copy(hdr[offset:], e.SessionID)
-	offset += len(e.SessionID)
-
-	binary.BigEndian.PutUint64(hdr[offset:], e.Seq)
-	offset += 8
-
-	binary.BigEndian.PutUint16(hdr[offset:], uint16(len(e.TargetAddr)))
-	offset += 2
-	copy(hdr[offset:], e.TargetAddr)
-	offset += len(e.TargetAddr)
-
-	if e.Close {
-		hdr[offset] = 1
-	} else {
-		hdr[offset] = 0
-	}
-	offset++
-
-	binary.BigEndian.PutUint32(hdr[offset:], uint32(len(e.Payload)))
-
-	if _, err := w.Write(hdr); err != nil {
-		return err
-	}
-	if len(e.Payload) > 0 {
-		_, err := w.Write(e.Payload)
-		if err != nil {
-			return err
-		}
-	}
-	_, err := w.Write([]byte{e.BackendIdx})
-	return err
-}
-
 // UnmarshalBinary deserializes the envelope from the custom Flow binary format.
 // It returns the number of bytes read or an error.
 func (e *Envelope) UnmarshalBinary(data []byte) (int, error) {

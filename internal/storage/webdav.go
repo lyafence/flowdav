@@ -11,8 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lyafence/flowdav/internal/logger"
 	gowebdav "github.com/studio-b12/gowebdav"
+
+	"github.com/lyafence/flowdav/internal/logger"
 )
 
 // MaxFileSize limits upload/download size to prevent OOM attacks.

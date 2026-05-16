@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lyafence/flowdav/internal/logger"
@@ -15,6 +16,11 @@ import (
 
 // Engine manages the local sessions, periodically flushes Tx buffers to files,
 // and polls for new Rx files.
+//
+// Lock ordering: all mutexes are acquired sequentially with one exception —
+// sessionMu.RLock may be held while locking Session.mu (in txQueueStats).
+// No code path ever reverses this order (Session.mu → sessionMu), so
+// deadlock is impossible. All other mutexes are never held concurrently.
 type Engine struct {
 	backend storage.Backend
 	myDir   Direction // DirReq for client, DirRes for server
@@ -65,6 +71,9 @@ type Engine struct {
 
 	// uploadJobs feeds a fixed pool of upload workers
 	uploadJobs chan uploadJob
+
+	uploadRetries   atomic.Int64
+	downloadRetries atomic.Int64
 }
 
 type uploadJob struct {
@@ -169,7 +178,7 @@ func (e *Engine) Stop() {
 	e.downloadPool.Stop()
 }
 
-func (e *Engine) GetSession(id string) *Session {
+func (e *Engine) sessionByID(id string) *Session {
 	e.sessionMu.RLock()
 	defer e.sessionMu.RUnlock()
 	return e.sessions[id]
@@ -500,9 +509,13 @@ func (e *Engine) uploadWorker(ctx context.Context) {
 						logger.Info("upload panic %s: %v", job.filename, r)
 					}
 				}()
-				if err := retryStorage(ctx, e.stopCh, "upload "+job.filename, func() error {
+				attempts, err := retryStorage(ctx, e.stopCh, "upload "+job.filename, func() error {
 					return e.backend.UploadByIndex(ctx, job.filename, &job.buf, job.backendIdx)
-				}); err != nil {
+				})
+				if attempts > 1 {
+					e.uploadRetries.Add(int64(attempts - 1))
+				}
+				if err != nil {
 					logger.Info("upload error %s (backend %d): %v", job.filename, job.backendIdx, err)
 				}
 			}()
@@ -511,12 +524,30 @@ func (e *Engine) uploadWorker(ctx context.Context) {
 }
 
 type EngineStats struct {
-	ActiveSessions int    `json:"active_sessions"`
-	ProcessedFiles int    `json:"processed_files"`
-	ClosedSessions int    `json:"closed_sessions"`
-	PollTickerMs   int    `json:"poll_ticker_ms"`
-	FlushTickerMs  int    `json:"flush_ticker_ms"`
-	Role           string `json:"role"`
+	ActiveSessions  int                   `json:"active_sessions"`
+	ProcessedFiles  int                   `json:"processed_files"`
+	ClosedSessions  int                   `json:"closed_sessions"`
+	UploadRetries   int64                 `json:"upload_retries"`
+	DownloadRetries int64                 `json:"download_retries"`
+	TxQueueBytes    int64                 `json:"tx_queue_bytes"`
+	TxQueueSessions int                   `json:"tx_queue_sessions"`
+	PollTickerMs    int                   `json:"poll_ticker_ms"`
+	FlushTickerMs   int                   `json:"flush_ticker_ms"`
+	Role            string                `json:"role"`
+	Backends        []storage.BackendStat `json:"backends,omitempty"`
+}
+
+func (e *Engine) txQueueStats() (bytes int64, sessions int) {
+	e.sessionMu.RLock()
+	defer e.sessionMu.RUnlock()
+	for _, s := range e.sessions {
+		b := s.TxBufLen()
+		bytes += int64(b)
+		if b > 0 {
+			sessions++
+		}
+	}
+	return
 }
 
 func (e *Engine) Stats() EngineStats {
@@ -532,18 +563,30 @@ func (e *Engine) Stats() EngineStats {
 	closed := len(e.closedSessions)
 	e.closedSessionsMu.Unlock()
 
+	txBytes, txSessions := e.txQueueStats()
+
+	var backends []storage.BackendStat
+	if mb, ok := e.backend.(*storage.MultiBackend); ok {
+		backends = mb.Stats()
+	}
+
 	role := "client"
 	if e.myDir == DirRes {
 		role = "server"
 	}
 
 	return EngineStats{
-		ActiveSessions: sessions,
-		ProcessedFiles: processed,
-		ClosedSessions: closed,
-		PollTickerMs:   int(e.pollTicker.Milliseconds()),
-		FlushTickerMs:  int(e.flushTicker.Milliseconds()),
-		Role:           role,
+		ActiveSessions:  sessions,
+		ProcessedFiles:  processed,
+		ClosedSessions:  closed,
+		UploadRetries:   e.uploadRetries.Load(),
+		DownloadRetries: e.downloadRetries.Load(),
+		TxQueueBytes:    txBytes,
+		TxQueueSessions: txSessions,
+		PollTickerMs:    int(e.pollTicker.Milliseconds()),
+		FlushTickerMs:   int(e.flushTicker.Milliseconds()),
+		Role:            role,
+		Backends:        backends,
 	}
 }
 

@@ -66,6 +66,12 @@ func NewSession(id string) *Session {
 	return s
 }
 
+func (s *Session) TxBufLen() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.txBuf)
+}
+
 func (s *Session) EnqueueTx(data []byte) {
 	s.EnqueueTxCtx(context.Background(), data)
 }

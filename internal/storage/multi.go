@@ -87,19 +87,6 @@ func (m *MultiBackend) nextAvailableBackend() (Backend, int) {
 	return nil, -1
 }
 
-func (m *MultiBackend) RoundRobinBackend() Backend {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	be, _ := m.nextAvailableBackend()
-	return be
-}
-
-func (m *MultiBackend) BackendByIndex(idx uint8) Backend {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.backendByIndexLocked(idx)
-}
-
 func (m *MultiBackend) backendByIndexLocked(idx uint8) Backend {
 	n := len(m.backends)
 	if n == 0 {
@@ -221,6 +208,37 @@ func (m *MultiBackend) DownloadByIndex(ctx context.Context, filename string, idx
 	}
 	m.mu.Unlock()
 	return rc, err
+}
+
+// BackendStat exposes per-backend health for the health endpoint.
+type BackendStat struct {
+	URL            string `json:"url"`
+	Available      bool   `json:"available"`
+	Failures       int    `json:"failures"`
+	LastFailAgeSec int64  `json:"last_failure_age_sec,omitempty"`
+}
+
+func (m *MultiBackend) Stats() []BackendStat {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	stats := make([]BackendStat, len(m.backends))
+	for i, be := range m.backends {
+		var url string
+		if wd, ok := be.(*WebDAVBackend); ok {
+			url = wd.rootURL
+		}
+		age := int64(0)
+		if !m.health[i].lastFail.IsZero() {
+			age = int64(time.Since(m.health[i].lastFail).Seconds())
+		}
+		stats[i] = BackendStat{
+			URL:            url,
+			Available:      m.health[i].failures < cbThreshold || time.Since(m.health[i].lastFail) > cbCooldown,
+			Failures:       m.health[i].failures,
+			LastFailAgeSec: age,
+		}
+	}
+	return stats
 }
 
 func RandBackendIndex(n int) int {

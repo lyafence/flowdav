@@ -13,6 +13,10 @@ var ErrTooManyConns = fmt.Errorf("too many concurrent connections")
 
 // VirtualConn acts as a bridge fulfilling the net.Conn interface for use by standard
 // SOCKS5 libraries, but routing data covertly through the WebDAV Session.
+//
+// Lock ordering: mu and deadlineMu guard disjoint fields and are never held
+// simultaneously. Neither mu nor deadlineMu is ever held during a call into
+// Session (session.mu is acquired only after releasing VirtualConn locks).
 type VirtualConn struct {
 	session *Session
 	engine  *Engine

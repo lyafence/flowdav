@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"syscall"
 
 	"golang.org/x/term"
 )
@@ -289,7 +288,7 @@ func LoadConfig(path, password string, askInteractive bool) (*AppConfig, error) 
 	if err == ErrEncryptedConfig {
 		if password == "" && askInteractive {
 			fmt.Print("Master password: ")
-			pass, err := term.ReadPassword(syscall.Stdin)
+			pass, err := term.ReadPassword(int(os.Stdin.Fd()))
 			fmt.Println()
 			if err != nil {
 				return nil, fmt.Errorf("failed to read password: %w", err)
