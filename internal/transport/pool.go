@@ -57,10 +57,10 @@ type downloadJob struct {
 }
 
 type DownloadWorkerPool struct {
-	engine    *Engine
-	jobs      chan downloadJob
-	workers   int
-	wg        sync.WaitGroup
+	engine  *Engine
+	jobs    chan downloadJob
+	workers int
+	wg      sync.WaitGroup
 }
 
 func NewDownloadWorkerPool(engine *Engine, numWorkers int) *DownloadWorkerPool {

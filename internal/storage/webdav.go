@@ -342,4 +342,3 @@ func (w *WebDAVBackend) UploadByIndex(ctx context.Context, filename string, data
 func (w *WebDAVBackend) DownloadByIndex(ctx context.Context, filename string, idx uint8) (io.ReadCloser, error) {
 	return w.Download(ctx, filename)
 }
-

@@ -105,8 +105,10 @@ func TestValidateBasePathRejectsEncodedNullByte(t *testing.T) {
 // TestValidateBasePathTripleEncodedNull documents a KNOWN LIMITATION:
 // triple-encoded null bytes bypass the decoder because the code only does
 // TWO levels of url.QueryUnescape. Input "%252500" decodes to:
-//   level 1: "%2500"   (%25 → %)
-//   level 2: "%00"     (%25 → %)
+//
+//	level 1: "%2500"   (%25 → %)
+//	level 2: "%00"     (%25 → %)
+//
 // The check strings.ContainsAny("%00", "\x00") is FALSE because "%00"
 // contains only printable characters ('%', '0', '0'), not a real null byte.
 //

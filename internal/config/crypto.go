@@ -96,5 +96,3 @@ func UnmarshalEncrypted(data []byte) (*EncryptedConfig, error) {
 	copy(enc.Ciphertext, data[saltLen+nonceLen:])
 	return enc, nil
 }
-
-

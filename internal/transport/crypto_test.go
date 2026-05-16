@@ -8,8 +8,8 @@ import (
 
 func TestGzipCompressDecompress(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    []byte
+		name  string
+		input []byte
 	}{
 		{"small payload", []byte("hello world")},
 		{"compressible", bytes.Repeat([]byte("ABCDEFGHIJ"), 1000)},
@@ -63,9 +63,9 @@ func TestEncodeDecodeWithCrypto(t *testing.T) {
 	}
 
 	env := &Envelope{
-		SessionID: "test-session",
-		Seq:       1,
-		Payload:   []byte("hello world"),
+		SessionID:  "test-session",
+		Seq:        1,
+		Payload:    []byte("hello world"),
 		TargetAddr: "example.com:80",
 	}
 
@@ -184,9 +184,9 @@ func TestVersionByte(t *testing.T) {
 
 func TestMarshalUnmarshal(t *testing.T) {
 	env := &Envelope{
-		SessionID: "test-session-123",
-		Seq:       42,
-		Payload:   []byte("test payload data"),
+		SessionID:  "test-session-123",
+		Seq:        42,
+		Payload:    []byte("test payload data"),
 		TargetAddr: "127.0.0.1:8080",
 		Close:      false,
 	}

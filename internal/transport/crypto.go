@@ -16,9 +16,9 @@ import (
 )
 
 const (
-	compressFlagNone       = 0x00
-	compressFlagGzip       = 0x01
-	compressMinBytes       = 256 // minimum raw payload to bother compressing
+	compressFlagNone = 0x00
+	compressFlagGzip = 0x01
+	compressMinBytes = 256 // minimum raw payload to bother compressing
 )
 
 type CryptoConfig struct {

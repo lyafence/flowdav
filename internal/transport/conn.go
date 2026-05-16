@@ -25,7 +25,7 @@ type VirtualConn struct {
 	deadlineMu    sync.Mutex
 	deadlineTimer *time.Timer // reusable timer for deadline enforcement
 
-	closeOnce sync.Once // prevents double-close deadlock
+	closeOnce sync.Once     // prevents double-close deadlock
 	readWake  chan struct{} // closed on Close() to unblock Read
 }
 

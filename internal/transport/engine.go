@@ -52,10 +52,10 @@ type Engine struct {
 	inFlight sync.Map
 
 	// Graceful shutdown support
-	stopCh   chan struct{}
-	wg       sync.WaitGroup
-	wgMu     sync.Mutex
-	stopped  bool
+	stopCh  chan struct{}
+	wg      sync.WaitGroup
+	wgMu    sync.Mutex
+	stopped bool
 
 	// MaxSessions limits the total number of concurrent sessions (0 = unlimited)
 	MaxSessions int
@@ -361,21 +361,21 @@ func (e *Engine) pollLoop(ctx context.Context) {
 					continue
 				}
 
-			e.processedMu.Lock()
-			if ts, exists := e.processed[entry.Filename]; exists && time.Since(ts) < 5*time.Minute {
-				e.processedMu.Unlock()
-				continue
-			}
-			e.processedMu.Unlock()
-
-			if e.downloadPool.Submit(downloadJob{
-				filename:   entry.Filename,
-				backendIdx: entry.BackendIdx,
-			}, e.stopCh) {
 				e.processedMu.Lock()
-				e.processed[entry.Filename] = time.Now()
+				if ts, exists := e.processed[entry.Filename]; exists && time.Since(ts) < 5*time.Minute {
+					e.processedMu.Unlock()
+					continue
+				}
 				e.processedMu.Unlock()
-			}
+
+				if e.downloadPool.Submit(downloadJob{
+					filename:   entry.Filename,
+					backendIdx: entry.BackendIdx,
+				}, e.stopCh) {
+					e.processedMu.Lock()
+					e.processed[entry.Filename] = time.Now()
+					e.processedMu.Unlock()
+				}
 			}
 
 			// Burst backoff: fast re-poll after receiving files

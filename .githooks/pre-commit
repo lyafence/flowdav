@@ -1,0 +1,64 @@
+#!/bin/bash
+# flowdav pre-commit hook — fast checks only (<10s).
+set -euo pipefail
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+NC='\033[0m'
+
+pass() { echo -e "  ${GREEN}PASS${NC} $1"; }
+fail() { echo -e "  ${RED}FAIL${NC} $1"; exit 1; }
+
+echo "=== pre-commit checks ==="
+
+# 1. gofmt
+unformatted=$(gofmt -l cmd/ internal/)
+if [ -n "$unformatted" ]; then
+	fail "gofmt needs fixes:\n$unformatted"
+fi
+pass "gofmt"
+
+# 2. goimports
+if command -v goimports &>/dev/null; then
+	bad=$(goimports -local github.com/lyafence/flowdav -l cmd/ internal/)
+	if [ -n "$bad" ]; then
+		fail "goimports needs fixes:\n$bad"
+	fi
+	pass "goimports"
+else
+	echo "  SKIP goimports (not installed)"
+fi
+
+# 3. go vet
+vetOut=$(go vet ./... 2>&1)
+if [ -n "$vetOut" ]; then
+	fail "go vet:\n$vetOut"
+fi
+pass "go vet"
+
+# 4. Anti-patterns (production code only, not _test.go)
+bad=$(grep -rn "math/rand" cmd/ internal/ --include="*.go" | grep -v "_test.go" || true)
+if [ -n "$bad" ]; then
+	fail "math/rand in production code:\n$bad"
+fi
+pass "no math/rand"
+
+bad=$(grep -rn '"os/exec"' cmd/ internal/ --include="*.go" | grep -v "_test.go" || true)
+if [ -n "$bad" ]; then
+	fail "os/exec in production code:\n$bad"
+fi
+pass "no os/exec"
+
+bad=$(grep -rn '"database/sql"' cmd/ internal/ --include="*.go" || true)
+if [ -n "$bad" ]; then
+	fail "database/sql used without justification:\n$bad"
+fi
+pass "no sql"
+
+bad=$(grep -rn 'sync\.Pool' cmd/ internal/ --include="*.go" || true)
+if [ -n "$bad" ]; then
+	fail "sync.Pool without benchmark:\n$bad"
+fi
+pass "no sync.Pool"
+
+echo "=== all checks passed ==="

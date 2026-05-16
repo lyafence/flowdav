@@ -8,9 +8,9 @@ import (
 )
 
 var (
-	mu       sync.Mutex
-	level    = "info"
-	levels   = map[string]int{"debug": 0, "info": 1, "warn": 2, "error": 3}
+	mu     sync.Mutex
+	level  = "info"
+	levels = map[string]int{"debug": 0, "info": 1, "warn": 2, "error": 3}
 )
 
 func SetLevel(l string) {

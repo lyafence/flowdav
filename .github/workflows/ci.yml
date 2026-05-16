@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.3"
+          cache: true
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+
+      - name: Build
+        run: go build ./...
+
+      - name: Module check
+        run: |
+          go mod tidy -e
+          test -z "$(git diff go.mod go.sum)"
+
+      - name: Test
+        run: go test -race -count=1 -timeout 120s ./...
+
+      - name: Fuzz
+        run: |
+          go test -fuzztime=10s -fuzz FuzzEnvelopeUnmarshalBinary ./internal/transport/
+          go test -fuzztime=10s -fuzz FuzzEnvelopeDecode ./internal/transport/
+          go test -fuzztime=10s -fuzz FuzzDecodeEnvelopeWithCryptoNoCrypto ./internal/transport/
+
+  vuln:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.3"
+          cache: true
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...

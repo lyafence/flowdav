@@ -5,7 +5,7 @@ BUILD_FLAGS := -trimpath -ldflags="-s -w -X main.version=$(VERSION)"
 COMPOSE_FILE := docker-compose.yml
 
 .PHONY: build test lint encrypt clean docker-build docker-e2e image-to-bin release \
-        compose-down clean-images clean-all nuke
+        compose-down clean-images clean-all nuke hooks
 
 # Build binaries
 build:
@@ -106,6 +106,12 @@ clean-images:
 nuke: compose-down clean-images clean
 	podman system prune -f 2>/dev/null || true
 	@echo "Environment reset complete. Run 'make docker-build && make docker-e2e' to rebuild."
+
+# Install pre-commit hooks
+hooks:
+	@cp .githooks/pre-commit .git/hooks/pre-commit
+	@chmod +x .git/hooks/pre-commit
+	@echo "Installed .githooks/pre-commit -> .git/hooks/pre-commit"
 
 # Alias
 clean-all: nuke

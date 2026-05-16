@@ -8,9 +8,9 @@ import (
 
 // FileEntry represents a file discovered in a storage backend, tagged with its origin backend index.
 type FileEntry struct {
-	Filename    string
-	BackendIdx  uint8
-	ModTime     time.Time
+	Filename   string
+	BackendIdx uint8
+	ModTime    time.Time
 }
 
 // Backend defines the interface for our pluggable storage mechanism that acts as the

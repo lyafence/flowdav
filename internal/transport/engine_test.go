@@ -19,7 +19,7 @@ type mockBackend struct {
 	listFiles  []storage.FileEntry
 }
 
-func (m *mockBackend) Login(ctx context.Context) error                         { return nil }
+func (m *mockBackend) Login(ctx context.Context) error { return nil }
 func (m *mockBackend) Upload(ctx context.Context, name string, data io.Reader) error {
 	m.mu.Lock()
 	m.uploaded = append(m.uploaded, name)
@@ -124,8 +124,6 @@ func TestEngineFastShutdownOnStopSignal(t *testing.T) {
 	}
 }
 
-
-
 // TestBackendIdxDataRace verifies that s.BackendIdx is read under s.mu in flushAll.
 // Starts the engine so upload workers consume jobs (preventing uploadJobs buffer deadlock).
 // Re-seeds txBuf after each flushAll so all iterations exercise the read path.
@@ -216,7 +214,6 @@ func TestRemoveSessionDataRace(t *testing.T) {
 	wg.Wait()
 }
 
-
 // TestFlushAllSplitsOversizedMux verifies that flushAll splits multiplexed
 // envelopes into multiple files when the total exceeds the safe upload size,
 // preventing silent truncation of data by WebDAV upload limits.
@@ -263,7 +260,7 @@ func TestFlushAllSplitsOversizedMux(t *testing.T) {
 // to prove that flushAll split does not lose data.
 type dataTrackingBackend struct {
 	mockBackend
-	mu         sync.Mutex
+	mu           sync.Mutex
 	uploadedData map[string]int64 // filename → total bytes
 }
 

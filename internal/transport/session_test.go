@@ -222,4 +222,3 @@ func TestProcessRxTimerReuseNoDeadlock(t *testing.T) {
 		t.Fatal("timeout waiting for second payload — timer drain deadlock")
 	}
 }
-
