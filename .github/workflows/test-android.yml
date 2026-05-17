@@ -39,6 +39,15 @@ jobs:
       - name: Verify signing key
         run: keytool -list -keystore keystore.jks -storepass "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
 
+      - name: Build AAR
+        run: |
+          mkdir -p android/app/libs
+          gomobile bind -target=android -androidapi 26 \
+            -javapkg com.flowdav.app \
+            -o android/app/libs/flowdav.aar \
+            -trimpath -ldflags="-s -w" \
+            ./cmd/android
+
       - name: Build release APK
         run: ./gradlew assembleRelease
         working-directory: android
