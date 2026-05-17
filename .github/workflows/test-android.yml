@@ -57,7 +57,15 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
 
+      - name: Rename APK
+        run: |
+          SHA=$(echo ${{ github.sha }} | cut -c1-7)
+          APK=$(find android/app/build/outputs/apk/release -name "*.apk" | head -1)
+          NAME="${{ github.event.repository.name }}-android-${SHA}.apk"
+          mv "$APK" "$NAME"
+          echo "path=$NAME" >> $GITHUB_ENV
+
       - uses: actions/upload-artifact@v7
         with:
-          name: flowdav-android
-          path: android/app/build/outputs/apk/release/*.apk
+          path: ${{ env.path }}
+          archive: false
