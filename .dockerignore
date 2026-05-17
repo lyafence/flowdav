@@ -4,6 +4,7 @@ release/
 .env
 *.json
 **/*.json
+*.enc
 *.tmp
 *.zip
 *.log

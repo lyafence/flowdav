@@ -1,4 +1,4 @@
-вопро# Ignore all JSON files (configs with secrets)
+# Ignore all JSON files (configs with secrets)
 *.json
 
 # Except example configs
@@ -11,6 +11,9 @@
 *.token
 credentials.json
 .env
+
+# Encrypted configs (contain keys)
+*.enc
 
 # Binaries and temp files
 bin/
