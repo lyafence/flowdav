@@ -5,7 +5,7 @@ BUILD_FLAGS := -trimpath -ldflags="-s -w -X main.version=$(VERSION)"
 COMPOSE_FILE := docker-compose.yml
 
 .PHONY: build test lint encrypt clean docker-build docker-e2e image-to-bin release \
-        compose-down clean-images clean-all nuke check hooks android-aar android-apk
+        compose-down clean-images clean-all nuke check hooks android-init android-aar android-apk android-keystore
 
 # Build binaries
 build:
@@ -111,19 +111,45 @@ nuke: compose-down clean-images clean
 # Android AAR via gomobile (requires NDK + gomobile)
 #   ANDROID_HOME must be set. Install gomobile: go install golang.org/x/mobile/cmd/gomobile@latest
 #   Then: gomobile init
+ANDROID_SDK_HOME ?= $(HOME)/.android-sdk
+
+android-init:
+	@echo "=== Installing Android SDK + NDK (Linux) ==="
+	@cd /tmp && \
+		curl -sLo cmdline-tools.zip "https://dl.google.com/android/repository/commandlinetools-linux-14742923_latest.zip" && \
+		unzip -q cmdline-tools.zip && \
+		mkdir -p $(ANDROID_SDK_HOME)/cmdline-tools && \
+		mv cmdline-tools $(ANDROID_SDK_HOME)/cmdline-tools/latest && \
+		yes | $(ANDROID_SDK_HOME)/cmdline-tools/latest/bin/sdkmanager --sdk_root=$(ANDROID_SDK_HOME) \
+			"platforms;android-36" "build-tools;36.0.0" "ndk;27.0.12077973" && \
+		rm -f /tmp/cmdline-tools.zip && \
+		ln -sf $(ANDROID_SDK_HOME)/ndk/27.0.12077973 $(ANDROID_SDK_HOME)/ndk-bundle && \
+		go install golang.org/x/mobile/cmd/gomobile@latest && \
+		gomobile init && \
+		echo "" && \
+		echo "=== DONE ===" && \
+		echo "Add to ~/.bashrc:" && \
+		echo '  export ANDROID_HOME=$(ANDROID_SDK_HOME)' && \
+		echo '  export PATH="$$ANDROID_HOME/cmdline-tools/latest/bin:$$PATH"' && \
+		echo "  export PATH=\"$$HOME/go/bin:$$PATH\""
+
 android-aar:
-	go get golang.org/x/mobile@latest
-	gomobile bind -target=android -androidapi 21 -javapkg com.flowdav.app \
+	mkdir -p android/app/libs
+	gomobile bind -target=android -androidapi 26 -javapkg com.flowdav.app \
 		-o android/app/libs/flowdav.aar \
 		-trimpath -ldflags="-s -w" \
 		./cmd/android
 
-# Android APK (AAR + Gradle assemble)
+# Android APK (AAR + Gradle assemble debug)
 # Requires: ANDROID_HOME + OpenJDK 17+
-# Builds debug APK (auto-signed). For release APK, set up signing key in build.gradle.kts.
 android-apk: android-aar
 	cd android && ./gradlew assembleDebug --no-daemon
-	@echo "APK: android/app/build/outputs/apk/debug/app-debug.apk"
+	@cp android/app/build/outputs/apk/debug/app-debug.apk bin/flowdav-android.apk
+	@echo "APK: bin/flowdav-android.apk"
+
+# Generate Android release keystore and print GitHub Secrets
+android-keystore:
+	bash scripts/gen-keystore.sh
 
 # Install pre-commit hooks
 check: vet lint build test

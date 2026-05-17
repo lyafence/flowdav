@@ -16,6 +16,7 @@
 | `make release` | Release archives |
 | `make openwrt` | Cross-compile for MIPS little-endian, softfloat |
 | `make hooks` | Install pre-commit hooks (recommended) |
+| `make android-apk` | Build Android APK (debug) |
 | `flowdav-* --version` | Show version (client, server, encrypt) |
 | `curl --socks5h://127.0.0.1:11080 https://api.ipify.org` | Test SOCKS5 via docker-compose |
 
@@ -24,6 +25,7 @@
 | Package | Responsibility |
 |---------|---------------|
 | `cmd/flowdav-*` | Entrypoints (thin) |
+| `cmd/android` | Gomobile bridge (exported to Android) |
 | `internal/config` | Load, validate, encrypt/decrypt configs |
 | `internal/transport` | Engine (poll loop, sessions), Envelope, Crypto, VirtualConn (SOCKS5), Pool |
 | `internal/storage` | WebDAV backend + MultiBackend (circuit breaker, round-robin) |
@@ -36,6 +38,7 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 ```
 
 **Binaries:** `flowdav-client` (has `listen_addr`), `flowdav-server` (no listener), `flowdav-encrypt` (config encryption).
+**Android bridge:** `cmd/android/bridge.go` — gomobile bind, exports StartProxy/StopProxy/GetStatus to Kotlin.
 
 ## Design Invariants
 

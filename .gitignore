@@ -1,4 +1,4 @@
-# Ignore all JSON files (configs with secrets)
+вопро# Ignore all JSON files (configs with secrets)
 *.json
 
 # Except example configs
@@ -39,3 +39,9 @@ android/.gradle/
 android/build/
 android/app/build/
 android/local.properties
+
+# Signing keys
+*.jks
+*.keystore
+
+.zed/

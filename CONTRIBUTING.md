@@ -10,8 +10,7 @@ make build
 ## Development workflow
 
 ```bash
-make test       # unit tests with race detector
-make build      # verify compilation
+make check      # full verification: vet → lint → build → test with race detector
 make test-e2e   # E2E tests (requires podman)
 ```
 
@@ -49,13 +48,21 @@ curl -s --proxy socks5h://127.0.0.1:11081 https://api.ipify.org
 
 In docker-compose, `HEALTHCHECK` is configured for both `flow-server` (port `9190`) and `flow-client` (port `9191`).
 
+## Android
+
+```bash
+make android-apk     # → bin/flowdav-android-debug.apk
+adb install -r bin/flowdav-android-debug.apk
+```
+
+Requires: Android SDK + NDK + gomobile. Run `make android-init` to set up.
+
 ## Pull requests
 
 1. Read the relevant package first — understand existing patterns.
-2. Run `make test` after any change — all tests must pass with race detector.
-3. Run `make build` to verify compilation.
-4. If adding features to the SOCKS5/engine path, run `make test-e2e` or `make docker-e2e`.
-5. Open a PR on [GitHub](https://github.com/lyafence/flowdav).
+2. Run `make check` after any change — full verification (vet → lint → build → test).
+3. If adding features to the SOCKS5/engine path, run `make test-e2e` or `make docker-e2e`.
+4. Open a PR on [GitHub](https://github.com/lyafence/flowdav).
 
 ## Code style
 

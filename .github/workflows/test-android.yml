@@ -1,0 +1,49 @@
+name: Test Android CI
+on:
+  push:
+    branches:
+      - feat/android
+    paths:
+      - 'android/**'
+      - 'cmd/android/**'
+      - 'Makefile'
+      - '.github/workflows/test-android.yml'
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.3"
+          cache: true
+
+      - uses: actions/setup-java@v5.2.0
+        with:
+          distribution: temurin
+          java-version: 25
+          cache: gradle
+
+      - name: Setup gomobile
+        run: |
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          gomobile init
+
+      - name: Link NDK for gomobile
+        run: ln -sf $ANDROID_NDK_HOME $ANDROID_HOME/ndk-bundle
+
+      - name: Decode signing key
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > keystore.jks
+
+      - name: Verify signing key
+        run: keytool -list -keystore keystore.jks -storepass "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
+
+      - name: Build release APK
+        run: ./gradlew assembleRelease
+        working-directory: android
+        env:
+          ANDROID_APP_VERSION: 0.0.0-test
+          ANDROID_KEYSTORE_PATH: ${{ github.workspace }}/keystore.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}

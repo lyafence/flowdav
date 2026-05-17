@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -27,7 +28,14 @@ var (
 	socksLnr    net.Listener
 	socksErrCh  chan error
 	currentAddr string
+	lastCfg     *config.AppConfig
 )
+
+func wipeBytes(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
+}
 
 type rawResolver struct{}
 
@@ -38,7 +46,7 @@ func (rawResolver) Resolve(ctx context.Context, name string) (context.Context, n
 func generateSessionID() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		return "00000000000000000000000000000000"
+		panic("crypto/rand read failed: " + err.Error())
 	}
 	return hex.EncodeToString(b)
 }
@@ -50,6 +58,52 @@ type Status struct {
 	Error          string
 }
 
+func decodeKey(keyB64 string, name string) ([]byte, error) {
+	if keyB64 == "" {
+		return nil, fmt.Errorf("%s is required", name)
+	}
+	dec, err := base64.StdEncoding.DecodeString(keyB64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid %s: %w", name, err)
+	}
+	if len(dec) != 32 {
+		return nil, fmt.Errorf("%s must be 32 bytes, got %d", name, len(dec))
+	}
+	return dec, nil
+}
+
+func applyDefaults(cfg *config.AppConfig) {
+	if cfg.StorageType == "" {
+		cfg.StorageType = "webdav"
+	}
+}
+
+func parseConfigJSON(data []byte) (*config.AppConfig, error) {
+	var cfg config.AppConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, err
+	}
+	if cfg.WebDAV == nil {
+		return nil, fmt.Errorf("webdav config is required")
+	}
+	if cfg.EncKey != "" {
+		key, err := decodeKey(cfg.EncKey, "enc_key")
+		if err != nil {
+			return nil, err
+		}
+		cfg.EncKeyDecoded = key
+	}
+	if cfg.HMacKey != "" {
+		key, err := decodeKey(cfg.HMacKey, "hmac_key")
+		if err != nil {
+			return nil, err
+		}
+		cfg.HMacKeyDecoded = key
+	}
+	applyDefaults(&cfg)
+	return &cfg, nil
+}
+
 // StartProxy loads config from file and starts the proxy.
 func StartProxy(configPath, password, listenAddr string) error {
 	appCfg, err := config.LoadConfig(configPath, password, false)
@@ -59,21 +113,44 @@ func StartProxy(configPath, password, listenAddr string) error {
 	return startProxy(appCfg, listenAddr)
 }
 
+// StartProxyFromData parses config from raw bytes and starts the proxy.
+func StartProxyFromData(data []byte, password, listenAddr string) error {
+	var appCfg *config.AppConfig
+
+	if len(data) > 0 && data[0] == '{' {
+		appCfg, _ = parseConfigJSON(data)
+	}
+
+	if appCfg == nil {
+		if password == "" {
+			return fmt.Errorf("config is encrypted but no password provided")
+		}
+		enc, err := config.UnmarshalEncrypted(data)
+		if err != nil {
+			return fmt.Errorf("invalid encrypted config: %w", err)
+		}
+		plaintext, err := config.DecryptConfig(enc, password)
+		if err != nil {
+			return fmt.Errorf("decryption failed: %w", err)
+		}
+		appCfg, err = parseConfigJSON(plaintext)
+		if err != nil {
+			return fmt.Errorf("invalid config: %w", err)
+		}
+	}
+
+	return startProxy(appCfg, listenAddr)
+}
+
 // StartProxyManual creates a proxy from explicit WebDAV and crypto parameters.
 func StartProxyManual(webdavURL, webdavLogin, webdavToken, encKeyBase64, hmacKeyBase64, listenAddr string) error {
-	encKey, err := base64.StdEncoding.DecodeString(encKeyBase64)
+	encKey, err := decodeKey(encKeyBase64, "enc_key")
 	if err != nil {
-		return fmt.Errorf("invalid enc_key: %w", err)
+		return err
 	}
-	if len(encKey) != 32 {
-		return fmt.Errorf("enc_key must be 32 bytes, got %d", len(encKey))
-	}
-	hmacKey, err := base64.StdEncoding.DecodeString(hmacKeyBase64)
+	hmacKey, err := decodeKey(hmacKeyBase64, "hmac_key")
 	if err != nil {
-		return fmt.Errorf("invalid hmac_key: %w", err)
-	}
-	if len(hmacKey) != 32 {
-		return fmt.Errorf("hmac_key must be 32 bytes, got %d", len(hmacKey))
+		return err
 	}
 
 	appCfg := &config.AppConfig{
@@ -188,6 +265,7 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 	eng = engine
 	socksLnr = listener
 	currentAddr = listenAddr
+	lastCfg = appCfg
 	socksErrCh = make(chan error, 1)
 
 	go func() {
@@ -217,6 +295,11 @@ func stopLocked() {
 	if cancel != nil {
 		cancel()
 		cancel = nil
+	}
+	if lastCfg != nil {
+		wipeBytes(lastCfg.EncKeyDecoded)
+		wipeBytes(lastCfg.HMacKeyDecoded)
+		lastCfg = nil
 	}
 	eng = nil
 	currentAddr = ""

@@ -7,7 +7,6 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.IBinder
-import android.widget.Toast
 import com.flowdav.app.flowdavmobile.Flowdavmobile
 import androidx.core.app.NotificationCompat
 
@@ -20,27 +19,10 @@ class ProxyService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START -> {
-                val configPath = intent.getStringExtra(EXTRA_CONFIG_PATH) ?: return START_NOT_STICKY
-                val password = intent.getStringExtra(EXTRA_PASSWORD) ?: ""
+            ACTION_RUNNING -> {
                 val listenAddr = intent.getStringExtra(EXTRA_LISTEN_ADDR) ?: "0.0.0.0:1080"
-
-                startForeground(NOTIFICATION_ID, buildNotification("Starting…"))
-
-                // Run blocking Go call on a worker thread
-                Thread {
-                    try {
-                        Flowdavmobile.startProxy(configPath, password, listenAddr)
-                        runOnUiThread { updateNotification("Running on $listenAddr") }
-                    } catch (e: Exception) {
-                        runOnUiThread {
-                            Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_LONG).show()
-                            stopSelf()
-                        }
-                    }
-                }.start()
+                startForeground(NOTIFICATION_ID, buildNotification("Running on $listenAddr"))
             }
-
             ACTION_STOP -> {
                 Flowdavmobile.stopProxy()
                 ConfigHelper.deleteCache(this)
@@ -72,30 +54,17 @@ class ProxyService : Service() {
             .build()
     }
 
-    private fun updateNotification(text: String) {
-        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-        nm.notify(NOTIFICATION_ID, buildNotification(text))
-    }
-
-    private fun runOnUiThread(action: () -> Unit) {
-        android.os.Handler(mainLooper).post(action)
-    }
-
     companion object {
         private const val CHANNEL_ID = "proxy_status"
         private const val NOTIFICATION_ID = 1
 
-        private const val ACTION_START = "com.flowdav.app.START"
+        private const val ACTION_RUNNING = "com.flowdav.app.RUNNING"
         private const val ACTION_STOP = "com.flowdav.app.STOP"
-        private const val EXTRA_CONFIG_PATH = "config_path"
-        private const val EXTRA_PASSWORD = "password"
         private const val EXTRA_LISTEN_ADDR = "listen_addr"
 
-        fun startAction(context: Context, configPath: String, password: String, listenAddr: String) {
+        fun startRunning(context: Context, listenAddr: String) {
             val intent = Intent(context, ProxyService::class.java).apply {
-                action = ACTION_START
-                putExtra(EXTRA_CONFIG_PATH, configPath)
-                putExtra(EXTRA_PASSWORD, password)
+                action = ACTION_RUNNING
                 putExtra(EXTRA_LISTEN_ADDR, listenAddr)
             }
             context.startForegroundService(intent)

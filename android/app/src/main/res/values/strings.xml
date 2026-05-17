@@ -1,22 +1,44 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">flowdav</string>
-    <string name="select_config">Select Config</string>
-    <string name="password_hint">Master password (leave empty for plaintext config)</string>
-    <string name="start_proxy">Start Proxy</string>
-    <string name="stop_proxy">Stop Proxy</string>
-    <string name="status_stopped">Stopped</string>
-    <string name="status_running">Running on %s</string>
-    <string name="connecting">Connecting…</string>
-    <string name="proxy_notification_channel">Proxy Status</string>
-    <string name="proxy_notification_text">flowdav proxy active</string>
+
+    <!-- Modes -->
     <string name="mode_file">Config file</string>
-    <string name="mode_manual">Manual setup</string>
+    <string name="mode_manual">Manual</string>
+
+    <!-- File mode -->
+    <string name="select_file">Select config file</string>
+    <string name="file_chosen">%s selected</string>
+    <string name="password_hint">Master password (leave empty for plaintext)</string>
+
+    <!-- Manual mode -->
     <string name="webdav_url">WebDAV URL</string>
     <string name="webdav_login">WebDAV login</string>
     <string name="webdav_token">WebDAV password/token</string>
     <string name="enc_key">Encryption key (base64, 32 bytes)</string>
     <string name="hmac_key">HMAC key (base64, 32 bytes)</string>
+
+    <!-- Advanced -->
+    <string name="advanced">Advanced</string>
+    <string name="listen_addr">Listen address</string>
+
+    <!-- Actions -->
+    <string name="start_proxy">Start Proxy</string>
+    <string name="stop_proxy">Stop Proxy</string>
+
+    <!-- Status -->
+    <string name="status_stopped">Stopped</string>
+    <string name="status_connecting">Connecting…</string>
+    <string name="status_running">Running</string>
+    <string name="status_error">Error</string>
+    <string name="sessions_count">Sessions: %d</string>
+    <string name="status_sessions" formatted="false">Sessions: %d · Uptime: %s</string>
+
+    <!-- Validation -->
     <string name="select_file_first">Please select a config file first</string>
-    <string name="fill_all_fields">Please fill all WebDAV and crypto fields</string>
+    <string name="fill_all_fields">Please fill all fields</string>
+    <string name="start_failed">Failed to start: %s</string>
+
+    <!-- Notification -->
+    <string name="proxy_notification_channel">Proxy Status</string>
 </resources>

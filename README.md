@@ -255,6 +255,13 @@ Both the client and server support an optional HTTP health endpoint. Set `health
 - **DNS leak protection:** Raw resolver (no local DNS lookups)
 - **UDP blocked:** Only TCP traffic is supported
 
+## Android
+
+Download `flowdav-android.apk` from [GitHub Releases](https://github.com/lyafence/flowdav/releases).
+
+The app accepts `client.json.enc` or manual WebDAV and encryption key fields.
+SOCKS5 proxy runs on `0.0.0.0:1080` — configure your browser manually.
+
 ## Release Archives
 
 Multi-platform release archives are built automatically by CI on each tag (`v*`).
