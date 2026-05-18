@@ -29,6 +29,7 @@ var (
 	socksErrCh  chan error
 	currentAddr string
 	lastCfg     *config.AppConfig
+	lastError   string
 )
 
 func wipeBytes(b []byte) {
@@ -86,19 +87,49 @@ func parseConfigJSON(data []byte) (*config.AppConfig, error) {
 	if cfg.WebDAV == nil {
 		return nil, fmt.Errorf("webdav config is required")
 	}
-	if cfg.EncKey != "" {
-		key, err := decodeKey(cfg.EncKey, "enc_key")
-		if err != nil {
-			return nil, err
-		}
-		cfg.EncKeyDecoded = key
+	hasBackends := len(cfg.WebDAV.Backends) > 0
+	hasLegacy := cfg.WebDAV.URL != ""
+	if hasBackends && hasLegacy {
+		return nil, fmt.Errorf("cannot use both 'webdav.backends' and legacy 'webdav.url' simultaneously")
 	}
-	if cfg.HMacKey != "" {
-		key, err := decodeKey(cfg.HMacKey, "hmac_key")
-		if err != nil {
-			return nil, err
+	if hasBackends {
+		if len(cfg.WebDAV.Backends) < 2 {
+			return nil, fmt.Errorf("webdav.backends requires at least 2 backends, got %d", len(cfg.WebDAV.Backends))
 		}
-		cfg.HMacKeyDecoded = key
+		for i, be := range cfg.WebDAV.Backends {
+			if be.BasePath != "" {
+				if err := config.ValidateBasePath(be.BasePath, fmt.Sprintf("webdav.backends[%d].base_path", i)); err != nil {
+					return nil, err
+				}
+			}
+		}
+	} else if hasLegacy {
+		if cfg.WebDAV.BasePath != "" {
+			if err := config.ValidateBasePath(cfg.WebDAV.BasePath, "webdav.base_path"); err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		return nil, fmt.Errorf("webdav config requires either 'url' or 'backends'")
+	}
+	if cfg.EncKey == "" {
+		return nil, fmt.Errorf("enc_key is required")
+	}
+	key, err := decodeKey(cfg.EncKey, "enc_key")
+	if err != nil {
+		return nil, err
+	}
+	cfg.EncKeyDecoded = key
+	if cfg.HMacKey == "" {
+		return nil, fmt.Errorf("hmac_key is required")
+	}
+	hmacKey, err := decodeKey(cfg.HMacKey, "hmac_key")
+	if err != nil {
+		return nil, err
+	}
+	cfg.HMacKeyDecoded = hmacKey
+	if cfg.MaxMessageSize > 0 && cfg.MaxMessageSize < 65536 {
+		return nil, fmt.Errorf("max_message_size must be at least 65536 (64KB), got %d", cfg.MaxMessageSize)
 	}
 	applyDefaults(&cfg)
 	return &cfg, nil
@@ -115,10 +146,18 @@ func StartProxy(configPath, password, listenAddr string) error {
 
 // StartProxyFromData parses config from raw bytes and starts the proxy.
 func StartProxyFromData(data []byte, password, listenAddr string) error {
-	var appCfg *config.AppConfig
+	logger.Info("StartProxyFromData: len=%d, encrypted=%t, listen=%q", len(data), len(data) > 0 && data[0] != '{', listenAddr)
+
+	var (
+		appCfg *config.AppConfig
+		err    error
+	)
 
 	if len(data) > 0 && data[0] == '{' {
-		appCfg, _ = parseConfigJSON(data)
+		appCfg, err = parseConfigJSON(data)
+		if err != nil {
+			return fmt.Errorf("invalid config: %w", err)
+		}
 	}
 
 	if appCfg == nil {
@@ -131,6 +170,7 @@ func StartProxyFromData(data []byte, password, listenAddr string) error {
 		}
 		plaintext, err := config.DecryptConfig(enc, password)
 		if err != nil {
+			logger.Error("decryption failed")
 			return fmt.Errorf("decryption failed: %w", err)
 		}
 		appCfg, err = parseConfigJSON(plaintext)
@@ -144,6 +184,8 @@ func StartProxyFromData(data []byte, password, listenAddr string) error {
 
 // StartProxyManual creates a proxy from explicit WebDAV and crypto parameters.
 func StartProxyManual(webdavURL, webdavLogin, webdavToken, encKeyBase64, hmacKeyBase64, listenAddr string) error {
+	logger.Info("StartProxyManual: url=%q, listen=%q", webdavURL, listenAddr)
+
 	encKey, err := decodeKey(encKeyBase64, "enc_key")
 	if err != nil {
 		return err
@@ -178,6 +220,7 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 	}
 
 	logger.SetLevel(appCfg.LogLevel)
+	logger.Info("startProxy: listen=%q, wdav_url=%q", listenAddr, appCfg.WebDAV.URL)
 
 	backend, multiBackend, err := storage.NewBackendFromConfig(appCfg.WebDAV)
 	if err != nil {
@@ -212,6 +255,10 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 	}
 	engine.Start(ctx)
 
+	engine.OnSessionEnd = func(sessionID string) {
+		logger.Info("Client session %s ended", sessionID)
+	}
+
 	maxConns := appCfg.MaxConnections
 	if maxConns <= 0 {
 		maxConns = 100
@@ -226,13 +273,28 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 			default:
 				return nil, transport.ErrTooManyConns
 			}
+			released := false
+			defer func() {
+				if !released {
+					<-connLimit
+				}
+			}()
 			session := transport.NewSession(sessionID)
 			session.TargetAddr = addr
+			if host, port, err := net.SplitHostPort(addr); err == nil {
+				if net.ParseIP(host) != nil {
+					logger.Info("New covert session %s targeting RAW IP %s:%s (Warning: Local DNS Leak?)", sessionID, host, port)
+				} else {
+					logger.Info("New covert session %s targeting SECURE DOMAIN %s:%s", sessionID, host, port)
+				}
+			}
 			if multiBackend != nil {
 				session.BackendIdx = uint8(storage.RandBackendIndex(multiBackend.NumBackends()))
+				logger.Info("Session %s assigned to backend %d", sessionID, session.BackendIdx)
 			}
 			engine.AddSession(session)
 			session.EnqueueTx(nil)
+			released = true
 			return transport.NewVirtualConnWithOnClose(session, engine, func() { <-connLimit }), nil
 		}),
 		socks5.WithAssociateHandle(func(ctx context.Context, w io.Writer, req *socks5.Request) error {
@@ -247,10 +309,12 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 		serverOpts = append(serverOpts, socks5.WithAuthMethods([]socks5.Authenticator{
 			socks5.UserPassAuthenticator{Credentials: creds},
 		}))
+		logger.Info("SOCKS5 authentication enabled for user: %s", appCfg.SOCKS5User)
 	} else {
 		serverOpts = append(serverOpts, socks5.WithAuthMethods([]socks5.Authenticator{
 			socks5.NoAuthAuthenticator{},
 		}))
+		logger.Info("WARNING: SOCKS5 server running WITHOUT authentication. Anyone with network access can use this proxy!")
 	}
 
 	server := socks5.NewServer(serverOpts...)
@@ -258,6 +322,7 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 	if err != nil {
 		engine.Stop()
 		ctxCancel()
+		logger.Error("listen %s failed: %v", listenAddr, err)
 		return fmt.Errorf("listen %s: %w", listenAddr, err)
 	}
 
@@ -267,10 +332,21 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 	currentAddr = listenAddr
 	lastCfg = appCfg
 	socksErrCh = make(chan error, 1)
+	lastError = ""
+
+	logger.Info("SOCKS5 proxy started on %s", listenAddr)
 
 	go func() {
-		if err := server.Serve(listener); err != nil {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("SOCKS5 serve panic: %v", r)
+			}
+		}()
+		if err := server.Serve(listener); err != nil && !errors.Is(err, net.ErrClosed) {
 			socksErrCh <- err
+			mu.Lock()
+			lastError = err.Error()
+			mu.Unlock()
 		}
 	}()
 
@@ -280,6 +356,7 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 func StopProxy() {
 	mu.Lock()
 	defer mu.Unlock()
+	logger.Info("StopProxy called")
 	stopLocked()
 }
 
@@ -299,6 +376,8 @@ func stopLocked() {
 	if lastCfg != nil {
 		wipeBytes(lastCfg.EncKeyDecoded)
 		wipeBytes(lastCfg.HMacKeyDecoded)
+		lastCfg.EncKey = ""
+		lastCfg.HMacKey = ""
 		lastCfg = nil
 	}
 	eng = nil
@@ -309,9 +388,10 @@ func GetStatus() *Status {
 	mu.Lock()
 	e := eng
 	addr := currentAddr
+	errStr := lastError
 	mu.Unlock()
 
-	s := &Status{Running: e != nil, ListenAddr: addr}
+	s := &Status{Running: e != nil, ListenAddr: addr, Error: errStr}
 	if e != nil {
 		stats := e.Stats()
 		s.ActiveSessions = stats.ActiveSessions
@@ -328,9 +408,11 @@ func StopAndError() string {
 		select {
 		case err := <-socksErrCh:
 			errMsg = err.Error()
+			logger.Error("StopAndError: SOCKS error: %s", errMsg)
 		default:
 		}
 	}
 	stopLocked()
+	logger.Info("StopAndError returning: %q", errMsg)
 	return errMsg
 }

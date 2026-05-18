@@ -7,7 +7,6 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.IBinder
-import com.flowdav.app.flowdavmobile.Flowdavmobile
 import androidx.core.app.NotificationCompat
 
 class ProxyService : Service() {
@@ -18,18 +17,7 @@ class ProxyService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            ACTION_RUNNING -> {
-                val listenAddr = intent.getStringExtra(EXTRA_LISTEN_ADDR) ?: "0.0.0.0:1080"
-                startForeground(NOTIFICATION_ID, buildNotification("Running on $listenAddr"))
-            }
-            ACTION_STOP -> {
-                Flowdavmobile.stopProxy()
-                ConfigHelper.deleteCache(this)
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-            }
-        }
+        startForeground(NOTIFICATION_ID, buildNotification(getString(R.string.proxy_running)))
         return START_NOT_STICKY
     }
 
@@ -58,23 +46,9 @@ class ProxyService : Service() {
         private const val CHANNEL_ID = "proxy_status"
         private const val NOTIFICATION_ID = 1
 
-        private const val ACTION_RUNNING = "com.flowdav.app.RUNNING"
-        private const val ACTION_STOP = "com.flowdav.app.STOP"
-        private const val EXTRA_LISTEN_ADDR = "listen_addr"
-
-        fun startRunning(context: Context, listenAddr: String) {
-            val intent = Intent(context, ProxyService::class.java).apply {
-                action = ACTION_RUNNING
-                putExtra(EXTRA_LISTEN_ADDR, listenAddr)
-            }
+        fun startRunning(context: Context) {
+            val intent = Intent(context, ProxyService::class.java)
             context.startForegroundService(intent)
-        }
-
-        fun stopAction(context: Context) {
-            val intent = Intent(context, ProxyService::class.java).apply {
-                action = ACTION_STOP
-            }
-            context.startService(intent)
         }
     }
 }

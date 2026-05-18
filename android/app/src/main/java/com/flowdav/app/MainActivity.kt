@@ -1,12 +1,16 @@
 package com.flowdav.app
 
-import android.Manifest
 import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
-import android.content.pm.PackageManager
+import android.content.Context
+import android.content.Intent
+import android.provider.OpenableColumns
+import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import android.graphics.drawable.GradientDrawable
-import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -31,6 +35,8 @@ class MainActivity : AppCompatActivity() {
 
     private var fileUri: android.net.Uri? = null
     private var isManualMode = false
+    private var isConnecting = false
+    private var isEncrypted = true
     private var startJob: Job? = null
     private var startTime: Long = 0L
 
@@ -41,33 +47,66 @@ class MainActivity : AppCompatActivity() {
     private lateinit var modeToggle: MaterialButtonToggleGroup
     private lateinit var fileSection: MaterialCardView
     private lateinit var manualSection: MaterialCardView
-    private lateinit var selectFileButton: MaterialButton
+    private lateinit var passwordLayout: com.google.android.material.textfield.TextInputLayout
     private lateinit var configChip: Chip
     private lateinit var passwordInput: TextInputEditText
     private lateinit var webdavUrlInput: TextInputEditText
     private lateinit var webdavLoginInput: TextInputEditText
     private lateinit var webdavTokenInput: TextInputEditText
     private lateinit var encKeyInput: TextInputEditText
+    private lateinit var encKeyLayout: com.google.android.material.textfield.TextInputLayout
     private lateinit var hmacKeyInput: TextInputEditText
+    private lateinit var hmacKeyLayout: com.google.android.material.textfield.TextInputLayout
     private lateinit var listenAddrInput: TextInputEditText
     private lateinit var actionButton: MaterialButton
     private lateinit var statsText: android.widget.TextView
     private lateinit var advancedHeader: View
-    private lateinit var advancedContent: MaterialCardView
+    private lateinit var advancedContent: View
     private lateinit var advancedArrow: android.widget.TextView
 
     private val filePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             fileUri = uri
-            showFileChip(uri.lastPathSegment ?: "config")
+            try {
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: Exception) { }
+            getPrefs().edit().putString(PREF_URI, uri.toString()).apply()
+            showFileChip(getDisplayName(uri))
+            detectEncrypted(uri)
         }
+    }
+
+    private fun getDisplayName(uri: android.net.Uri): String {
+        return try {
+            contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (nameIdx >= 0 && cursor.moveToFirst()) {
+                    cursor.getString(nameIdx) ?: "config"
+                } else "config"
+            } ?: "config"
+        } catch (e: Exception) {
+            "config"
+        }
+    }
+
+    private fun detectEncrypted(uri: android.net.Uri) {
+        try {
+            val firstByte = contentResolver.openInputStream(uri)?.use { it.read() } ?: -1
+            isEncrypted = firstByte != '{'.code
+        } catch (e: Exception) {
+            isEncrypted = true
+        }
+        updatePasswordVisibility()
+    }
+
+    private fun updatePasswordVisibility() {
+        passwordLayout.visibility = if (isEncrypted) View.VISIBLE else View.GONE
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        @Suppress("DEPRECATION")
-        DynamicColors.applyIfAvailable(this)
+        DynamicColors.applyToActivityIfAvailable(this)
 
         setContentView(R.layout.activity_main)
 
@@ -76,22 +115,57 @@ class MainActivity : AppCompatActivity() {
         modeToggle = findViewById(R.id.modeToggle)
         fileSection = findViewById(R.id.fileSection)
         manualSection = findViewById(R.id.manualSection)
-        selectFileButton = findViewById(R.id.selectFileButton)
         configChip = findViewById(R.id.configChip)
+        passwordLayout = findViewById(R.id.passwordLayout)
         passwordInput = findViewById(R.id.passwordInput)
         webdavUrlInput = findViewById(R.id.webdavUrlInput)
         webdavLoginInput = findViewById(R.id.webdavLoginInput)
         webdavTokenInput = findViewById(R.id.webdavTokenInput)
         encKeyInput = findViewById(R.id.encKeyInput)
+        encKeyLayout = findViewById(R.id.encKeyLayout)
         hmacKeyInput = findViewById(R.id.hmacKeyInput)
+        hmacKeyLayout = findViewById(R.id.hmacKeyLayout)
         listenAddrInput = findViewById(R.id.listenAddrInput)
+        listenAddrInput.setText(DEFAULT_LISTEN_ADDR)
         actionButton = findViewById(R.id.actionButton)
         statsText = findViewById(R.id.statsText)
         advancedHeader = findViewById(R.id.advancedHeader)
         advancedContent = findViewById(R.id.advancedContent)
         advancedArrow = findViewById(R.id.advancedArrow)
 
+        configChip.text = getString(R.string.select_file)
+
+        savedInstanceState?.let { state ->
+            isManualMode = state.getBoolean("isManualMode", false)
+            isEncrypted = state.getBoolean("isEncrypted", true)
+            if (state.getBoolean("advancedExpanded", false)) {
+                advancedContent.visibility = View.VISIBLE
+                advancedArrow.text = "▼"
+            }
+            if (isManualMode) {
+                fileSection.visibility = View.GONE
+                manualSection.visibility = View.VISIBLE
+                modeToggle.check(R.id.modeManual)
+            }
+        }
+
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+        if (clipboard != null) {
+            encKeyLayout.setEndIconOnClickListener { pasteFromClipboard(clipboard, encKeyInput) }
+            hmacKeyLayout.setEndIconOnClickListener { pasteFromClipboard(clipboard, hmacKeyInput) }
+        }
+
         setupListeners()
+
+        val savedUri = getPrefs().getString(PREF_URI, null)
+        if (savedUri != null) {
+            val uri = android.net.Uri.parse(savedUri)
+            fileUri = uri
+            showFileChip(getDisplayName(uri))
+            detectEncrypted(uri)
+        }
+
+        passwordInput.setText(getPrefs().getString(PREF_PASSWORD, ""))
 
         lifecycleScope.launch {
             while (isActive) {
@@ -101,9 +175,30 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun getPrefs(): SharedPreferences {
+        val masterKey = MasterKey.Builder(this)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        return EncryptedSharedPreferences.create(
+            this,
+            PREF_NAME,
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+    }
+
     override fun onDestroy() {
         pulseAnimator?.cancel()
+        startJob?.cancel()
         super.onDestroy()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean("isManualMode", isManualMode)
+        outState.putBoolean("isEncrypted", isEncrypted)
+        outState.putBoolean("advancedExpanded", advancedContent.visibility == View.VISIBLE)
     }
 
     private fun setupListeners() {
@@ -114,13 +209,14 @@ class MainActivity : AppCompatActivity() {
             manualSection.visibility = if (isManualMode) View.VISIBLE else View.GONE
         }
 
-        selectFileButton.setOnClickListener {
+        configChip.setOnClickListener {
             filePicker.launch(arrayOf("*/*"))
         }
 
         configChip.setOnCloseIconClickListener {
             fileUri = null
-            configChip.visibility = View.GONE
+            configChip.text = getString(R.string.select_file)
+            configChip.setCloseIconVisible(false)
         }
 
         advancedHeader.setOnClickListener {
@@ -198,14 +294,21 @@ class MainActivity : AppCompatActivity() {
     // ── Actions ─────────────────────────────────────────
 
     private fun startProxy() {
-        startJob = lifecycleScope.launch {
-            val listenAddr = listenAddrInput.text?.toString()?.ifBlank { "0.0.0.0:1080" } ?: "0.0.0.0:1080"
+        isConnecting = true
+        startJob = lifecycleScope.launch(Dispatchers.Main) {
+            val listenAddr = listenAddrInput.text?.toString()?.ifBlank { DEFAULT_LISTEN_ADDR } ?: DEFAULT_LISTEN_ADDR
 
             statusText.text = getString(R.string.status_connecting)
             actionButton.isEnabled = false
             setStatusState(StatusState.CONNECTING)
 
-            val error = withContext(Dispatchers.IO) {
+            val password = if (isEncrypted) {
+                val pw = passwordInput.text?.toString() ?: ""
+                getPrefs().edit().putString(PREF_PASSWORD, pw).apply()
+                pw
+            } else ""
+
+            val goResult = withContext(Dispatchers.IO) {
                 try {
                     if (isManualMode) {
                         val url = webdavUrlInput.text?.toString()?.ifBlank { null }
@@ -218,14 +321,8 @@ class MainActivity : AppCompatActivity() {
                         }
                         Flowdavmobile.startProxyManual(url, login, token, encKey, hmacKey, listenAddr)
                     } else {
-                        val uri = fileUri
-                        if (uri == null) {
-                            throw IllegalArgumentException(getString(R.string.select_file_first))
-                        }
-                        val password = passwordInput.text?.toString() ?: ""
+                        val uri = fileUri ?: throw IllegalStateException(getString(R.string.select_file_first))
                         val data = ConfigHelper.readContent(this@MainActivity, uri).getOrThrow()
-                        fileUri = null
-                        configChip.visibility = View.GONE
                         Flowdavmobile.startProxyFromData(data, password, listenAddr)
                     }
                     null as String?
@@ -236,16 +333,19 @@ class MainActivity : AppCompatActivity() {
 
             if (!isActive) return@launch
 
-            if (error != null) {
+            if (goResult != null) {
+                Log.e(TAG, "startProxy failed: $goResult")
                 setStatusState(StatusState.ERROR)
                 statusText.text = getString(R.string.status_error)
                 actionButton.isEnabled = true
                 actionButton.text = getString(R.string.start_proxy)
-                Snackbar.make(findViewById(android.R.id.content), getString(R.string.start_failed, error), Snackbar.LENGTH_LONG).show()
+                isConnecting = false
+                setButtonTint(false)
+                Snackbar.make(findViewById(android.R.id.content), getString(R.string.start_failed, goResult), Snackbar.LENGTH_LONG).show()
                 return@launch
             }
 
-            ProxyService.startRunning(this@MainActivity, listenAddr)
+            ProxyService.startRunning(this@MainActivity)
             delay(1500)
 
             if (!isActive) return@launch
@@ -255,23 +355,41 @@ class MainActivity : AppCompatActivity() {
                 updateUi()
             } else {
                 val err = Flowdavmobile.stopAndError()
+                Log.e(TAG, "proxy stopped early: $err")
                 setStatusState(StatusState.ERROR)
                 statusText.text = getString(R.string.status_error)
                 actionButton.isEnabled = true
                 actionButton.text = getString(R.string.start_proxy)
+                isConnecting = false
+                setButtonTint(false)
                 if (err.isNotEmpty()) {
                     Snackbar.make(findViewById(android.R.id.content), getString(R.string.start_failed, err), Snackbar.LENGTH_LONG).show()
                 }
             }
+            isConnecting = false
         }
+    }
+
+    private fun setButtonTint(running: Boolean) {
+        val bg = com.google.android.material.color.MaterialColors.getColor(this,
+            if (running) androidx.appcompat.R.attr.colorPrimary
+            else com.google.android.material.R.attr.colorPrimaryContainer, 0)
+        val fg = com.google.android.material.color.MaterialColors.getColor(this,
+            if (running) com.google.android.material.R.attr.colorOnPrimary
+            else com.google.android.material.R.attr.colorOnPrimaryContainer, 0)
+        actionButton.backgroundTintList = android.content.res.ColorStateList.valueOf(bg)
+        actionButton.setTextColor(fg)
     }
 
     private fun stopProxy() {
         startJob?.cancel()
         startJob = null
-        ProxyService.stopAction(this)
+        isConnecting = false
+        Flowdavmobile.stopProxy()
+        stopService(Intent(this, ProxyService::class.java))
         actionButton.text = getString(R.string.start_proxy)
         actionButton.isEnabled = true
+        setButtonTint(false)
     }
 
     // ── UI update loop ──────────────────────────────────
@@ -281,10 +399,12 @@ class MainActivity : AppCompatActivity() {
         val running = status?.running == true
 
         if (running) {
+            isConnecting = false
             setStatusState(StatusState.RUNNING)
             statusText.text = getString(R.string.status_running)
             actionButton.text = getString(R.string.stop_proxy)
             actionButton.isEnabled = true
+            setButtonTint(true)
 
             val sessions = status.activeSessions
             val uptime = if (startTime > 0) {
@@ -293,17 +413,33 @@ class MainActivity : AppCompatActivity() {
             statsText.visibility = View.VISIBLE
             statsText.text = getString(R.string.status_sessions, sessions, uptime)
         } else {
-            setStatusState(StatusState.STOPPED)
-            statusText.text = getString(R.string.status_stopped)
-            statsText.visibility = View.GONE
-            actionButton.text = getString(R.string.start_proxy)
-            actionButton.isEnabled = true
+            val err = status?.error
+            if (err?.isNotEmpty() == true) {
+                setStatusState(StatusState.ERROR)
+                statusText.text = err
+            } else if (!isConnecting) {
+                setStatusState(StatusState.STOPPED)
+                statusText.text = getString(R.string.status_stopped)
+            }
+            if (!isConnecting) {
+                statsText.visibility = View.GONE
+                actionButton.text = getString(R.string.start_proxy)
+                actionButton.isEnabled = true
+                setButtonTint(false)
+            }
         }
     }
 
     private fun showFileChip(name: String) {
         configChip.text = name
-        configChip.visibility = View.VISIBLE
+        configChip.setCloseIconVisible(true)
+    }
+
+    private fun pasteFromClipboard(clipboard: android.content.ClipboardManager, target: TextInputEditText) {
+        val clip = clipboard.primaryClip
+        if (clip != null && clip.itemCount > 0) {
+            target.setText(clip.getItemAt(0).text)
+        }
     }
 
     private fun formatDuration(ms: Long): String {
@@ -319,5 +455,13 @@ class MainActivity : AppCompatActivity() {
 
     enum class StatusState {
         STOPPED, CONNECTING, RUNNING, ERROR
+    }
+
+    companion object {
+        private const val TAG = "flowdav"
+        private const val PREF_NAME = "flowdav"
+        private const val PREF_PASSWORD = "password"
+        private const val PREF_URI = "config_uri"
+        private const val DEFAULT_LISTEN_ADDR = "127.0.0.1:1080"
     }
 }

@@ -206,6 +206,7 @@ docker run --rm -v ./server.json.enc:/app/configs/server.json.enc \
 |-------|------|---------|--------|--------|-------------|
 | `storage_type` | string | `"webdav"` | ✓ | ✓ | Backend type |
 | `webdav` | object | — | ✓ | ✓ | WebDAV connection (see example) |
+| `webdav.base_path` | string | `""` | ✓ | ✓ | WebDAV subdirectory for files |
 | `enc_key` | string | — | ✓ | ✓ | 32-byte AES-256 key, base64 |
 | `hmac_key` | string | — | ✓ | ✓ | 32-byte HMAC-SHA256 key, base64 |
 | `listen_addr` | string | — | ✓ | | SOCKS5 listener (`host:port`) |

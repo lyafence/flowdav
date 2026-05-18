@@ -17,6 +17,7 @@
 | `make openwrt` | Cross-compile for MIPS little-endian, softfloat |
 | `make hooks` | Install pre-commit hooks (recommended) |
 | `make android-apk` | Build Android APK (debug) |
+| `make android-deploy` | Build APK + start test env + deploy to Android device |
 | `flowdav-* --version` | Show version (client, server, encrypt) |
 | `curl --socks5h://127.0.0.1:11080 https://api.ipify.org` | Test SOCKS5 via docker-compose |
 

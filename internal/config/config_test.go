@@ -16,7 +16,7 @@ func TestIsPathTraversal(t *testing.T) {
 	require.True(t, isPathTraversal("path/.."))
 
 	// This is URL-encoded, not raw "..", so should NOT be detected here
-	// It will be caught by URL decoding in validateBasePath
+	// It will be caught by URL decoding in ValidateBasePath
 	require.False(t, isPathTraversal("..%2fetc"))
 
 	// These should NOT be detected as path traversal
@@ -46,15 +46,15 @@ func TestValidateBasePath(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateBasePath(tt.basePath, "test.field")
+			err := ValidateBasePath(tt.basePath, "test.field")
 			if (err != nil) != tt.wantErr {
-				t.Errorf("validateBasePath(%q) error = %v, wantErr = %v", tt.basePath, err, tt.wantErr)
+				t.Errorf("ValidateBasePath(%q) error = %v, wantErr = %v", tt.basePath, err, tt.wantErr)
 			}
 		})
 	}
 }
 
-// Helper to avoid file I/O in tests - uses validateBasePath directly
+// Helper to avoid file I/O in tests - uses ValidateBasePath directly
 func TestConfigBasePathValidation(t *testing.T) {
 	tests := []struct {
 		path string
@@ -72,7 +72,7 @@ func TestConfigBasePathValidation(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		err := validateBasePath(tt.path, "test.field")
+		err := ValidateBasePath(tt.path, "test.field")
 		if tt.want && err == nil {
 			t.Errorf("Expected error for path: %s", tt.path)
 		}
@@ -94,9 +94,9 @@ func TestValidateBasePathRejectsEncodedNullByte(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateBasePath(tt.path, "test.field")
+			err := ValidateBasePath(tt.path, "test.field")
 			if err == nil {
-				t.Errorf("validateBasePath should reject encoded null byte: %s", tt.path)
+				t.Errorf("ValidateBasePath should reject encoded null byte: %s", tt.path)
 			}
 		})
 	}
@@ -117,7 +117,7 @@ func TestValidateBasePathRejectsEncodedNullByte(t *testing.T) {
 // bytes as path traversal vectors. This test exists to document the gap.
 func TestValidateBasePathTripleEncodedNull(t *testing.T) {
 	// Triple encoding bypass — code only does 2 decode levels
-	err := validateBasePath("%252500", "test.field")
+	err := ValidateBasePath("%252500", "test.field")
 	if err != nil {
 		// If this changes in the future, update the decoder.
 		// Currently this is the expected limitation.

@@ -173,6 +173,12 @@ func main() {
 			default:
 				return nil, transport.ErrTooManyConns
 			}
+			released := false
+			defer func() {
+				if !released {
+					<-connLimit
+				}
+			}()
 
 			session := transport.NewSession(sessionID)
 			session.TargetAddr = addr
@@ -185,6 +191,7 @@ func main() {
 			// Instantly ping a blank payload so the remote end opens the actual TCP destination
 			session.EnqueueTx(nil)
 
+			released = true
 			return transport.NewVirtualConnWithOnClose(session, engine, func() { <-connLimit }), nil
 		}),
 		socks5.WithAssociateHandle(func(ctx context.Context, w io.Writer, req *socks5.Request) error {

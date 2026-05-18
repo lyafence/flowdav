@@ -51,8 +51,8 @@ In docker-compose, `HEALTHCHECK` is configured for both `flow-server` (port `919
 ## Android
 
 ```bash
-make android-apk     # → bin/flowdav-android-debug.apk
-adb install -r bin/flowdav-android-debug.apk
+make android-apk     # → bin/flowdav-android.apk
+adb install -r bin/flowdav-android.apk
 ```
 
 Requires: Android SDK + NDK + gomobile. Run `make android-init` to set up.
