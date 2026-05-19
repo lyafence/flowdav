@@ -56,38 +56,19 @@ head -c 32 /dev/urandom | base64 -w0; echo  # enc_key
 head -c 32 /dev/urandom | base64 -w0; echo  # hmac_key
 ```
 
-#### Copy example configs
+#### Copy the example config
 
 ```bash
-cp flowdav_server.json.example server.json
-cp flowdav_client.json.example client.json
+cp flowdav.json.example config.json
 ```
 
-#### Edit the server config
+#### Edit the config
 
-The server runs at home and opens real TCP connections. It has no `listen_addr`:
-
-```json
-{
-  "storage_type": "webdav",
-  "webdav": {
-    "url": "https://your-webdav-server:8080",
-    "login": "username",
-    "token": "YOUR_WEBDAV_TOKEN"
-  },
-  "enc_key": "paste enc_key here",
-  "hmac_key": "paste hmac_key here"
-}
-```
-
-#### Edit the client config
-
-The client runs at cafe and listens for SOCKS5 connections:
+A single config works for both server and client — each binary ignores fields it doesn't need:
 
 ```json
 {
   "listen_addr": "127.0.0.1:1080",
-  "storage_type": "webdav",
   "webdav": {
     "url": "https://your-webdav-server:8080",
     "login": "username",
@@ -98,9 +79,9 @@ The client runs at cafe and listens for SOCKS5 connections:
 }
 ```
 
-> **Key difference:** client has `listen_addr` (SOCKS5 port); server does not.
+The server ignores `listen_addr`; the client ignores `health_port` (see below).
 
-All configs support optional fields: `max_message_size` (default 16MB), `max_sessions` (default 0 = unlimited), `health_port` (default: disabled). See the [Config Reference](#config-reference) table for the full list. Both `--version` and `-l <level>` flags are supported on all three binaries.
+Optional fields: `max_message_size` (default 16MB), `max_sessions` (default 0 = unlimited), `health_port` (default: disabled). See the [Config Reference](#config-reference) table for the full list. Both `--version` and `-l <level>` flags are supported on all three binaries.
 
 For multiple WebDAV providers (round-robin), replace the single backend fields with a `backends` array:
 
@@ -115,7 +96,7 @@ For multiple WebDAV providers (round-robin), replace the single backend fields w
 }
 ```
 
-See `flowdav_client.json.example` and `flowdav_server.json.example` for the single-backend structure.
+See `flowdav.json.example` for the single-backend structure.
 
 #### Optional: encrypt configs
 
@@ -123,19 +104,18 @@ Encrypt your config with a master password so secrets are never stored in plaint
 
 ```bash
 # Generate encryption keys automatically and encrypt:
-FLOWDAV_PASSWORD=secret ./flowdav-encrypt --gen-keys < server.json > server.json.enc
-FLOWDAV_PASSWORD=secret ./flowdav-encrypt --gen-keys < client.json > client.json.enc
+FLOWDAV_PASSWORD=secret ./flowdav-encrypt --gen-keys < config.json > config.json.enc
 
 # Or encrypt an already-configured file (keys already set):
-FLOWDAV_PASSWORD=secret ./flowdav-encrypt < server.json > server.json.enc
+FLOWDAV_PASSWORD=secret ./flowdav-encrypt < config.json > config.json.enc
 ```
 
 Run with the encrypted config:
 
 ```bash
-./flowdav-server -p -c server.json.enc   # prompts for password
+./flowdav-server -p -c config.json.enc   # prompts for password
 # or via env var:
-FLOWDAV_PASSWORD=secret ./flowdav-client -c client.json.enc
+FLOWDAV_PASSWORD=secret ./flowdav-client -c config.json.enc
 ```
 
 ### 3. Run
@@ -143,9 +123,9 @@ FLOWDAV_PASSWORD=secret ./flowdav-client -c client.json.enc
 **Start the server** (at home):
 
 ```bash
-./flowdav-server -c server.json
+./flowdav-server -c config.json
 # or with encrypted config:
-./flowdav-server -p -c server.json.enc   # prompts for password
+./flowdav-server -p -c config.json.enc   # prompts for password
 ```
 
 The server polls WebDAV for new sessions — no listening ports required.
@@ -153,7 +133,7 @@ The server polls WebDAV for new sessions — no listening ports required.
 **Start the client** (at cafe):
 
 ```bash
-./flowdav-client -c client.json
+./flowdav-client -c config.json
 ```
 
 The client listens on `127.0.0.1:1080` (or the address in `listen_addr`).
@@ -177,28 +157,27 @@ Run any binary by passing it as the command (`docker run` pulls automatically if
 
 ```bash
 # start the server (at home)
-docker run --rm -v ./server.json:/app/configs/config.json \
+docker run --rm -v ./config.json:/app/configs/config.json \
   ghcr.io/lyafence/flowdav flowdav-server -c /app/configs/config.json
 
 # start the client (at cafe), exposes SOCKS5 on 127.0.0.1:1080
-docker run --rm -v ./client.json:/app/configs/config.json \
+docker run --rm -v ./config.json:/app/configs/config.json \
   ghcr.io/lyafence/flowdav flowdav-client -c /app/configs/config.json
 
 # generate encrypted config
-docker run --rm -i ghcr.io/lyafence/flowdav flowdav-encrypt --gen-keys < server.json > server.json.enc
+docker run --rm -i ghcr.io/lyafence/flowdav flowdav-encrypt --gen-keys < config.json > config.json.enc
 
 # run with encrypted config
-docker run --rm -v ./server.json.enc:/app/configs/server.json.enc \
+docker run --rm -v ./config.json.enc:/app/configs/config.json.enc \
   -e FLOWDAV_PASSWORD=secret \
-  ghcr.io/lyafence/flowdav flowdav-server -p -c /app/configs/server.json.enc
+  ghcr.io/lyafence/flowdav flowdav-server -p -c /app/configs/config.json.enc
 ```
 
 ## Config Files
 
 | File | Type | listen_addr | Health Port |
 |------|------|-------------|-------------|
-| `flowdav_client.json.example` | Client | `127.0.0.1:1080` | — |
-| `flowdav_server.json.example` | Server | No | — |
+| `flowdav.json.example` | Universal | `127.0.0.1:1080` | — |
 
 ### Config Reference
 
@@ -268,7 +247,7 @@ SOCKS5 proxy runs on `0.0.0.0:1080` — configure your browser manually.
 Multi-platform release archives are built automatically by CI on each tag (`v*`).
 Download the latest archive from [GitHub Releases](https://github.com/lyafence/flowdav/releases).
 
-Each archive contains: `flowdav-client`, `flowdav-server`, `flowdav-encrypt`, two example configs (`flowdav_client.json.example`, `flowdav_server.json.example`), and README.
+Each archive contains: `flowdav-client`, `flowdav-server`, `flowdav-encrypt`, an example config (`flowdav.json.example`), and README.
 
 All binaries accept `--version` to print the release version.
 

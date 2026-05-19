@@ -57,6 +57,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var encKeyLayout: com.google.android.material.textfield.TextInputLayout
     private lateinit var hmacKeyInput: TextInputEditText
     private lateinit var hmacKeyLayout: com.google.android.material.textfield.TextInputLayout
+    private lateinit var socks5UserInput: TextInputEditText
+    private lateinit var socks5PassInput: TextInputEditText
     private lateinit var listenAddrInput: TextInputEditText
     private lateinit var actionButton: MaterialButton
     private lateinit var statsText: android.widget.TextView
@@ -125,6 +127,8 @@ class MainActivity : AppCompatActivity() {
         encKeyLayout = findViewById(R.id.encKeyLayout)
         hmacKeyInput = findViewById(R.id.hmacKeyInput)
         hmacKeyLayout = findViewById(R.id.hmacKeyLayout)
+        socks5UserInput = findViewById(R.id.socks5UserInput)
+        socks5PassInput = findViewById(R.id.socks5PassInput)
         listenAddrInput = findViewById(R.id.listenAddrInput)
         listenAddrInput.setText(DEFAULT_LISTEN_ADDR)
         actionButton = findViewById(R.id.actionButton)
@@ -192,6 +196,13 @@ class MainActivity : AppCompatActivity() {
         pulseAnimator?.cancel()
         startJob?.cancel()
         super.onDestroy()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.action == ProxyService.ACTION_STOP) {
+            stopProxy()
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -316,10 +327,15 @@ class MainActivity : AppCompatActivity() {
                         val token = webdavTokenInput.text?.toString()?.ifBlank { null }
                         val encKey = encKeyInput.text?.toString()?.ifBlank { null }
                         val hmacKey = hmacKeyInput.text?.toString()?.ifBlank { null }
+                        val socks5User = socks5UserInput.text?.toString()?.ifBlank { null }
+                        val socks5Pass = socks5PassInput.text?.toString()?.ifBlank { null }
                         if (url == null || login == null || token == null || encKey == null || hmacKey == null) {
                             throw IllegalArgumentException(getString(R.string.fill_all_fields))
                         }
                         Flowdavmobile.startProxyManual(url, login, token, encKey, hmacKey, listenAddr)
+                        if (socks5User != null && socks5Pass != null) {
+                            Flowdavmobile.setSocks5Auth(socks5User, socks5Pass)
+                        }
                     } else {
                         val uri = fileUri ?: throw IllegalStateException(getString(R.string.select_file_first))
                         val data = ConfigHelper.readContent(this@MainActivity, uri).getOrThrow()
@@ -401,7 +417,8 @@ class MainActivity : AppCompatActivity() {
         if (running) {
             isConnecting = false
             setStatusState(StatusState.RUNNING)
-            statusText.text = getString(R.string.status_running)
+            val addr = status?.listenAddr?.ifBlank { DEFAULT_LISTEN_ADDR }
+            statusText.text = getString(R.string.status_running_addr, addr)
             actionButton.text = getString(R.string.stop_proxy)
             actionButton.isEnabled = true
             setButtonTint(true)

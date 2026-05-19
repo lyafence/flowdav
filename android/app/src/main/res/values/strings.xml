@@ -16,6 +16,8 @@
     <string name="webdav_token">WebDAV password/token</string>
     <string name="enc_key">Encryption key (base64, 32 bytes)</string>
     <string name="hmac_key">HMAC key (base64, 32 bytes)</string>
+    <string name="socks5_user">SOCKS5 username (optional)</string>
+    <string name="socks5_pass">SOCKS5 password (optional)</string>
 
     <!-- Advanced -->
     <string name="advanced">Advanced</string>
@@ -29,6 +31,7 @@
     <string name="status_stopped">Stopped</string>
     <string name="status_connecting">Connecting…</string>
     <string name="status_running">Running</string>
+    <string name="status_running_addr" formatted="false">%s</string>
     <string name="status_error">Error</string>
     <string name="status_sessions" formatted="false">Sessions: %d · Uptime: %s</string>
 

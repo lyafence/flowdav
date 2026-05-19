@@ -95,8 +95,8 @@ services:
       webdav-single:
         condition: service_healthy
     volumes:
-      - ./configs/flowdav_test_server.json:/app/configs/flowdav_test_server.json:Z
-    command: flowdav-server -c /app/configs/flowdav_test_server.json
+      - ./configs/flowdav_test.json:/app/configs/flowdav_test.json:Z
+    command: flowdav-server -c /app/configs/flowdav_test.json
     environment:
       - FLOWDAV_PASSWORD=${FLOWDAV_PASSWORD:-}
     restart: unless-stopped
@@ -120,15 +120,15 @@ services:
       flow-server:
         condition: service_healthy
     volumes:
-      - ./configs/flowdav_test_client.json:/app/configs/flowdav_test_client.json:Z
-    command: flowdav-client -c /app/configs/flowdav_test_client.json
+      - ./configs/flowdav_test.json:/app/configs/flowdav_test.json:Z
+    command: flowdav-client -c /app/configs/flowdav_test.json
     environment:
       - FLOWDAV_PASSWORD=${FLOWDAV_PASSWORD:-}
     restart: unless-stopped
     ports:
       - "11080:11080"
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9191/health"]
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9190/health"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -150,8 +150,8 @@ services:
       webdav-multi-3:
         condition: service_healthy
     volumes:
-      - ./configs/flowdav_test_server_multi.json:/app/configs/flowdav_test_server_multi.json:Z
-    command: flowdav-server -c /app/configs/flowdav_test_server_multi.json
+      - ./configs/flowdav_test_multi.json:/app/configs/flowdav_test_multi.json:Z
+    command: flowdav-server -c /app/configs/flowdav_test_multi.json
     environment:
       - FLOWDAV_PASSWORD=${FLOWDAV_PASSWORD:-}
     restart: unless-stopped
@@ -179,15 +179,15 @@ services:
       flow-server-multi:
         condition: service_healthy
     volumes:
-      - ./configs/flowdav_test_client_multi.json:/app/configs/flowdav_test_client_multi.json:Z
-    command: flowdav-client -c /app/configs/flowdav_test_client_multi.json
+      - ./configs/flowdav_test_multi.json:/app/configs/flowdav_test_multi.json:Z
+    command: flowdav-client -c /app/configs/flowdav_test_multi.json
     environment:
       - FLOWDAV_PASSWORD=${FLOWDAV_PASSWORD:-}
     restart: unless-stopped
     ports:
       - "11081:11080"
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9191/health"]
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9190/health"]
       interval: 10s
       timeout: 5s
       retries: 3

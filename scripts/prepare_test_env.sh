@@ -7,7 +7,8 @@
 #   ./scripts/prepare_test_env.sh --encrypted --password X
 #
 # Generates configs in configs/:
-#   flowdav_test_{client,server}{,_multi}.json
+#   flowdav_test.json       — single-backend (server + client)
+#   flowdav_test_multi.json — multi-backend  (server + client)
 #
 # With --encrypted: overwrites .json with encrypted content and
 # writes .env file with ENC_PASS for docker-compose to pick up.
@@ -48,8 +49,7 @@ gen_config() {
     fi
 }
 
-gen_config "flowdav_test_client.json" '{
-  "listen_addr": "0.0.0.0:11080",
+gen_config "flowdav_test.json" '{
   "storage_type": "webdav",
   "webdav": {
     "url": "http://webdav-single:8080",
@@ -57,34 +57,18 @@ gen_config "flowdav_test_client.json" '{
     "token": "test",
     "base_path": "data_sync"
   },
-  "refresh_rate_ms": 500,
-  "flush_rate_ms": 500,
+  "listen_addr": "0.0.0.0:11080",
   "enc_key": "'"$enc_key"'",
   "hmac_key": "'"$hmac_key"'",
+  "refresh_rate_ms": 500,
+  "flush_rate_ms": 500,
   "log_level": "debug",
   "socks5_user": "",
   "socks5_pass": "",
-  "health_port": "127.0.0.1:9191"
-}'
-
-gen_config "flowdav_test_server.json" '{
-  "storage_type": "webdav",
-  "webdav": {
-    "url": "http://webdav-single:8080",
-    "login": "test",
-    "token": "test",
-    "base_path": "data_sync"
-  },
-  "enc_key": "'"$enc_key"'",
-  "hmac_key": "'"$hmac_key"'",
-  "refresh_rate_ms": 500,
-  "flush_rate_ms": 500,
-  "log_level": "debug",
   "health_port": "127.0.0.1:9190"
 }'
 
-gen_config "flowdav_test_client_multi.json" '{
-  "listen_addr": "0.0.0.0:11080",
+gen_config "flowdav_test_multi.json" '{
   "storage_type": "webdav",
   "webdav": {
     "backends": [
@@ -108,50 +92,19 @@ gen_config "flowdav_test_client_multi.json" '{
       }
     ]
   },
-  "refresh_rate_ms": 500,
-  "flush_rate_ms": 500,
+  "listen_addr": "0.0.0.0:11080",
   "enc_key": "'"$enc_key_multi"'",
   "hmac_key": "'"$hmac_key_multi"'",
+  "refresh_rate_ms": 500,
+  "flush_rate_ms": 500,
   "log_level": "debug",
   "socks5_user": "",
   "socks5_pass": "",
-  "health_port": "127.0.0.1:9191"
-}'
-
-gen_config "flowdav_test_server_multi.json" '{
-  "storage_type": "webdav",
-  "webdav": {
-    "backends": [
-      {
-            "url": "http://webdav-multi-1:8080",
-        "login": "test",
-        "token": "test",
-        "base_path": "data_sync"
-      },
-      {
-            "url": "http://webdav-multi-2:8080",
-        "login": "test",
-        "token": "test",
-        "base_path": "data_sync"
-      },
-      {
-            "url": "http://webdav-multi-3:8080",
-        "login": "test",
-        "token": "test",
-        "base_path": "data_sync"
-      }
-    ]
-  },
-  "refresh_rate_ms": 500,
-  "flush_rate_ms": 500,
-  "enc_key": "'"$enc_key_multi"'",
-  "hmac_key": "'"$hmac_key_multi"'",
-  "log_level": "debug",
   "health_port": "127.0.0.1:9190"
 }'
 
 echo "Generated test configs in $CONFIG_DIR:"
-for f in flowdav_test_client flowdav_test_server flowdav_test_client_multi flowdav_test_server_multi; do
+for f in flowdav_test flowdav_test_multi; do
     echo "  $f.json"
 done
 

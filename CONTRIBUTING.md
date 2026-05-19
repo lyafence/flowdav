@@ -14,11 +14,10 @@ make check      # full verification: vet → lint → build → test with race d
 make test-e2e   # E2E tests (requires podman)
 ```
 
-## Copy example configs (from source checkout)
+## Copy example config (from source checkout)
 
 ```bash
-cp configs/flowdav_server.json.example configs/server.json
-cp configs/flowdav_client.json.example configs/client.json
+cp configs/flowdav.json.example config.json
 ```
 
 ## Docker Compose (E2E testing)

@@ -1,8 +1,10 @@
 {
+  "listen_addr": "127.0.0.1:1080",
   "webdav": {
     "url": "https://webdav.example.com:8080",
     "login": "username",
-    "token": "YOUR_WEBDAV_TOKEN"
+    "token": "YOUR_WEBDAV_TOKEN",
+    "base_path": "data_sync"
   },
   "enc_key": "PasteYour32ByteBase64EncodedAES256KeyHere==",
   "hmac_key": "PasteYour32ByteBase64EncodedHMACSHA256KeyHere=="

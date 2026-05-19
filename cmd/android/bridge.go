@@ -22,14 +22,16 @@ import (
 )
 
 var (
-	mu          sync.Mutex
-	eng         *transport.Engine
-	cancel      context.CancelFunc
-	socksLnr    net.Listener
-	socksErrCh  chan error
-	currentAddr string
-	lastCfg     *config.AppConfig
-	lastError   string
+	mu                sync.Mutex
+	eng               *transport.Engine
+	cancel            context.CancelFunc
+	socksLnr          net.Listener
+	socksErrCh        chan error
+	currentAddr       string
+	lastCfg           *config.AppConfig
+	lastError         string
+	pendingSocks5User string
+	pendingSocks5Pass string
 )
 
 func wipeBytes(b []byte) {
@@ -211,6 +213,15 @@ func StartProxyManual(webdavURL, webdavLogin, webdavToken, encKeyBase64, hmacKey
 	return startProxy(appCfg, listenAddr)
 }
 
+// SetSocks5Auth sets SOCKS5 authentication credentials for the next manual proxy.
+// Must be called before or immediately after StartProxyManual.
+func SetSocks5Auth(user, pass string) {
+	mu.Lock()
+	pendingSocks5User = user
+	pendingSocks5Pass = pass
+	mu.Unlock()
+}
+
 func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 	mu.Lock()
 	defer mu.Unlock()
@@ -221,6 +232,13 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 
 	logger.SetLevel(appCfg.LogLevel)
 	logger.Info("startProxy: listen=%q, wdav_url=%q", listenAddr, appCfg.WebDAV.URL)
+
+	if pendingSocks5User != "" {
+		appCfg.SOCKS5User = pendingSocks5User
+		appCfg.SOCKS5Pass = pendingSocks5Pass
+		pendingSocks5User = ""
+		pendingSocks5Pass = ""
+	}
 
 	backend, multiBackend, err := storage.NewBackendFromConfig(appCfg.WebDAV)
 	if err != nil {

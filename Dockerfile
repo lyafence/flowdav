@@ -28,6 +28,6 @@ RUN chown -R flow:flow /app/configs
 
 USER flow
 
-CMD ["sh", "-c", "echo 'flowdav - Lightweight SOCKS5 proxy over WebDAV'; echo 'Images: https://github.com/lyafence/flowdav/pkgs/container/flowdav'; echo ''; echo 'Usage:'; echo '  docker run --rm -v ./config.json:/app/configs/config.json ghcr.io/lyafence/flowdav flowdav-client -c /app/configs/config.json'; echo '  docker run --rm -v ./config.json:/app/configs/config.json ghcr.io/lyafence/flowdav flowdav-server -c /app/configs/config.json'; echo '  docker run --rm ghcr.io/lyafence/flowdav flowdav-encrypt --gen-keys < config.json > config.enc'; echo ''; echo 'Example configs are in /app/configs/ (flowdav_client.json.example, flowdav_server.json.example).'; echo 'See README.md in /app/ for full documentation.'"]
+CMD ["sh", "-c", "echo 'flowdav - Lightweight SOCKS5 proxy over WebDAV'; echo 'Images: https://github.com/lyafence/flowdav/pkgs/container/flowdav'; echo ''; echo 'Usage:'; echo '  docker run --rm -v ./config.json:/app/configs/config.json ghcr.io/lyafence/flowdav flowdav-client -c /app/configs/config.json'; echo '  docker run --rm -v ./config.json:/app/configs/config.json ghcr.io/lyafence/flowdav flowdav-server -c /app/configs/config.json'; echo '  docker run --rm ghcr.io/lyafence/flowdav flowdav-encrypt --gen-keys < config.json > config.enc'; echo ''; echo 'Example config is in /app/configs/flowdav.json.example.'; echo 'See README.md in /app/ for full documentation.'"]
 LABEL maintainer="lyafence" \
        description="Lightweight SOCKS5 proxy using WebDAV storage"
