@@ -239,8 +239,8 @@ Both the client and server support an optional HTTP health endpoint. Set `health
 
 Download `flowdav-android.apk` from [GitHub Releases](https://github.com/lyafence/flowdav/releases).
 
-The app accepts `client.json.enc` or manual WebDAV and encryption key fields.
-SOCKS5 proxy runs on `0.0.0.0:1080` — configure your browser manually.
+The app accepts an encrypted config file (`.json.enc`) via file picker, or manual WebDAV and encryption key fields.
+SOCKS5 proxy runs on the configured address (default `127.0.0.1:1080`).
 
 ## Release Archives
 

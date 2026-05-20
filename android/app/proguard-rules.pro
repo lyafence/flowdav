@@ -11,3 +11,8 @@
 
 # Keep AndroidX lifecycle
 -keep class androidx.lifecycle.** { *; }
+
+# Tink (used by security-crypto) references javax.annotation classes
+# which are compile-only and not needed at runtime
+-dontwarn javax.annotation.Nullable
+-dontwarn javax.annotation.concurrent.GuardedBy

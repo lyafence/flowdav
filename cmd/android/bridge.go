@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/things-go/go-socks5"
 	"github.com/things-go/go-socks5/statute"
@@ -32,7 +33,54 @@ var (
 	lastError         string
 	pendingSocks5User string
 	pendingSocks5Pass string
+
+	logMu    sync.Mutex
+	logBuf   [50]string
+	logHead  int
+	logCount int
 )
+
+func logEvent(format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
+	logger.Info("%s", msg)
+	ts := time.Now().Format("15:04:05")
+	entry := ts + " " + msg
+
+	logMu.Lock()
+	logBuf[logHead] = entry
+	logHead = (logHead + 1) % len(logBuf)
+	if logCount < len(logBuf) {
+		logCount++
+	}
+	logMu.Unlock()
+}
+
+func getLogs() string {
+	logMu.Lock()
+	n := logCount
+	head := logHead
+	buf := logBuf
+	logMu.Unlock()
+	if n == 0 {
+		return ""
+	}
+
+	out := make([]byte, 0, 1600)
+	for i := 0; i < n; i++ {
+		idx := (head - n + i) % len(buf)
+		if idx < 0 {
+			idx += len(buf)
+		}
+		line := buf[idx]
+		if len(out)+len(line)+1 > 1500 {
+			out = append(out, "..."...)
+			break
+		}
+		out = append(out, line...)
+		out = append(out, '\n')
+	}
+	return string(out)
+}
 
 func wipeBytes(b []byte) {
 	for i := range b {
@@ -59,6 +107,9 @@ type Status struct {
 	ActiveSessions int
 	ListenAddr     string
 	Error          string
+	ProcessedFiles int    `json:"processed_files"`
+	WebdavURL      string `json:"webdav_url"`
+	Logs           string
 }
 
 func decodeKey(keyB64 string, name string) ([]byte, error) {
@@ -135,15 +186,6 @@ func parseConfigJSON(data []byte) (*config.AppConfig, error) {
 	}
 	applyDefaults(&cfg)
 	return &cfg, nil
-}
-
-// StartProxy loads config from file and starts the proxy.
-func StartProxy(configPath, password, listenAddr string) error {
-	appCfg, err := config.LoadConfig(configPath, password, false)
-	if err != nil {
-		return fmt.Errorf("config: %w", err)
-	}
-	return startProxy(appCfg, listenAddr)
 }
 
 // StartProxyFromData parses config from raw bytes and starts the proxy.
@@ -231,7 +273,7 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 	}
 
 	logger.SetLevel(appCfg.LogLevel)
-	logger.Info("startProxy: listen=%q, wdav_url=%q", listenAddr, appCfg.WebDAV.URL)
+	logEvent("Starting proxy on %s (WebDAV: %s)", listenAddr, appCfg.WebDAV.URL)
 
 	if pendingSocks5User != "" {
 		appCfg.SOCKS5User = pendingSocks5User
@@ -274,7 +316,7 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 	engine.Start(ctx)
 
 	engine.OnSessionEnd = func(sessionID string) {
-		logger.Info("Client session %s ended", sessionID)
+		logEvent("Session %s ended", sessionID)
 	}
 
 	maxConns := appCfg.MaxConnections
@@ -327,12 +369,12 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 		serverOpts = append(serverOpts, socks5.WithAuthMethods([]socks5.Authenticator{
 			socks5.UserPassAuthenticator{Credentials: creds},
 		}))
-		logger.Info("SOCKS5 authentication enabled for user: %s", appCfg.SOCKS5User)
+		logEvent("SOCKS5 authentication enabled for user: %s", appCfg.SOCKS5User)
 	} else {
 		serverOpts = append(serverOpts, socks5.WithAuthMethods([]socks5.Authenticator{
 			socks5.NoAuthAuthenticator{},
 		}))
-		logger.Info("WARNING: SOCKS5 server running WITHOUT authentication. Anyone with network access can use this proxy!")
+		logEvent("Warning: SOCKS5 running without authentication")
 	}
 
 	server := socks5.NewServer(serverOpts...)
@@ -352,7 +394,7 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 	socksErrCh = make(chan error, 1)
 	lastError = ""
 
-	logger.Info("SOCKS5 proxy started on %s", listenAddr)
+	logEvent("SOCKS5 proxy started on %s", listenAddr)
 
 	go func() {
 		defer func() {
@@ -365,6 +407,7 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 			mu.Lock()
 			lastError = err.Error()
 			mu.Unlock()
+			logEvent("SOCKS5 error: %v", err)
 		}
 	}()
 
@@ -374,7 +417,7 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 func StopProxy() {
 	mu.Lock()
 	defer mu.Unlock()
-	logger.Info("StopProxy called")
+	logEvent("Proxy stopped")
 	stopLocked()
 }
 
@@ -407,13 +450,19 @@ func GetStatus() *Status {
 	e := eng
 	addr := currentAddr
 	errStr := lastError
+	wdavURL := ""
+	if lastCfg != nil && lastCfg.WebDAV != nil {
+		wdavURL = lastCfg.WebDAV.URL
+	}
 	mu.Unlock()
 
-	s := &Status{Running: e != nil, ListenAddr: addr, Error: errStr}
+	s := &Status{Running: e != nil, ListenAddr: addr, Error: errStr, WebdavURL: wdavURL}
 	if e != nil {
 		stats := e.Stats()
 		s.ActiveSessions = stats.ActiveSessions
+		s.ProcessedFiles = stats.ProcessedFiles
 	}
+	s.Logs = getLogs()
 	return s
 }
 
@@ -431,6 +480,6 @@ func StopAndError() string {
 		}
 	}
 	stopLocked()
-	logger.Info("StopAndError returning: %q", errMsg)
+	logEvent("Proxy stopped (error: %s)", errMsg)
 	return errMsg
 }

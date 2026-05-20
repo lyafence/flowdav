@@ -96,7 +96,7 @@ release:
 
 clean:
 	rm -rf $(BIN_DIR) $(RELEASE_DIR)
-	rm -f configs/flowdav_test_*.json configs/.env
+	rm -rf configs/flowdav_test_*.json configs/.env
 	rm -f configs/client-android.json.enc
 	rm -f android/app/libs/flowdav.aar
 	rm -rf android/app/build android/.gradle
@@ -129,15 +129,18 @@ android-deploy: android-apk
 	@if [ ! -f configs/flowdav_test.json ]; then \
 		echo "Run 'make compose-android' first."; exit 1; \
 	fi; \
+	cp configs/flowdav_test.json configs/client-android.json; \
+	echo "Config: configs/client-android.json (plaintext)"; \
 	FLOWDAV_PASSWORD=secret go run ./cmd/encrypt < configs/flowdav_test.json > configs/client-android.json.enc; \
 	echo "Config: configs/client-android.json.enc (password: secret)"; \
 	ADB=$$(which adb 2>/dev/null || true); \
 	if [ -n "$$ADB" ] && $$ADB get-state 2>/dev/null | grep -q device; then \
 		$$ADB install -r -d $(BIN_DIR)/flowdav-android.apk && \
+		$$ADB push configs/client-android.json /sdcard/Download/flowdav-config.json && \
 		$$ADB push configs/client-android.json.enc /sdcard/Download/flowdav-config.enc && \
 		echo "=== Deployed via adb ==="; \
 	else \
-		echo "=== Ready (no adb device) — copy configs/client-android.json.enc manually ==="; \
+		echo "=== Ready (no adb device) — copy configs/client-android.json or client-android.json.enc manually ==="; \
 	fi
 
 # Android AAR via gomobile (requires NDK + gomobile)

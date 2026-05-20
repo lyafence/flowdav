@@ -8,7 +8,8 @@
 
     <!-- File mode -->
     <string name="select_file">Select config file</string>
-    <string name="password_hint">Master password (leave empty for plaintext)</string>
+    <string name="master_password">Master password</string>
+    <string name="password_hint">Leave empty for plaintext</string>
 
     <!-- Manual mode -->
     <string name="webdav_url">WebDAV URL</string>
@@ -27,13 +28,20 @@
     <string name="start_proxy">Start Proxy</string>
     <string name="stop_proxy">Stop Proxy</string>
 
+    <!-- Dashboard -->
+    <string name="address_label">Address</string>
+    <string name="sessions_label">Sessions</string>
+    <string name="uptime_label">Uptime</string>
+
+    <!-- Logs -->
+    <string name="logs_label">Logs</string>
+    <string name="copy_logs">Copy logs</string>
+
     <!-- Status -->
     <string name="status_stopped">Stopped</string>
     <string name="status_connecting">Connecting…</string>
     <string name="status_running">Running</string>
-    <string name="status_running_addr" formatted="false">%s</string>
     <string name="status_error">Error</string>
-    <string name="status_sessions" formatted="false">Sessions: %d · Uptime: %s</string>
 
     <!-- Validation -->
     <string name="select_file_first">Please select a config file first</string>

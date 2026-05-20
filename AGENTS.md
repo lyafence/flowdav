@@ -19,6 +19,7 @@
 | `make android-apk` | Build Android APK (debug) |
 | `make android-deploy` | Build APK + start test env + deploy to Android device |
 | `flowdav-* --version` | Show version (client, server, encrypt) |
+| `make compose-android` | Build Docker images for Android test env |
 | `curl --socks5h://127.0.0.1:11080 https://api.ipify.org` | Test SOCKS5 via docker-compose |
 
 ## Package Map
@@ -39,7 +40,7 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 ```
 
 **Binaries:** `flowdav-client` (has `listen_addr`), `flowdav-server` (no listener), `flowdav-encrypt` (config encryption).
-**Android bridge:** `cmd/android/bridge.go` — gomobile bind, exports StartProxy/StopProxy/GetStatus to Kotlin.
+**Android bridge:** `cmd/android/bridge.go` — gomobile bind, exports `StartProxyFromData`/`StartProxyManual`/`StopProxy`/`GetStatus`/`StopAndError`/`SetSocks5Auth` to Kotlin.
 
 ## Design Invariants
 

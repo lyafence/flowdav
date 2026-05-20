@@ -4,12 +4,16 @@ import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.provider.OpenableColumns
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.text.SpannableString
+import android.text.style.ForegroundColorSpan
 import android.util.Log
 import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
@@ -61,10 +65,19 @@ class MainActivity : AppCompatActivity() {
     private lateinit var socks5PassInput: TextInputEditText
     private lateinit var listenAddrInput: TextInputEditText
     private lateinit var actionButton: MaterialButton
-    private lateinit var statsText: android.widget.TextView
+    private lateinit var dashboard: android.widget.LinearLayout
+    private lateinit var addrValue: android.widget.TextView
+    private lateinit var sessionsValue: android.widget.TextView
+    private lateinit var uptimeValue: android.widget.TextView
+    private lateinit var logSection: android.widget.LinearLayout
+    private lateinit var logText: android.widget.TextView
+    private lateinit var copyLogsBtn: android.widget.ImageButton
+    private lateinit var versionText: android.widget.TextView
     private lateinit var advancedHeader: View
     private lateinit var advancedContent: View
     private lateinit var advancedArrow: android.widget.TextView
+
+    private val notifPermLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { _ -> }
 
     private val filePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -110,6 +123,10 @@ class MainActivity : AppCompatActivity() {
 
         DynamicColors.applyToActivityIfAvailable(this)
 
+        if (Build.VERSION.SDK_INT >= 33) {
+            notifPermLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+
         setContentView(R.layout.activity_main)
 
         statusDot = findViewById(R.id.statusDot)
@@ -132,7 +149,14 @@ class MainActivity : AppCompatActivity() {
         listenAddrInput = findViewById(R.id.listenAddrInput)
         listenAddrInput.setText(DEFAULT_LISTEN_ADDR)
         actionButton = findViewById(R.id.actionButton)
-        statsText = findViewById(R.id.statsText)
+        dashboard = findViewById(R.id.dashboard)
+        addrValue = findViewById(R.id.addrValue)
+        sessionsValue = findViewById(R.id.sessionsValue)
+        uptimeValue = findViewById(R.id.uptimeValue)
+        logSection = findViewById(R.id.logSection)
+        logText = findViewById(R.id.logText)
+        copyLogsBtn = findViewById(R.id.copyLogsBtn)
+        versionText = findViewById(R.id.versionText)
         advancedHeader = findViewById(R.id.advancedHeader)
         advancedContent = findViewById(R.id.advancedContent)
         advancedArrow = findViewById(R.id.advancedArrow)
@@ -170,6 +194,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         passwordInput.setText(getPrefs().getString(PREF_PASSWORD, ""))
+
+        versionText.text = "v" + (try { packageManager.getPackageInfo(packageName, 0).versionName } catch (e: PackageManager.NameNotFoundException) { "?" })
 
         lifecycleScope.launch {
             while (isActive) {
@@ -233,7 +259,15 @@ class MainActivity : AppCompatActivity() {
         advancedHeader.setOnClickListener {
             val expanded = advancedContent.visibility == View.VISIBLE
             advancedContent.visibility = if (expanded) View.GONE else View.VISIBLE
-            advancedArrow.text = if (expanded) "▶" else "▼"
+            advancedArrow.text = if (expanded) "▼" else "▲"
+        }
+
+        copyLogsBtn.setOnClickListener {
+            val text = logText.text?.toString() ?: return@setOnClickListener
+            val clip = android.content.ClipData.newPlainText("flowdav logs", text)
+            (getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager)
+                ?.setPrimaryClip(clip)
+            Snackbar.make(findViewById(android.R.id.content), "Logs copied", Snackbar.LENGTH_SHORT).show()
         }
 
         actionButton.setOnClickListener {
@@ -306,6 +340,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun startProxy() {
         isConnecting = true
+        currentFocus?.let { view ->
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+            imm?.hideSoftInputFromWindow(view.windowToken, 0)
+            view.clearFocus()
+        }
         startJob = lifecycleScope.launch(Dispatchers.Main) {
             val listenAddr = listenAddrInput.text?.toString()?.ifBlank { DEFAULT_LISTEN_ADDR } ?: DEFAULT_LISTEN_ADDR
 
@@ -319,6 +358,9 @@ class MainActivity : AppCompatActivity() {
                 pw
             } else ""
 
+            val socks5User = socks5UserInput.text?.toString()?.ifBlank { null }
+            val socks5Pass = socks5PassInput.text?.toString()?.ifBlank { null }
+
             val goResult = withContext(Dispatchers.IO) {
                 try {
                     if (isManualMode) {
@@ -327,19 +369,17 @@ class MainActivity : AppCompatActivity() {
                         val token = webdavTokenInput.text?.toString()?.ifBlank { null }
                         val encKey = encKeyInput.text?.toString()?.ifBlank { null }
                         val hmacKey = hmacKeyInput.text?.toString()?.ifBlank { null }
-                        val socks5User = socks5UserInput.text?.toString()?.ifBlank { null }
-                        val socks5Pass = socks5PassInput.text?.toString()?.ifBlank { null }
                         if (url == null || login == null || token == null || encKey == null || hmacKey == null) {
                             throw IllegalArgumentException(getString(R.string.fill_all_fields))
                         }
                         Flowdavmobile.startProxyManual(url, login, token, encKey, hmacKey, listenAddr)
-                        if (socks5User != null && socks5Pass != null) {
-                            Flowdavmobile.setSocks5Auth(socks5User, socks5Pass)
-                        }
                     } else {
                         val uri = fileUri ?: throw IllegalStateException(getString(R.string.select_file_first))
                         val data = ConfigHelper.readContent(this@MainActivity, uri).getOrThrow()
                         Flowdavmobile.startProxyFromData(data, password, listenAddr)
+                    }
+                    if (socks5User != null && socks5Pass != null) {
+                        Flowdavmobile.setSocks5Auth(socks5User, socks5Pass)
                     }
                     null as String?
                 } catch (e: Exception) {
@@ -353,6 +393,7 @@ class MainActivity : AppCompatActivity() {
                 Log.e(TAG, "startProxy failed: $goResult")
                 setStatusState(StatusState.ERROR)
                 statusText.text = getString(R.string.status_error)
+                setInputsEnabled(true)
                 actionButton.isEnabled = true
                 actionButton.text = getString(R.string.start_proxy)
                 isConnecting = false
@@ -362,12 +403,12 @@ class MainActivity : AppCompatActivity() {
             }
 
             ProxyService.startRunning(this@MainActivity)
-            delay(1500)
 
             if (!isActive) return@launch
 
             if (isRunning()) {
                 startTime = System.currentTimeMillis()
+                setInputsEnabled(false)
                 updateUi()
             } else {
                 val err = Flowdavmobile.stopAndError()
@@ -403,6 +444,7 @@ class MainActivity : AppCompatActivity() {
         isConnecting = false
         Flowdavmobile.stopProxy()
         stopService(Intent(this, ProxyService::class.java))
+        setInputsEnabled(true)
         actionButton.text = getString(R.string.start_proxy)
         actionButton.isEnabled = true
         setButtonTint(false)
@@ -417,18 +459,27 @@ class MainActivity : AppCompatActivity() {
         if (running) {
             isConnecting = false
             setStatusState(StatusState.RUNNING)
-            val addr = status?.listenAddr?.ifBlank { DEFAULT_LISTEN_ADDR }
-            statusText.text = getString(R.string.status_running_addr, addr)
+            statusText.text = getString(R.string.status_running)
             actionButton.text = getString(R.string.stop_proxy)
             actionButton.isEnabled = true
             setButtonTint(true)
 
-            val sessions = status.activeSessions
+            val addr = status?.listenAddr?.ifBlank { DEFAULT_LISTEN_ADDR }
+            addrValue.text = addr
+            sessionsValue.text = status.activeSessions.toString()
             val uptime = if (startTime > 0) {
                 formatDuration(System.currentTimeMillis() - startTime)
-            } else ""
-            statsText.visibility = View.VISIBLE
-            statsText.text = getString(R.string.status_sessions, sessions, uptime)
+            } else "0s"
+            uptimeValue.text = uptime
+            dashboard.visibility = View.VISIBLE
+
+            val logs = status?.logs
+            if (!logs.isNullOrBlank()) {
+                logText.text = highlightLogs(logs)
+                logSection.visibility = View.VISIBLE
+                val sv = findViewById<android.widget.ScrollView>(R.id.contentScroll)
+                sv.post { sv.fullScroll(android.view.View.FOCUS_DOWN) }
+            }
         } else {
             val err = status?.error
             if (err?.isNotEmpty() == true) {
@@ -439,7 +490,8 @@ class MainActivity : AppCompatActivity() {
                 statusText.text = getString(R.string.status_stopped)
             }
             if (!isConnecting) {
-                statsText.visibility = View.GONE
+                dashboard.visibility = View.GONE
+                logSection.visibility = View.GONE
                 actionButton.text = getString(R.string.start_proxy)
                 actionButton.isEnabled = true
                 setButtonTint(false)
@@ -468,6 +520,34 @@ class MainActivity : AppCompatActivity() {
             min > 0 -> "${min}m ${sec % 60}s"
             else -> "${sec}s"
         }
+    }
+
+    private fun setInputsEnabled(enabled: Boolean) {
+        configChip.isEnabled = enabled
+        passwordLayout.isEnabled = enabled
+        modeToggle.isEnabled = enabled
+        webdavUrlInput.isEnabled = enabled
+        webdavLoginInput.isEnabled = enabled
+        webdavTokenInput.isEnabled = enabled
+        encKeyLayout.isEnabled = enabled
+        hmacKeyLayout.isEnabled = enabled
+        listenAddrInput.isEnabled = enabled
+        socks5UserInput.isEnabled = enabled
+        socks5PassInput.isEnabled = enabled
+        advancedHeader.isEnabled = enabled
+    }
+
+    private fun highlightLogs(text: String): SpannableString {
+        val ss = SpannableString(text)
+        val warnColor = 0xFFB0A000.toInt()
+        for (line in text.lines()) {
+            val start = text.indexOf(line)
+            if (start < 0) continue
+            if ("Warning" in line || "warning" in line) {
+                ss.setSpan(ForegroundColorSpan(warnColor), start, start + line.length, 0)
+            }
+        }
+        return ss
     }
 
     enum class StatusState {
