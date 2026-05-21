@@ -5,22 +5,20 @@
 | Command | What |
 |---------|------|
 | `make build` | Build unified binary → `./bin/flowdav` |
-| `make check` | Full verification: vet → lint → build → test |
-| `make test` | Unit tests with race detector |
+| `make check` | Full verification: vet → lint → build → test (with race detector) |
+| `make test` | Unit tests with race detector (`-timeout 120s`) |
 | `make test-short` | Unit tests without race detector |
-| `make test-e2e` | E2E tests (requires podman/docker) |
+| `make test-e2e` | E2E tests (requires podman; runs `scripts/test_e2e.sh`) |
 | `make test-e2e-encrypted` | E2E + encrypted configs |
-| `make docker-e2e` | Build + E2E via podman |
+| `make fuzz` | Run fuzz tests (30s each: transport envelope and crypto) |
 | `make encrypt FILE=config.json` | Encrypt config (also: `FLOWDAV_PASSWORD=secret make encrypt`) |
-| `make fuzz` | Run fuzz tests (30s each: envelope, crypto, config) |
-| `make release` | Release archives |
-| `make openwrt` | Cross-compile for MIPS little-endian, softfloat |
-| `make hooks` | Install pre-commit hooks (recommended) |
-| `make android-apk` | Build Android APK (debug) |
-| `make android-deploy` | Build APK + start test env + deploy to Android device |
-| `flowdav --version` | Show version |
+| `make tidy` | `go mod tidy -e` (CI checks `git diff go.mod go.sum`) |
+| `make nuke` | Full env reset (compose down, clean images, build artifacts) |
+| `make android-apk` | Build Android APK (debug) → `bin/flowdav-android.apk` |
 | `make compose-android` | Build Docker images for Android test env |
-| `curl --socks5h://127.0.0.1:11080 https://api.ipify.org` | Test SOCKS5 via docker-compose |
+| `make android-deploy` | Build APK + start test env + deploy to Android device. **Requires `make compose-android` first.** |
+
+> **Container tool:** Makefile targets use `podman` (`docker-build`, `image-to-bin`, `compose-*`). Do not assume `docker`.
 
 ## Package Map
 
@@ -39,8 +37,8 @@
 SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 ```
 
-**Binary:** `flowdav` — unified entrypoint with `-c` (client), `-s` (server), `-e` (encrypt), `-g` (generate config) modes.
-**Android bridge:** `cmd/android/bridge.go` — gomobile bind, exports `StartProxyFromData`/`StartProxyManual`/`StopProxy`/`GetStatus`/`StopAndError`/`SetSocks5Auth` to Kotlin.
+**Binary:** `flowdav` — unified entrypoint with `-c` (client), `-s` (server), `-e` (encrypt), `-g` (generate config) modes.  
+**Android bridge:** `cmd/android/bridge.go` — gomobile bind, exports `StartProxyFromData`/`StartProxyManual`/`StopProxy`/`GetStatus`/`StopAndError`/`SetSocks5Auth` to Kotlin. **Global state intentional** (gomobile exports free functions, not objects). **Config validation stricter** than `internal/config` (≥2 backends, ≥64KB) — keep in sync.
 
 ## Design Invariants
 
@@ -50,7 +48,7 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 - Random filenames `{dir_byte}{16_hex}` — no metadata leaks. Mapped to `{subdir}/{uppercase_hex}` on storage (direction byte → subdirectory: `r`→`invoices`, `s`→`receipts`).
 - DNS leak protection: raw resolver, UDP explicitly blocked.
 - Multi-WebDAV: random session assignment, round-robin upload fallback.
-- No global state (exception: `transport.MaxMessageSize` / `storage.MaxFileSize` — package-level vars set at startup, justified by OOM prevention per `internal/transport/crypto.go:120`).
+- No global state (exceptions: `transport.MaxMessageSize` / `storage.MaxFileSize` — package-level vars set at startup, justified by OOM prevention per `internal/transport/crypto.go` `MaxMessageSize` var; `cmd/android/bridge.go` — gomobile requires free functions, not objects, so global state is unavoidable and documented as intentional).
 - **Operational philosophy:** minimize external observability, avoid predictable patterns. When adding anything network-facing: is it optional? bounded? indistinguishable from noise?
 
 ## Pre-commit Hook
@@ -115,9 +113,3 @@ Install with `make hooks`.
 - **Verbose logging / event tracing** — if ever needed: local-only, off by default.
 - **Remote metrics (Prometheus, etc.)** — if ever needed: local-only, off by default.
 - **Config flag creep** — not every internal constant needs a user-facing flag. Defaults are meant to be defaults.
-
-## Backlog
-
-| Priority | Item | Effort |
-|----------|------|--------|
-| P4 | **Fixed-size envelope mode** — optional padding against payload-size correlation. *Under question — TLS-level analysis bypasses padding anyway* | high |
