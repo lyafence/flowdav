@@ -96,7 +96,7 @@ services:
         condition: service_healthy
     volumes:
       - ./configs/flowdav_test.json:/app/configs/flowdav_test.json:Z
-    command: flowdav-server -c /app/configs/flowdav_test.json
+    command: flowdav -s /app/configs/flowdav_test.json
     environment:
       - FLOWDAV_PASSWORD=${FLOWDAV_PASSWORD:-}
     restart: unless-stopped
@@ -121,7 +121,7 @@ services:
         condition: service_healthy
     volumes:
       - ./configs/flowdav_test.json:/app/configs/flowdav_test.json:Z
-    command: flowdav-client -c /app/configs/flowdav_test.json
+    command: flowdav -c /app/configs/flowdav_test.json
     environment:
       - FLOWDAV_PASSWORD=${FLOWDAV_PASSWORD:-}
     restart: unless-stopped
@@ -151,7 +151,7 @@ services:
         condition: service_healthy
     volumes:
       - ./configs/flowdav_test_multi.json:/app/configs/flowdav_test_multi.json:Z
-    command: flowdav-server -c /app/configs/flowdav_test_multi.json
+    command: flowdav -s /app/configs/flowdav_test_multi.json
     environment:
       - FLOWDAV_PASSWORD=${FLOWDAV_PASSWORD:-}
     restart: unless-stopped
@@ -180,7 +180,7 @@ services:
         condition: service_healthy
     volumes:
       - ./configs/flowdav_test_multi.json:/app/configs/flowdav_test_multi.json:Z
-    command: flowdav-client -c /app/configs/flowdav_test_multi.json
+    command: flowdav -c /app/configs/flowdav_test_multi.json
     environment:
       - FLOWDAV_PASSWORD=${FLOWDAV_PASSWORD:-}
     restart: unless-stopped

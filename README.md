@@ -7,7 +7,7 @@ A lightweight SOCKS5 proxy that uses WebDAV as a transport layer. Route your tra
 ## How It Works
 
 ```
-[SOCKS5 Client] ←→ [flowdav-client] ←→ [WebDAV Storage] ←→ [flowdav-server] ←→ [Destination]
+[SOCKS5 Client] ←→ [flowdav -c] ←→ [WebDAV Storage] ←→ [flowdav -s] ←→ [Destination]
                    (encrypt, mux)      (passive store)     (decrypt, demux)
 ```
 
@@ -81,7 +81,7 @@ A single config works for both server and client — each binary ignores fields 
 
 The server ignores `listen_addr`; the client ignores `health_port` (see below).
 
-Optional fields: `max_message_size` (default 16MB), `max_sessions` (default 0 = unlimited), `health_port` (default: disabled). See the [Config Reference](#config-reference) table for the full list. Both `--version` and `-l <level>` flags are supported on all three binaries.
+Optional fields: `max_message_size` (default 16MB), `max_sessions` (default 0 = unlimited), `health_port` (default: disabled). See the [Config Reference](#config-reference) table for the full list. Both `--version` and `-l <level>` flags are supported on the unified binary.
 
 For multiple WebDAV providers (round-robin), replace the single backend fields with a `backends` array:
 
@@ -103,19 +103,24 @@ See `flowdav.json.example` for the single-backend structure.
 Encrypt your config with a master password so secrets are never stored in plaintext:
 
 ```bash
-# Generate encryption keys automatically and encrypt:
-FLOWDAV_PASSWORD=secret ./flowdav-encrypt --gen-keys < config.json > config.json.enc
+# Option 1: Generate a config from scratch (interactive prompts):
+./flowdav -g config.json
 
-# Or encrypt an already-configured file (keys already set):
-FLOWDAV_PASSWORD=secret ./flowdav-encrypt < config.json > config.json.enc
+# Option 2: Encrypt an existing config with a master password:
+./flowdav -e config.json                 # prompts for password
+./flowdav -e config.json -p secret       # or via flag
+FLOWDAV_PASSWORD=secret ./flowdav -e config.json  # or via env
+
+# Option 3: Generate and encrypt in one step:
+./flowdav -g -e config.json              # prompts for WebDAV + password
 ```
 
 Run with the encrypted config:
 
 ```bash
-./flowdav-server -p -c config.json.enc   # prompts for password
-# or via env var:
-FLOWDAV_PASSWORD=secret ./flowdav-client -c config.json.enc
+./flowdav -s config.json.enc             # prompts for password
+./flowdav -c config.json.enc -p secret   # or via flag
+FLOWDAV_PASSWORD=secret ./flowdav -c config.json.enc  # or via env
 ```
 
 ### 3. Run
@@ -123,9 +128,9 @@ FLOWDAV_PASSWORD=secret ./flowdav-client -c config.json.enc
 **Start the server** (at home):
 
 ```bash
-./flowdav-server -c config.json
+./flowdav -s config.json
 # or with encrypted config:
-./flowdav-server -p -c config.json.enc   # prompts for password
+./flowdav -s config.json.enc             # prompts for password
 ```
 
 The server polls WebDAV for new sessions — no listening ports required.
@@ -133,7 +138,7 @@ The server polls WebDAV for new sessions — no listening ports required.
 **Start the client** (at cafe):
 
 ```bash
-./flowdav-client -c config.json
+./flowdav -c config.json
 ```
 
 The client listens on `127.0.0.1:1080` (or the address in `listen_addr`).
@@ -153,24 +158,26 @@ export ALL_PROXY=socks5://127.0.0.1:1080
 ### 4. Docker
 
 Images are published on [GitHub Container Registry](https://github.com/lyafence/flowdav/pkgs/container/flowdav).
-Run any binary by passing it as the command (`docker run` pulls automatically if not cached):
+Pass the desired mode (`-c`, `-s`, `-e`) as the command (`docker run` pulls automatically if not cached):
 
 ```bash
 # start the server (at home)
 docker run --rm -v ./config.json:/app/configs/config.json \
-  ghcr.io/lyafence/flowdav flowdav-server -c /app/configs/config.json
+  ghcr.io/lyafence/flowdav flowdav -s /app/configs/config.json
 
 # start the client (at cafe), exposes SOCKS5 on 127.0.0.1:1080
 docker run --rm -v ./config.json:/app/configs/config.json \
-  ghcr.io/lyafence/flowdav flowdav-client -c /app/configs/config.json
+  ghcr.io/lyafence/flowdav flowdav -c /app/configs/config.json
 
-# generate encrypted config
-docker run --rm -i ghcr.io/lyafence/flowdav flowdav-encrypt --gen-keys < config.json > config.json.enc
+# encrypt an existing config
+docker run --rm -v ./config.json:/app/configs/config.json \
+  -e FLOWDAV_PASSWORD=secret \
+  ghcr.io/lyafence/flowdav flowdav -e /app/configs/config.json
 
 # run with encrypted config
 docker run --rm -v ./config.json.enc:/app/configs/config.json.enc \
   -e FLOWDAV_PASSWORD=secret \
-  ghcr.io/lyafence/flowdav flowdav-server -p -c /app/configs/config.json.enc
+  ghcr.io/lyafence/flowdav flowdav -c /app/configs/config.json.enc
 ```
 
 ## Config Files
@@ -247,9 +254,9 @@ SOCKS5 proxy runs on the configured address (default `127.0.0.1:1080`).
 Multi-platform release archives are built automatically by CI on each tag (`v*`).
 Download the latest archive from [GitHub Releases](https://github.com/lyafence/flowdav/releases).
 
-Each archive contains: `flowdav-client`, `flowdav-server`, `flowdav-encrypt`, an example config (`flowdav.json.example`), and README.
+Each archive contains: a single `flowdav` binary (unified: client, server, encrypt), an example config (`flowdav.json.example`), and README.
 
-All binaries accept `--version` to print the release version.
+Run `flowdav --version` to print the release version; `flowdav --help` for all modes.
 
 ## License
 

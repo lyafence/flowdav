@@ -10,18 +10,14 @@ HOST_IP := $(shell ip route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($$i=
             compose-down clean-images nuke check hooks android-init android-aar android-apk android-keystore \
             compose-android android-deploy
 
-# Build binaries
+# Build binary
 build:
 	mkdir -p $(BIN_DIR)
-	go build $(BUILD_FLAGS) -o $(BIN_DIR)/flowdav-client ./cmd/client
-	go build $(BUILD_FLAGS) -o $(BIN_DIR)/flowdav-server ./cmd/server
-	go build $(BUILD_FLAGS) -o $(BIN_DIR)/flowdav-encrypt ./cmd/encrypt
+	go build $(BUILD_FLAGS) -o $(BIN_DIR)/flowdav ./cmd/flowdav
 
 openwrt:
 	mkdir -p $(BIN_DIR)
-	CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build $(BUILD_FLAGS) -o $(BIN_DIR)/flowdav-client-mipsle ./cmd/client
-	CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build $(BUILD_FLAGS) -o $(BIN_DIR)/flowdav-server-mipsle ./cmd/server
-	CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build $(BUILD_FLAGS) -o $(BIN_DIR)/flowdav-encrypt-mipsle ./cmd/encrypt
+	CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build $(BUILD_FLAGS) -o $(BIN_DIR)/flowdav-mipsle ./cmd/flowdav
 
 # Run tests
 test:
@@ -55,13 +51,10 @@ tidy:
 # Usage: make encrypt FILE=config.json          # prompts for password
 # Usage: FLOWDAV_PASSWORD=secret make encrypt    # env var
 encrypt:
-	@if [ -z "$${FLOWDAV_PASSWORD}" ]; then \
-		read -s -p "Master password: " FLOWDAV_PASSWORD; echo; \
-	fi; \
-	F="$(FILE)"; \
+	@F="$(FILE)"; \
 	if [ -z "$$F" ]; then F="config.json"; fi; \
-	go run ./cmd/encrypt --gen-keys < "$$F" > "$${F}.enc"; \
-	echo "Encrypted: $$F.enc (chmod 600)"
+	FLOWDAV_PASSWORD="$${FLOWDAV_PASSWORD:-}" go run ./cmd/flowdav -e "$$F"; \
+	echo "Done: $$F.enc (chmod 600)"
 
 # Container
 docker-build:
@@ -74,12 +67,10 @@ image-to-bin: docker-build
 	@mkdir -p $(BIN_DIR) && \
 	CID=$$(podman create localhost/flowdav:latest) && \
 	trap "podman rm $$CID >/dev/null 2>&1 || true" EXIT; \
-	podman cp $$CID:/usr/local/bin/flowdav-client $(BIN_DIR)/flowdav-client && \
-	podman cp $$CID:/usr/local/bin/flowdav-server $(BIN_DIR)/flowdav-server && \
-	podman cp $$CID:/usr/local/bin/flowdav-encrypt $(BIN_DIR)/flowdav-encrypt && \
+	podman cp $$CID:/usr/local/bin/flowdav $(BIN_DIR)/flowdav && \
 	podman rm $$CID && \
-	chmod +x $(BIN_DIR)/flowdav-client $(BIN_DIR)/flowdav-server $(BIN_DIR)/flowdav-encrypt && \
-	echo "Extracted binaries from image to $(BIN_DIR)/"
+	chmod +x $(BIN_DIR)/flowdav && \
+	echo "Extracted binary from image to $(BIN_DIR)/flowdav"
 
 # Release archives (matches CI: ./github/workflows/release.yml)
 release:
@@ -87,7 +78,7 @@ release:
 	rm -rf $(RELEASE_DIR) && mkdir -p $(RELEASE_DIR)
 	FOLDER=flowdav-$(VERSION)-linux-amd64; \
 	mkdir -p $(RELEASE_DIR)/$$FOLDER; \
-	cp $(BIN_DIR)/flowdav-client $(BIN_DIR)/flowdav-server $(BIN_DIR)/flowdav-encrypt \
+	cp $(BIN_DIR)/flowdav \
 		$(RELEASE_DIR)/$$FOLDER/; \
 	cp README.md $(RELEASE_DIR)/$$FOLDER/; \
 	cp configs/flowdav.json.example $(RELEASE_DIR)/$$FOLDER/; \
@@ -131,7 +122,8 @@ android-deploy: android-apk
 	fi; \
 	cp configs/flowdav_test.json configs/client-android.json; \
 	echo "Config: configs/client-android.json (plaintext)"; \
-	FLOWDAV_PASSWORD=secret go run ./cmd/encrypt < configs/flowdav_test.json > configs/client-android.json.enc; \
+	cp configs/flowdav_test.json configs/client-android.json; \
+	FLOWDAV_PASSWORD=secret go run ./cmd/flowdav -e configs/client-android.json; \
 	echo "Config: configs/client-android.json.enc (password: secret)"; \
 	ADB=$$(which adb 2>/dev/null || true); \
 	if [ -n "$$ADB" ] && $$ADB get-state 2>/dev/null | grep -q device; then \

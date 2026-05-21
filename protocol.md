@@ -20,7 +20,7 @@ encrypt, and transport TCP streams over WebDAV storage.
 ## Architecture Overview
 
 ```
-  SOCKS5          flowdav-client                WebDAV                flowdav-server        Destination
+  SOCKS5             flowdav -c                  WebDAV                  flowdav -s            Destination
     curl   ←→    encrypt / mux / upload   ←→   passive store   ←→   download / decrypt    ←→   TCP
 ```
 

@@ -4,7 +4,7 @@
 
 | Command | What |
 |---------|------|
-| `make build` | Build all binaries → `./bin/` |
+| `make build` | Build unified binary → `./bin/flowdav` |
 | `make check` | Full verification: vet → lint → build → test |
 | `make test` | Unit tests with race detector |
 | `make test-short` | Unit tests without race detector |
@@ -18,7 +18,7 @@
 | `make hooks` | Install pre-commit hooks (recommended) |
 | `make android-apk` | Build Android APK (debug) |
 | `make android-deploy` | Build APK + start test env + deploy to Android device |
-| `flowdav-* --version` | Show version (client, server, encrypt) |
+| `flowdav --version` | Show version |
 | `make compose-android` | Build Docker images for Android test env |
 | `curl --socks5h://127.0.0.1:11080 https://api.ipify.org` | Test SOCKS5 via docker-compose |
 
@@ -26,7 +26,7 @@
 
 | Package | Responsibility |
 |---------|---------------|
-| `cmd/flowdav-*` | Entrypoints (thin) |
+| `cmd/flowdav` | Entrypoints (thin) — unified binary |
 | `cmd/android` | Gomobile bridge (exported to Android) |
 | `internal/config` | Load, validate, encrypt/decrypt configs |
 | `internal/transport` | Engine (poll loop, sessions), Envelope, Crypto, VirtualConn (SOCKS5), Pool |
@@ -39,7 +39,7 @@
 SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 ```
 
-**Binaries:** `flowdav-client` (has `listen_addr`), `flowdav-server` (no listener), `flowdav-encrypt` (config encryption).
+**Binary:** `flowdav` — unified entrypoint with `-c` (client), `-s` (server), `-e` (encrypt), `-g` (generate config) modes.
 **Android bridge:** `cmd/android/bridge.go` — gomobile bind, exports `StartProxyFromData`/`StartProxyManual`/`StopProxy`/`GetStatus`/`StopAndError`/`SetSocks5Auth` to Kotlin.
 
 ## Design Invariants
@@ -67,7 +67,7 @@ Install with `make hooks`.
 
 ## Config Quick Reference
 
-- Flags: `-c config.json`, `-l loglevel`, `-p master_password`, `--version`
+- Flags: `-c config.json` (client), `-s config.json` (server), `-e config.json` (encrypt), `-g config.json` (generate), `-p master_password`, `-l loglevel`, `--version`
 - Fields: `enc_key` / `hmac_key` (32-byte base64), `max_message_size` (default 16MB), `max_sessions` (default 0 = unlimited), `webdav.backends` (array), `health_port` (e.g. `"127.0.0.1:9191"`), `log_level` (`debug`, `info`, `warn`, `error`)
 - Health: `GET /health` on `health_port` → JSON stats (active sessions, retry counters, tx queue depth, per-backend circuit breaker state)
 

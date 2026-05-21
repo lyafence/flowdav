@@ -329,7 +329,9 @@ func ResolvePassword(args []string) (password string, interactive bool, rest []s
 			rest = append(rest, args[i+1:]...)
 			return password, false, rest
 		}
-		if args[i] == "-c" || args[i] == "-l" {
+		if args[i] == "-c" || args[i] == "--client" ||
+			args[i] == "-s" || args[i] == "--server" ||
+			args[i] == "-l" || args[i] == "--log" {
 			i++ // skip value
 		}
 	}

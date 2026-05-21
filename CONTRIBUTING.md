@@ -4,7 +4,7 @@
 
 ```bash
 make build
-# Binaries are in ./bin/
+# Binary is in ./bin/flowdav
 ```
 
 ## Development workflow
@@ -45,7 +45,7 @@ curl -s --proxy socks5h://127.0.0.1:11081 https://api.ipify.org
 
 > **Port note:** The default SOCKS5 port is 1080 (localhost only). Docker Compose exposes the single-backend proxy as `11080` and multi-backend as `11081` on `0.0.0.0` to avoid conflicts and allow host access.
 
-In docker-compose, `HEALTHCHECK` is configured for both `flow-server` (port `9190`) and `flow-client` (port `9191`).
+In docker-compose, `HEALTHCHECK` is configured for both `flow-server` and `flow-client` (port `9190`).
 
 ## Android
 

@@ -43,7 +43,19 @@ gen_config() {
     local file="$CONFIG_DIR/$1"
     local json="$2"
     if $ENCRYPTED; then
-        FLOWDAV_PASSWORD="$ENC_PASS" go run "$PROJECT_DIR/cmd/encrypt/main.go" --gen-keys > "$file" <<<"$json"
+        local tmpf
+        tmpf=$(mktemp)
+        echo "$json" > "$tmpf"
+        FLOWDAV_PASSWORD="$ENC_PASS" go run "$PROJECT_DIR/cmd/flowdav" -e "$tmpf" 2>/dev/null
+	if [ -f "$tmpf.enc" ]; then
+	    mv "$tmpf.enc" "$file"
+	    chmod 644 "$file"
+	else
+            echo "Error: encryption failed" >&2
+            rm -f "$tmpf"
+            exit 1
+        fi
+        rm -f "$tmpf"
     else
         echo "$json" > "$file"
     fi
