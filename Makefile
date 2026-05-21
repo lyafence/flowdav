@@ -87,8 +87,7 @@ release:
 
 clean:
 	rm -rf $(BIN_DIR) $(RELEASE_DIR)
-	rm -rf configs/flowdav_test_*.json configs/.env
-	rm -f configs/client-android.json.enc
+	rm -rf configs/*.json configs/*.enc configs/.env
 	rm -f android/app/libs/flowdav.aar
 	rm -rf android/app/build android/.gradle
 
@@ -102,13 +101,17 @@ clean-images:
 
 # Full environment reset
 nuke: compose-down clean-images clean
+	@ADB=$$(which adb 2>/dev/null || true); \
+	if [ -n "$$ADB" ] && $$ADB get-state 2>/dev/null | grep -q device; then \
+		$$ADB forward --remove tcp:11082 2>/dev/null || true; \
+	fi
 	@echo "Environment reset complete. Run 'make docker-build && make test-e2e' to rebuild."
 
 # Quick Android test env: single WebDAV + flowdav-server
 compose-android: docker-build
 	@bash scripts/gen-test-configs.sh "$(HOST_IP)" && \
 	podman-compose -f $(COMPOSE_FILE) down -v 2>/dev/null || true; \
-	podman-compose -f $(COMPOSE_FILE) up -d webdav-single flow-server; \
+	podman-compose -f $(COMPOSE_FILE) up -d webdav-single flow-server flow-client; \
 	echo ""; \
 	echo "=== Android test environment ==="; \
 	echo "WebDAV:   http://$(HOST_IP):8080 (user: test, pass: test)"; \
@@ -122,7 +125,6 @@ android-deploy: android-apk
 	fi; \
 	cp configs/flowdav_test.json configs/client-android.json; \
 	echo "Config: configs/client-android.json (plaintext)"; \
-	cp configs/flowdav_test.json configs/client-android.json; \
 	FLOWDAV_PASSWORD=secret go run ./cmd/flowdav -e configs/client-android.json; \
 	echo "Config: configs/client-android.json.enc (password: secret)"; \
 	ADB=$$(which adb 2>/dev/null || true); \
@@ -130,7 +132,9 @@ android-deploy: android-apk
 		$$ADB install -r -d $(BIN_DIR)/flowdav-android.apk && \
 		$$ADB push configs/client-android.json /sdcard/Download/flowdav-config.json && \
 		$$ADB push configs/client-android.json.enc /sdcard/Download/flowdav-config.enc && \
+		$$ADB forward tcp:11082 tcp:1080 && \
 		echo "=== Deployed via adb ==="; \
+		echo "=== SOCKS5: adb forward tcp:11082 → emulator:1080 ==="; \
 	else \
 		echo "=== Ready (no adb device) — copy configs/client-android.json or client-android.json.enc manually ==="; \
 	fi
