@@ -27,18 +27,12 @@ func TestEncryptedConfigEndToEnd(t *testing.T) {
 
 	root := findProjectRoot(t)
 	binDir := t.TempDir()
-	serverBin := filepath.Join(binDir, "flowdav-server")
-	clientBin := filepath.Join(binDir, "flowdav-client")
+	bin := filepath.Join(binDir, "flowdav")
 
-	for _, c := range []struct{ src, out string }{
-		{filepath.Join(root, "cmd", "server"), serverBin},
-		{filepath.Join(root, "cmd", "client"), clientBin},
-	} {
-		build := exec.Command("go", "build", "-o", c.out, c.src)
-		build.Dir = root
-		out, err := build.CombinedOutput()
-		require.NoError(t, err, "build %s: %s", c.src, out)
-	}
+	build := exec.Command("go", "build", "-o", bin, filepath.Join(root, "cmd", "flowdav"))
+	build.Dir = root
+	out, err := build.CombinedOutput()
+	require.NoError(t, err, "build: %s", out)
 
 	password := "test-master-password-123"
 	cfg := &AppConfig{
@@ -68,7 +62,7 @@ func TestEncryptedConfigEndToEnd(t *testing.T) {
 	run := func(args ...string) (string, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, serverBin, args...)
+		cmd := exec.CommandContext(ctx, bin, args...)
 		cmd.Dir = binDir
 		out, err := cmd.CombinedOutput()
 		if err != nil && ctx.Err() != nil {
@@ -77,14 +71,14 @@ func TestEncryptedConfigEndToEnd(t *testing.T) {
 		return string(out), err
 	}
 	t.Run("detects encrypted config", func(t *testing.T) {
-		out, _ := run("-c", encFile)
+		out, _ := run("-s", encFile)
 		if !ciFold(out, "encrypted") {
 			t.Fatalf("expected 'encrypted', got: %s", out)
 		}
 	})
 
 	t.Run("wrong password rejected", func(t *testing.T) {
-		out, err := run("-c", encFile, "-p", "wrong-password")
+		out, err := run("-s", encFile, "-p", "wrong-password")
 		if err == nil {
 			t.Fatalf("expected error, got output: %s", out)
 		}
@@ -94,7 +88,7 @@ func TestEncryptedConfigEndToEnd(t *testing.T) {
 	})
 
 	t.Run("correct password reaches engine initialization", func(t *testing.T) {
-		out, _ := run("-c", encFile, "-p", password)
+		out, _ := run("-s", encFile, "-p", password)
 		if !ciFold(out, "start") && !ciFold(out, "poll") && !ciFold(out, "failed") {
 			t.Fatalf("expected engine startup messages, got: %s", out)
 		}
@@ -103,7 +97,7 @@ func TestEncryptedConfigEndToEnd(t *testing.T) {
 	t.Run("FLOWDAV_PASSWORD env var works", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, clientBin, "-c", encFile)
+		cmd := exec.CommandContext(ctx, bin, "-c", encFile)
 		cmd.Dir = binDir
 		cmd.Env = append(os.Environ(), fmt.Sprintf("FLOWDAV_PASSWORD=%s", password))
 		var out bytes.Buffer

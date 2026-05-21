@@ -36,10 +36,10 @@ func isPathTraversal(path string) bool {
 	return false
 }
 
-// validateBasePath checks a base_path for path traversal and invalid characters.
+// ValidateBasePath checks a base_path for path traversal and invalid characters.
 // It performs URL-decoding (including double-decoding) to catch encoded traversal
 // sequences like %2e%2e%2f, %252e%252e%252f, etc.
-func validateBasePath(basePath string, field string) error {
+func ValidateBasePath(basePath string, field string) error {
 	// Reject null bytes and control characters
 	if strings.ContainsAny(basePath, "\x00\x01\x02") {
 		return fmt.Errorf("%s contains invalid characters", field)
@@ -189,7 +189,7 @@ func Load(path string) (*AppConfig, error) {
 		}
 		for i, be := range cfg.WebDAV.Backends {
 			if be.BasePath != "" {
-				if err := validateBasePath(be.BasePath, fmt.Sprintf("webdav.backends[%d].base_path", i)); err != nil {
+				if err := ValidateBasePath(be.BasePath, fmt.Sprintf("webdav.backends[%d].base_path", i)); err != nil {
 					return nil, err
 				}
 			}
@@ -197,7 +197,7 @@ func Load(path string) (*AppConfig, error) {
 	} else if hasLegacyBackend {
 		// Single backend mode (legacy format)
 		if cfg.WebDAV.BasePath != "" {
-			if err := validateBasePath(cfg.WebDAV.BasePath, "webdav.base_path"); err != nil {
+			if err := ValidateBasePath(cfg.WebDAV.BasePath, "webdav.base_path"); err != nil {
 				return nil, err
 			}
 		}
@@ -329,7 +329,9 @@ func ResolvePassword(args []string) (password string, interactive bool, rest []s
 			rest = append(rest, args[i+1:]...)
 			return password, false, rest
 		}
-		if args[i] == "-c" || args[i] == "-l" {
+		if args[i] == "-c" || args[i] == "--client" ||
+			args[i] == "-s" || args[i] == "--server" ||
+			args[i] == "-l" || args[i] == "--log" {
 			i++ // skip value
 		}
 	}

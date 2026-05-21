@@ -20,7 +20,7 @@ encrypt, and transport TCP streams over WebDAV storage.
 ## Architecture Overview
 
 ```
-  SOCKS5          flowdav-client                WebDAV                flowdav-server        Destination
+  SOCKS5             flowdav -c                  WebDAV                  flowdav -s            Destination
     curl   ←→    encrypt / mux / upload   ←→   passive store   ←→   download / decrypt    ←→   TCP
 ```
 
@@ -349,6 +349,6 @@ patterns. The jitter factor is `0.75 + (rand_byte / 255.0) * 0.5`.
 
 - [Source: Binary envelope format](internal/transport/envelope.go)
 - [Source: Crypto wire format](internal/transport/crypto.go)
-- [Source: Filename generation](internal/transport/engine.go#L425)
+- [Source: Filename generation](internal/transport/engine.go#L435)
 - [Source: Storage mapping](internal/storage/webdav.go)
-- [Source: Multiplexing logic](internal/transport/engine.go#L249)
+- [Source: Multiplexing logic](internal/transport/engine.go#L258)

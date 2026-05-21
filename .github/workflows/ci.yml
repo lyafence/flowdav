@@ -9,6 +9,7 @@ on:
       - '.gitignore'
       - '.githooks/**'
       - 'configs/*.example.json'
+      - 'android/**'
 
 permissions:
   contents: read

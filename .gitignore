@@ -12,6 +12,9 @@
 credentials.json
 .env
 
+# Encrypted configs (contain keys)
+*.enc
+
 # Binaries and temp files
 bin/
 # server
@@ -31,3 +34,17 @@ flowdav-encrypt
 # Build artifacts
 release/
 coverage.out
+
+# Android
+android/app/libs/flowdav.aar
+android/app/libs/flowdav-sources.jar
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+
+# Signing keys
+*.jks
+*.keystore
+
+.zed/

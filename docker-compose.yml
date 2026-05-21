@@ -1,28 +1,7 @@
 services:
-  webdav:
+  webdav-multi-1:
     image: docker.io/rclone/rclone:latest
-    container_name: webdav-test
-    mem_limit: 64m
-    command: serve webdav /data --addr 0.0.0.0:8080 --user test --pass test
-    ports:
-      - "8080:8080"
-    restart: unless-stopped
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "wget -q --spider http://test:test@localhost:8080/ || exit 1",
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    networks:
-      - flow-net
-
-  webdav2:
-    image: docker.io/rclone/rclone:latest
-    container_name: webdav-test-2
+    container_name: webdav-multi-1
     mem_limit: 64m
     command: serve webdav /data --addr 0.0.0.0:8080 --user test --pass test
     ports:
@@ -41,9 +20,9 @@ services:
     networks:
       - flow-net
 
-  webdav3:
+  webdav-multi-2:
     image: docker.io/rclone/rclone:latest
-    container_name: webdav-test-3
+    container_name: webdav-multi-2
     mem_limit: 64m
     command: serve webdav /data --addr 0.0.0.0:8080 --user test --pass test
     ports:
@@ -62,16 +41,37 @@ services:
     networks:
       - flow-net
 
-  # Dedicated WebDAV for single-backend tests (isolated from multi-backend
-  # to prevent cross-contamination — different encryption keys would cause
-  # HMAC failures and file deletion on the other pair).
-  webdav4:
+  webdav-multi-3:
     image: docker.io/rclone/rclone:latest
-    container_name: webdav-test-4
+    container_name: webdav-multi-3
     mem_limit: 64m
     command: serve webdav /data --addr 0.0.0.0:8080 --user test --pass test
     ports:
       - "8083:8080"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q --spider http://test:test@localhost:8080/ || exit 1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - flow-net
+
+  # Dedicated WebDAV for single-backend tests (isolated from multi-backend
+  # to prevent cross-contamination — different encryption keys would cause
+  # HMAC failures and file deletion on the other pair).
+  webdav-single:
+    image: docker.io/rclone/rclone:latest
+    container_name: webdav-single
+    mem_limit: 64m
+    command: serve webdav /data --addr 0.0.0.0:8080 --user test --pass test
+    ports:
+      - "8080:8080"
     restart: unless-stopped
     healthcheck:
       test:
@@ -92,11 +92,11 @@ services:
     stop_grace_period: 10s
     mem_limit: 64m
     depends_on:
-      webdav4:
+      webdav-single:
         condition: service_healthy
     volumes:
-      - ./configs/flowdav_test_server.json:/app/configs/flowdav_test_server.json:Z
-    command: flowdav-server -c /app/configs/flowdav_test_server.json
+      - ./configs/flowdav_test.json:/app/configs/flowdav_test.json:Z
+    command: flowdav -s /app/configs/flowdav_test.json
     environment:
       - FLOWDAV_PASSWORD=${FLOWDAV_PASSWORD:-}
     restart: unless-stopped
@@ -115,20 +115,20 @@ services:
     stop_grace_period: 10s
     mem_limit: 64m
     depends_on:
-      webdav4:
+      webdav-single:
         condition: service_healthy
       flow-server:
         condition: service_healthy
     volumes:
-      - ./configs/flowdav_test_client.json:/app/configs/flowdav_test_client.json:Z
-    command: flowdav-client -c /app/configs/flowdav_test_client.json
+      - ./configs/flowdav_test.json:/app/configs/flowdav_test.json:Z
+    command: flowdav -c /app/configs/flowdav_test.json
     environment:
       - FLOWDAV_PASSWORD=${FLOWDAV_PASSWORD:-}
     restart: unless-stopped
     ports:
       - "11080:11080"
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9191/health"]
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9190/health"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -143,15 +143,15 @@ services:
     stop_grace_period: 10s
     mem_limit: 64m
     depends_on:
-      webdav:
+      webdav-multi-1:
         condition: service_healthy
-      webdav2:
+      webdav-multi-2:
         condition: service_healthy
-      webdav3:
+      webdav-multi-3:
         condition: service_healthy
     volumes:
-      - ./configs/flowdav_test_server_multi.json:/app/configs/flowdav_test_server_multi.json:Z
-    command: flowdav-server -c /app/configs/flowdav_test_server_multi.json
+      - ./configs/flowdav_test_multi.json:/app/configs/flowdav_test_multi.json:Z
+    command: flowdav -s /app/configs/flowdav_test_multi.json
     environment:
       - FLOWDAV_PASSWORD=${FLOWDAV_PASSWORD:-}
     restart: unless-stopped
@@ -170,24 +170,24 @@ services:
     stop_grace_period: 10s
     mem_limit: 64m
     depends_on:
-      webdav:
+      webdav-multi-1:
         condition: service_healthy
-      webdav2:
+      webdav-multi-2:
         condition: service_healthy
-      webdav3:
+      webdav-multi-3:
         condition: service_healthy
       flow-server-multi:
         condition: service_healthy
     volumes:
-      - ./configs/flowdav_test_client_multi.json:/app/configs/flowdav_test_client_multi.json:Z
-    command: flowdav-client -c /app/configs/flowdav_test_client_multi.json
+      - ./configs/flowdav_test_multi.json:/app/configs/flowdav_test_multi.json:Z
+    command: flowdav -c /app/configs/flowdav_test_multi.json
     environment:
       - FLOWDAV_PASSWORD=${FLOWDAV_PASSWORD:-}
     restart: unless-stopped
     ports:
       - "11081:11080"
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9191/health"]
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9190/health"]
       interval: 10s
       timeout: 5s
       retries: 3

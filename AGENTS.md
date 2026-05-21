@@ -4,23 +4,28 @@
 
 | Command | What |
 |---------|------|
-| `make build` | Build all binaries → `./bin/` |
-| `make test` | Unit tests with race detector |
-| `make test-e2e` | E2E tests |
+| `make build` | Build unified binary → `./bin/flowdav` |
+| `make check` | Full verification: vet → lint → build → test (with race detector) |
+| `make test` | Unit tests with race detector (`-timeout 120s`) |
+| `make test-short` | Unit tests without race detector |
+| `make test-e2e` | E2E tests (requires podman; runs `scripts/test_e2e.sh`) |
 | `make test-e2e-encrypted` | E2E + encrypted configs |
-| `make docker-e2e` | Full-stack Podman |
-| `make encrypt FILE=config.json` | Encrypt config (also: `FLOWDAV_PASSWORD=secret make encrypt FILE=config.json`) |
-| `make release` | Release archives |
-| `make openwrt` | Cross-compile for OpenWrt (MIPS little-endian, softfloat) |
-| `make fuzz` | Run fuzz tests (envelope parser, crypto, config loader) |
-| `flowdav-* --version` | Show version (client, server, encrypt) |
-| `curl --socks5h://127.0.0.1:11080 https://api.ipify.org` | Test SOCKS5 proxy |
+| `make fuzz` | Run fuzz tests (30s each: transport envelope and crypto) |
+| `make encrypt FILE=config.json` | Encrypt config (also: `FLOWDAV_PASSWORD=secret make encrypt`) |
+| `make tidy` | `go mod tidy -e` (CI checks `git diff go.mod go.sum`) |
+| `make nuke` | Full env reset (compose down, clean images, build artifacts) |
+| `make android-apk` | Build Android APK (debug) → `bin/flowdav-android.apk` |
+| `make compose-android` | Build Docker images for Android test env |
+| `make android-deploy` | Build APK + start test env + deploy to Android device. **Requires `make compose-android` first.** |
+
+> **Container tool:** Makefile targets use `podman` (`docker-build`, `image-to-bin`, `compose-*`). Do not assume `docker`.
 
 ## Package Map
 
 | Package | Responsibility |
 |---------|---------------|
-| `cmd/flowdav-*` | Entrypoints (thin) |
+| `cmd/flowdav` | Entrypoints (thin) — unified binary |
+| `cmd/android` | Gomobile bridge (exported to Android) |
 | `internal/config` | Load, validate, encrypt/decrypt configs |
 | `internal/transport` | Engine (poll loop, sessions), Envelope, Crypto, VirtualConn (SOCKS5), Pool |
 | `internal/storage` | WebDAV backend + MultiBackend (circuit breaker, round-robin) |
@@ -32,7 +37,8 @@
 SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 ```
 
-**Binaries:** `flowdav-client` (has `listen_addr`), `flowdav-server` (no listener), `flowdav-encrypt` (config encryption).
+**Binary:** `flowdav` — unified entrypoint with `-c` (client), `-s` (server), `-e` (encrypt), `-g` (generate config) modes.  
+**Android bridge:** `cmd/android/bridge.go` — gomobile bind, exports `StartProxyFromData`/`StartProxyManual`/`StopProxy`/`GetStatus`/`StopAndError`/`SetSocks5Auth` to Kotlin. **Global state intentional** (gomobile exports free functions, not objects). **Config validation stricter** than `internal/config` (≥2 backends, ≥64KB) — keep in sync. **`GetStatus` violates "no getters" intentionally** — Java/Kotlin interop dictates Java Beans naming.
 
 ## Design Invariants
 
@@ -42,12 +48,24 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 - Random filenames `{dir_byte}{16_hex}` — no metadata leaks. Mapped to `{subdir}/{uppercase_hex}` on storage (direction byte → subdirectory: `r`→`invoices`, `s`→`receipts`).
 - DNS leak protection: raw resolver, UDP explicitly blocked.
 - Multi-WebDAV: random session assignment, round-robin upload fallback.
-- No global state (exception: `transport.MaxMessageSize` / `storage.MaxFileSize` — package-level vars set at startup, justified by OOM prevention per `crypto.go:120`).
+- No global state (exceptions: `transport.MaxMessageSize` / `storage.MaxFileSize` — package-level vars set at startup, justified by OOM prevention per `internal/transport/crypto.go` `MaxMessageSize` var; `cmd/android/bridge.go` — gomobile requires free functions, not objects, so global state is unavoidable and documented as intentional).
 - **Operational philosophy:** minimize external observability, avoid predictable patterns. When adding anything network-facing: is it optional? bounded? indistinguishable from noise?
+
+## Pre-commit Hook
+
+The pre-commit hook (`.githooks/pre-commit`) checks:
+- `gofmt` on `cmd/ internal/`
+- `goimports` with `-local github.com/lyafence/flowdav`
+- `go vet ./...`
+- Bans `math/rand`, `os/exec` in production code
+- Bans `database/sql` without justification
+- Bans `sync.Pool` without benchmark
+
+Install with `make hooks`.
 
 ## Config Quick Reference
 
-- Flags: `-c config.json`, `-l loglevel`, `-p master_password`, `--version`
+- Flags: `-c config.json` (client), `-s config.json` (server), `-e config.json` (encrypt), `-g config.json` (generate), `-p master_password`, `-l loglevel`, `--version`
 - Fields: `enc_key` / `hmac_key` (32-byte base64), `max_message_size` (default 16MB), `max_sessions` (default 0 = unlimited), `webdav.backends` (array), `health_port` (e.g. `"127.0.0.1:9191"`), `log_level` (`debug`, `info`, `warn`, `error`)
 - Health: `GET /health` on `health_port` → JSON stats (active sessions, retry counters, tx queue depth, per-backend circuit breaker state)
 
@@ -55,9 +73,9 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 
 | Document | Ships in archive | Audience | Constraint |
 |----------|-----------------|----------|------------|
-| `README.md` | 📋 Yes | End user | All commands must work from release tarball. **Never reference `make`, `go run`, or source tree paths.** |
-| `AGENTS.md` | ❌ No | Agent | Can reference `make`, scripts, Go toolchain. |
-| `CONTRIBUTING.md` | ❌ No | Developer / Agent | Development workflow, code style, PR guide. Overlaps with AGENTS.md by design — AGENTS.md is authoritative for agents. |
+| `README.md` | Yes | End user | All commands must work from release tarball. **Never reference `make`, `go run`, or source tree paths.** |
+| `AGENTS.md` | No | Agent | Can reference `make`, scripts, Go toolchain. |
+| `CONTRIBUTING.md` | No | Developer / Agent | Development workflow, code style, PR guide. AGENTS.md is authoritative for agents. |
 
 ## Coding Conventions
 
@@ -77,10 +95,10 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 ## Agent Workflow
 
 1. Read the relevant package before writing code.
-2. `make test` after any change — must pass with race detector.
-3. `make build` to verify compilation.
-4. SOCKS5/engine changes → `make test-e2e` or `make docker-e2e`.
-5. Encrypted config changes → `make test-e2e-encrypted`.
+2. `make check` after any change — full verification (vet → lint → build → test with race detector).
+3. SOCKS5/engine changes → `make test-e2e` or `make docker-e2e` (requires podman).
+4. Encrypted config changes → `make test-e2e-encrypted`.
+5. After adding/removing dependencies → `go mod tidy` (CI checks `git diff go.mod go.sum`).
 
 ## Anti-Patterns
 
@@ -95,10 +113,3 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 - **Verbose logging / event tracing** — if ever needed: local-only, off by default.
 - **Remote metrics (Prometheus, etc.)** — if ever needed: local-only, off by default.
 - **Config flag creep** — not every internal constant needs a user-facing flag. Defaults are meant to be defaults.
-
-## Backlog
-
-| Priority | Item | Effort |
-|----------|------|--------|
-| P2 | **Protocol documentation** (`protocol.md`) — binary format, crypto, direction byte | low |
-| P4 | **Fixed-size envelope mode** — optional padding against payload-size correlation. *Under question — TLS-level analysis bypasses padding anyway* | high |

@@ -363,6 +363,7 @@ func TestFlushAllDataIntegrity(t *testing.T) {
 	}
 
 	engine.flushAll(ctx)
+	time.Sleep(50 * time.Millisecond)
 	engine.Stop()
 
 	// Sum all uploaded bytes (includes envelope overhead: session ID,
