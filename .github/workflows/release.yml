@@ -159,7 +159,11 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
 
+      - name: Rename APK
+        run: mv app-release.apk flowdav-android-${{ github.ref_name }}.apk
+        working-directory: android/app/build/outputs/apk/release
+
       - name: Attach APK to release
         uses: softprops/action-gh-release@v3
         with:
-          files: android/app/build/outputs/apk/release/*.apk
+          files: android/app/build/outputs/apk/release/flowdav-android-${{ github.ref_name }}.apk
