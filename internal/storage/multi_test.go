@@ -22,7 +22,6 @@ type mockBackend struct {
 	LoginFunc           func(ctx context.Context) error
 	UploadByIndexFunc   func(ctx context.Context, filename string, data io.Reader, idx uint8) error
 	DownloadByIndexFunc func(ctx context.Context, filename string, idx uint8) (io.ReadCloser, error)
-	BackendIdxValue     uint8 // For testing, we can set this to simulate the backend's index.
 }
 
 func (m *mockBackend) Upload(ctx context.Context, filename string, data io.Reader) error {
@@ -87,41 +86,18 @@ func (m *mockBackend) DownloadByIndex(ctx context.Context, filename string, idx 
 	return args.Get(0).(io.ReadCloser), args.Error(1)
 }
 
-// BackendIdx is not part of the Backend interface, but we can add a method to the mock for testing.
-// However, note that the real WebDAVBackend does not have this method. We are only using it in tests.
-// We'll add a method to the mock to set the BackendIdx for the FileEntry returned by ListQuery.
-func (m *mockBackend) SetBackendIdxForTest(idx uint8) {
-	m.BackendIdxValue = idx
-}
-
-// We need to wrap the ListQueryFunc to set the BackendIdx on the returned FileEntry.
-func (m *mockBackend) ListQueryWrapper(ctx context.Context, prefix string) ([]FileEntry, error) {
-	files, err := m.ListQueryFunc(ctx, prefix)
-	if err != nil {
-		return nil, err
-	}
-	for i := range files {
-		files[i].BackendIdx = m.BackendIdxValue
-	}
-	return files, nil
-}
-
 func TestMultiBackend(t *testing.T) {
 	// Create three mock backends.
 	mock1 := &mockBackend{}
 	mock2 := &mockBackend{}
 	mock3 := &mockBackend{}
 
-	// Set up the ListQueryWrapper for each mock to return a file with the backend's index.
-	mock1.SetBackendIdxForTest(0)
 	mock1.ListQueryFunc = func(ctx context.Context, prefix string) ([]FileEntry, error) {
 		return []FileEntry{{Filename: "file1.txt"}}, nil
 	}
-	mock2.SetBackendIdxForTest(1)
 	mock2.ListQueryFunc = func(ctx context.Context, prefix string) ([]FileEntry, error) {
 		return []FileEntry{{Filename: "file2.txt"}}, nil
 	}
-	mock3.SetBackendIdxForTest(2)
 	mock3.ListQueryFunc = func(ctx context.Context, prefix string) ([]FileEntry, error) {
 		return []FileEntry{{Filename: "file3.txt"}}, nil
 	}

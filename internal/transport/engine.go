@@ -54,9 +54,6 @@ type Engine struct {
 	// Crypto configuration (nil = no encryption)
 	cryptoCfg *CryptoConfig
 
-	// Track in-flight upload filenames to prevent cleanupLoop from deleting files mid-upload
-	inFlight sync.Map
-
 	// Graceful shutdown support
 	stopCh  chan struct{}
 	wg      sync.WaitGroup
@@ -282,11 +279,9 @@ func (e *Engine) flushAll(ctx context.Context) {
 
 			filename := randomFilename(uploadPrefix(e.myDir))
 
-			e.inFlight.Store(filename, struct{}{})
 			select {
 			case e.uploadJobs <- uploadJob{filename: filename, buf: buf, backendIdx: key.BackendIdx}:
 			case <-ctx.Done():
-				e.inFlight.Delete(filename)
 				return
 			}
 			remaining = remaining[consumed:]
@@ -501,9 +496,7 @@ func (e *Engine) uploadWorker(ctx context.Context) {
 			if !ok {
 				return
 			}
-			e.inFlight.Store(job.filename, struct{}{})
 			func() {
-				defer e.inFlight.Delete(job.filename)
 				defer func() {
 					if r := recover(); r != nil {
 						logger.Info("upload panic %s: %v", job.filename, r)

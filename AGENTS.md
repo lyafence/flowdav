@@ -38,7 +38,7 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 ```
 
 **Binary:** `flowdav` — unified entrypoint with `-c` (client), `-s` (server), `-e` (encrypt), `-g` (generate config) modes.  
-**Android bridge:** `cmd/android/bridge.go` — gomobile bind, exports `StartProxyFromData`/`StartProxyManual`/`StopProxy`/`GetStatus`/`StopAndError`/`SetSocks5Auth` to Kotlin. **Global state intentional** (gomobile exports free functions, not objects). **Config validation stricter** than `internal/config` (≥2 backends, ≥64KB) — keep in sync.
+**Android bridge:** `cmd/android/bridge.go` — gomobile bind, exports `StartProxyFromData`/`StartProxyManual`/`StopProxy`/`GetStatus`/`StopAndError`/`SetSocks5Auth` to Kotlin. **Global state intentional** (gomobile exports free functions, not objects). **Config validation stricter** than `internal/config` (≥2 backends, ≥64KB) — keep in sync. **`GetStatus` violates "no getters" intentionally** — Java/Kotlin interop dictates Java Beans naming.
 
 ## Design Invariants
 

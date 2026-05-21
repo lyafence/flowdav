@@ -79,7 +79,7 @@ A single config works for both server and client — each binary ignores fields 
 }
 ```
 
-The server ignores `listen_addr`; the client ignores `health_port` (see below).
+The server ignores `listen_addr`; both the client and server support `health_port` (see below).
 
 Optional fields: `max_message_size` (default 16MB), `max_sessions` (default 0 = unlimited), `health_port` (default: disabled). See the [Config Reference](#config-reference) table for the full list. Both `--version` and `-l <level>` flags are supported on the unified binary.
 
@@ -217,6 +217,8 @@ Both the client and server support an optional HTTP health endpoint. Set `health
 ```json
 {
   "active_sessions": 0,
+  "closed_sessions": 0,
+  "processed_files": 0,
   "upload_retries": 0,
   "download_retries": 0,
   "tx_queue_bytes": 0,

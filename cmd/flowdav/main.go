@@ -20,12 +20,12 @@ import (
 
 	"github.com/things-go/go-socks5"
 	"github.com/things-go/go-socks5/statute"
+	"golang.org/x/term"
 
 	"github.com/lyafence/flowdav/internal/config"
 	"github.com/lyafence/flowdav/internal/logger"
 	"github.com/lyafence/flowdav/internal/storage"
 	"github.com/lyafence/flowdav/internal/transport"
-	"golang.org/x/term"
 )
 
 var version = "dev"

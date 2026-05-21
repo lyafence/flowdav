@@ -67,6 +67,7 @@ jobs:
             -trimpath -ldflags="-s -w -X main.version=${VERSION}" \
             -o $FOLDER_NAME/flowdav$SUFFIX ./cmd/flowdav
 
+          cp LICENSE $FOLDER_NAME/ 2>/dev/null || true
           cp configs/*.json.example $FOLDER_NAME/ 2>/dev/null || true
           cp README.md $FOLDER_NAME/
 
