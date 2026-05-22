@@ -10,6 +10,10 @@ on:
       - '.githooks/**'
       - 'configs/*.example.json'
       - 'android/**'
+      - 'Dockerfile'
+      - 'docker-compose.yml'
+      - 'scripts/**'
+      - '.github/workflows/release.yml'
 
 permissions:
   contents: read

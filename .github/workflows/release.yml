@@ -10,8 +10,8 @@ permissions:
   packages: write
 
 jobs:
-  build-and-release:
-    name: Build and Release
+  build:
+    name: Build (${{ matrix.goos }}-${{ matrix.goarch }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -43,78 +43,33 @@ jobs:
             gomips: softfloat
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
 
-      - name: Set up Go
-        uses: actions/setup-go@v6
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.26.3"
 
       - name: Build Binary
-        shell: bash
         run: |
           VERSION=${GITHUB_REF_NAME}
-          FOLDER_NAME="flowdav-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}"
-          mkdir -p $FOLDER_NAME
-
+          FOLDER="flowdav-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          mkdir -p $FOLDER
           SUFFIX=""
-          if [ "${{ matrix.goos }}" == "windows" ]; then
-            SUFFIX=".exe"
-          fi
+          [ "${{ matrix.goos }}" == "windows" ] && SUFFIX=".exe"
+          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} GOMIPS=${{ matrix.gomips }} \
+            go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" \
+            -o $FOLDER/flowdav$SUFFIX ./cmd/flowdav
+          cp LICENSE $FOLDER/ 2>/dev/null || true
+          cp configs/*.json.example $FOLDER/ 2>/dev/null || true
+          cp README.md $FOLDER/
+          tar -czf "${FOLDER}.tar.gz" $FOLDER
 
-          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} GOMIPS=${{ matrix.gomips }} go build \
-            -trimpath -ldflags="-s -w -X main.version=${VERSION}" \
-            -o $FOLDER_NAME/flowdav$SUFFIX ./cmd/flowdav
-
-          cp LICENSE $FOLDER_NAME/ 2>/dev/null || true
-          cp configs/*.json.example $FOLDER_NAME/ 2>/dev/null || true
-          cp README.md $FOLDER_NAME/
-
-          tar -czf "${FOLDER_NAME}.tar.gz" $FOLDER_NAME
-
-      - name: Release
-        uses: softprops/action-gh-release@v3
+      - uses: actions/upload-artifact@v7
         with:
-           files: flowdav-*.tar.gz
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: bin-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: flowdav-*.tar.gz
 
-  docker:
-    name: Build and push Docker image
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v6
-        with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-
-      - name: Build and push
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-
-  android:
+  build-android:
     name: Build Android APK
     runs-on: ubuntu-latest
     steps:
@@ -163,7 +118,60 @@ jobs:
         run: mv app-release.apk flowdav-android-${{ github.ref_name }}.apk
         working-directory: android/app/build/outputs/apk/release
 
-      - name: Attach APK to release
-        uses: softprops/action-gh-release@v3
+      - uses: actions/upload-artifact@v7
         with:
-          files: android/app/build/outputs/apk/release/flowdav-android-${{ github.ref_name }}.apk
+          name: android-apk
+          path: android/app/build/outputs/apk/release/flowdav-android-${{ github.ref_name }}.apk
+
+  release:
+    name: Release
+    needs: [build, build-android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Stage assets
+        run: |
+          mkdir -p release-assets
+          find artifacts -name "*.tar.gz" -exec cp {} release-assets/ \;
+          find artifacts -name "*.apk" -exec cp {} release-assets/ \;
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: release-assets/*
+          fail_on_unmatched_files: false
+
+  docker:
+    name: Build and push Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
