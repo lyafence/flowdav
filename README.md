@@ -2,7 +2,20 @@
 
 A lightweight SOCKS5 proxy that uses WebDAV as a transport layer. Route your traffic through your home internet connection when connected to public Wi-Fi (cafe, hotel, etc.) by using WebDAV storage as an intermediary.
 
-**Inspired by [NullLatency/FlowDriver](https://github.com/NullLatency/FlowDriver) — credit to NullLatency for the original concept.**
+![Go](https://img.shields.io/badge/go-1.26.3-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Release](https://img.shields.io/github/v/release/lyafence/flowdav)
+
+## Features
+
+- **Zero open ports** — server has no listening ports for data; all communication happens through WebDAV storage (optional health endpoint on loopback)
+- **End-to-end encryption** — AES-256-GCM + HMAC-SHA256 on all data, no plaintext on storage
+- **TLS fingerprint masking** — uTLS masquerades as Chrome 133, browser User-Agent on all WebDAV requests
+- **Adaptive polling** — idle backoff up to 60s with jitter, instant reset on activity, zero API calls when no sessions
+- **Rate-limit protection** — HTTP 429 triggers separate cooldown, sessions auto-migrate to another backend
+- **Multi-account rotation** — random session assignment, round-robin upload fallback across independent backends
+- **DNS leak protection** — raw resolver on the client side, UDP explicitly blocked
+- **Config encryption** — PBKDF2 + AES-256-GCM, secrets never stored in plaintext
 
 ## How It Works
 
@@ -11,22 +24,12 @@ A lightweight SOCKS5 proxy that uses WebDAV as a transport layer. Route your tra
                    (encrypt, mux)      (passive store)     (decrypt, demux)
 ```
 
-**Data flow:**
-1. SOCKS5 client (browser/app) connects to client on `127.0.0.1:1080`
-2. Client wraps data in `Envelope` (binary protocol), encrypts with AES-256-GCM + HMAC-SHA256
+1. SOCKS5 client (browser/app) connects to flowdav client on `127.0.0.1:1080`
+2. Client wraps data in encrypted envelopes (AES-256-GCM + HMAC-SHA256)
 3. Client uploads encrypted data to WebDAV storage
 4. Server polls WebDAV, downloads and decrypts envelopes
-5. Server opens real TCP connections to destination
-6. Response flows back through WebDAV to client
-
-**Key points:**
-- Server has no listening ports for data — all communication happens via WebDAV storage (optional health endpoint on loopback)
-- Sessions use random filenames `{dir_byte}{16_hex}` (direction byte + random hex, no client ID or timestamp leakage)
-- Adaptive polling: idle backoff up to 60s with ±75% jitter, instant reset on activity
-- TLS fingerprint masking (Chrome 133) + browser User-Agent
-- 429-aware circuit breaker (60s cooldown, session migration)
-- Client and server must use the same WebDAV storage and credentials
-- Default SOCKS5 port is 1080 (`127.0.0.1`)
+5. Server opens real TCP connections to the destination
+6. Response flows back through WebDAV to the client
 
 > **Disclaimer:** This tool is designed for legitimate privacy protection — securing traffic on untrusted public Wi-Fi networks. Users are solely responsible for complying with all applicable laws in their jurisdiction. The authors assume no liability for misuse or unlawful use.
 
@@ -37,56 +40,60 @@ A lightweight SOCKS5 proxy that uses WebDAV as a transport layer. Route your tra
 - A WebDAV storage (any provider — rclone, NextCloud, ownCloud, or a dedicated WebDAV service)
 - Two machines sharing the same WebDAV: **server** at home (connects to destinations), **client** at cafe (your proxy entry point). For testing, both can run on the same machine.
 
-### 1. Install
-
-#### Option A — Binary archive
-
-Download the latest archive from [GitHub Releases](https://github.com/lyafence/flowdav/releases):
-
 ```bash
-tar -xzf flowdav-*.tar.gz
-cd flowdav-*/
+# 1. Install (auto-detect OS and architecture)
+curl -sSf https://raw.githubusercontent.com/lyafence/flowdav/main/scripts/get-flowdav.sh | sh
+
+# 2. Generate config (interactive — 3 prompts for URL, login, token)
+./flowdav -g config.json
+
+# 3. Start the server (at home, polls WebDAV)
+./flowdav -s config.json
+
+# 4. Start the client (at cafe, SOCKS5 on 127.0.0.1:1080)
+./flowdav -c config.json
+
+# 5. Test the proxy
+curl -s --proxy socks5h://127.0.0.1:1080 https://api.ipify.org
 ```
 
-### 2. Configure
+All encryption keys are generated automatically. The binary generates fresh `enc_key`/`hmac_key` for you — no manual `openssl` needed.
 
-#### Generate encryption keys
+> **Don't have two machines?** Run both on the same machine. **Windows?** Download from [Releases](https://github.com/lyafence/flowdav/releases).
 
-The `enc_key` and `hmac_key` must be identical on client and server:
+## Configuration
+
+For full control over every field, create or edit the config manually.
+
+### Generate encryption keys
+
+Keys must be identical on client and server:
 
 ```bash
-head -c 32 /dev/urandom | base64 -w0; echo  # enc_key
-head -c 32 /dev/urandom | base64 -w0; echo  # hmac_key
+openssl rand -base64 32  # enc_key
+openssl rand -base64 32  # hmac_key
 ```
 
-#### Copy the example config
-
-```bash
-cp flowdav.json.example config.json
-```
-
-#### Edit the config
-
-A single config works for both server and client — each binary ignores fields it doesn't need:
+### Example config
 
 ```json
 {
   "listen_addr": "127.0.0.1:1080",
   "webdav": {
-    "url": "https://your-webdav-server:8080",
+    "url": "https://your-webdav:8080",
     "login": "username",
-    "token": "YOUR_WEBDAV_TOKEN"
+    "token": "YOUR_TOKEN"
   },
   "enc_key": "paste enc_key here",
   "hmac_key": "paste hmac_key here"
 }
 ```
 
-The server ignores `listen_addr`; both the client and server support `health_port` (see below).
+Required: `webdav.url`, `webdav.login`, `webdav.token`, `enc_key`, `hmac_key`. See the [Config Reference](#config-reference) for all optional fields.
 
-Optional fields: `max_message_size` (default 16MB), `max_sessions` (default 0 = unlimited), `health_port` (default: disabled). See the [Config Reference](#config-reference) table for the full list. Both `--version` and `-l <level>` flags are supported on the unified binary.
+### Multi-backend
 
-For multiple WebDAV providers (round-robin), replace the single backend fields with a `backends` array:
+Replace the single backend with a `backends` array for account rotation:
 
 ```json
 {
@@ -99,76 +106,25 @@ For multiple WebDAV providers (round-robin), replace the single backend fields w
 }
 ```
 
-See `flowdav.json.example` for the single-backend structure.
-
-#### Optional: encrypt configs
-
-Encrypt your config with a master password so secrets are never stored in plaintext:
+### Encrypted configs
 
 ```bash
-# Option 1: Generate a config from scratch (interactive prompts):
-./flowdav -g config.json
-
-# Option 2: Encrypt an existing config with a master password:
-./flowdav -e config.json                 # prompts for password
-./flowdav -e config.json -p secret       # or via flag
-FLOWDAV_PASSWORD=secret ./flowdav -e config.json  # or via env
-
-# Option 3: Generate and encrypt in one step:
-./flowdav -g -e config.json              # prompts for WebDAV + password
-```
-
-Run with the encrypted config:
-
-```bash
-./flowdav -s config.json.enc             # prompts for password
-./flowdav -c config.json.enc -p secret   # or via flag
+./flowdav -e config.json              # encrypt
+./flowdav -c config.json.enc -p secret  # run encrypted
 FLOWDAV_PASSWORD=secret ./flowdav -c config.json.enc  # or via env
 ```
 
-### 3. Run
-
-**Start the server** (at home):
-
-```bash
-./flowdav -s config.json
-# or with encrypted config:
-./flowdav -s config.json.enc             # prompts for password
-```
-
-The server polls WebDAV for new sessions — no listening ports required.
-
-**Start the client** (at cafe):
-
-```bash
-./flowdav -c config.json
-```
-
-The client listens on `127.0.0.1:1080` (or the address in `listen_addr`).
-
-**Test the proxy:**
-
-```bash
-curl -s --proxy socks5h://127.0.0.1:1080 https://api.ipify.org
-```
-
-Or set it system-wide:
-
-```bash
-export ALL_PROXY=socks5://127.0.0.1:1080
-```
-
-### 4. Docker
+## Docker
 
 Images are published on [GitHub Container Registry](https://github.com/lyafence/flowdav/pkgs/container/flowdav).
-Pass the desired mode (`-c`, `-s`, `-e`) as the command (`docker run` pulls automatically if not cached):
+Pass the desired mode (`-c`, `-s`, `-e`) as the command:
 
 ```bash
 # start the server (at home)
 docker run --rm -v ./config.json:/app/configs/config.json \
   ghcr.io/lyafence/flowdav flowdav -s /app/configs/config.json
 
-# start the client (at cafe), exposes SOCKS5 on 127.0.0.1:1080
+# start the client (at cafe)
 docker run --rm -v ./config.json:/app/configs/config.json \
   ghcr.io/lyafence/flowdav flowdav -c /app/configs/config.json
 
@@ -198,7 +154,7 @@ docker run --rm -v ./config.json.enc:/app/configs/config.json.enc \
 | `webdav.base_path` | string | `""` | ✓ | ✓ | WebDAV subdirectory for files |
 | `enc_key` | string | — | ✓ | ✓ | 32-byte AES-256 key, base64 |
 | `hmac_key` | string | — | ✓ | ✓ | 32-byte HMAC-SHA256 key, base64 |
-| `listen_addr` | string | — | ✓ | | SOCKS5 listener (`host:port`) |
+| `listen_addr` | string | `"127.0.0.1:1080"` | ✓ | | SOCKS5 listener (`host:port`) |
 | `log_level` | string | `"info"` | ✓ | ✓ | Log level (`debug`, `info`, `warn`, `error`) |
 | `socks5_user` | string | `""` | ✓ | | SOCKS5 auth username |
 | `socks5_pass` | string | `""` | ✓ | | SOCKS5 auth password |
@@ -247,6 +203,13 @@ Both the client and server support an optional HTTP health endpoint. Set `health
 - **SOCKS5 authentication:** username/password (if specified in config.json)
 - **DNS leak protection:** Raw resolver (no local DNS lookups)
 - **UDP blocked:** Only TCP traffic is supported
+
+## Troubleshooting
+
+- **First request is slow (~10s)** — this is normal. The client polls WebDAV every 500ms; subsequent requests are faster.
+- **HTTPS sites fail but HTTP works** — check DNS resolution from your server machine. The server resolves destination hostnames.
+- **"Failed to load config"** — if the file is encrypted, use `-p` flag or `FLOWDAV_PASSWORD` env var. If not, check the JSON syntax.
+- **Connection resets during active browsing** — enable debug logging with `-l debug` to see session-level errors.
 
 ## Android
 

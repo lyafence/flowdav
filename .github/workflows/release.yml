@@ -63,6 +63,7 @@ jobs:
           cp configs/*.json.example $FOLDER/ 2>/dev/null || true
           cp README.md $FOLDER/
           tar -czf "${FOLDER}.tar.gz" $FOLDER
+          cp "${FOLDER}.tar.gz" "flowdav-latest-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz"
 
       - uses: actions/upload-artifact@v7
         with:
