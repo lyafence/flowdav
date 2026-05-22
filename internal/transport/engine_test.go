@@ -50,6 +50,9 @@ func (m *mockBackend) DownloadByIndex(ctx context.Context, name string, idx uint
 	m.Download(ctx, name)
 	return nil, nil
 }
+func (m *mockBackend) UploadAny(ctx context.Context, name string, data io.Reader) (uint8, error) {
+	return 0, m.Upload(ctx, name, data)
+}
 func TestEngineStop(t *testing.T) {
 	backend := &mockBackend{}
 	engine := NewEngine(backend, true, nil)
@@ -300,9 +303,9 @@ func TestJitterPollInterval(t *testing.T) {
 		maxRatio float64
 	}{
 		{"zero", 0, 0, 0},
-		{"100ms", 100 * time.Millisecond, 0.75, 1.25},
-		{"5s", 5 * time.Second, 0.75, 1.25},
-		{"1h", time.Hour, 0.75, 1.25},
+		{"100ms", 100 * time.Millisecond, 0.25, 1.75},
+		{"5s", 5 * time.Second, 0.25, 1.75},
+		{"1h", time.Hour, 0.25, 1.75},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/lyafence/flowdav/internal/logger"
+	"github.com/lyafence/flowdav/internal/storage"
 )
 
 // wakeupTx wakes all goroutines blocked in EnqueueTxCtx due to backpressure.
@@ -53,6 +54,28 @@ type Session struct {
 	// BackendIdx is the index of the WebDAV backend assigned to this session.
 	// Assigned on seq=0 (client writes it). Server reads it and uses the same backend.
 	BackendIdx uint8
+
+	// notifyActivity is set by Engine.AddSession to reset the poll timer
+	// when new data is enqueued, ensuring fast polling after idle backoff.
+	notifyActivity func()
+}
+
+// ReassignBackend picks a new random backend index different from the
+// current one. Returns false if <2 backends.
+func (s *Session) ReassignBackend(numBackends int) bool {
+	if numBackends < 2 {
+		return false
+	}
+	current := int(s.BackendIdx)
+	for {
+		newIdx := storage.RandBackendIndex(numBackends)
+		if newIdx != current {
+			s.mu.Lock()
+			s.BackendIdx = uint8(newIdx)
+			s.mu.Unlock()
+			return true
+		}
+	}
 }
 
 func NewSession(id string) *Session {
@@ -108,6 +131,9 @@ func (s *Session) EnqueueTxCtx(ctx context.Context, data []byte) {
 
 	s.txBuf = append(s.txBuf, data...)
 	s.lastActivity = time.Now()
+	if s.notifyActivity != nil {
+		s.notifyActivity()
+	}
 }
 
 // ExtractTxBatch atomically reads and clears the tx buffer under lock.

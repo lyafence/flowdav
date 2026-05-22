@@ -335,13 +335,20 @@ for demultiplexing.
 |-----------|---------|-------|
 | Base poll interval | 500 ms | Configurable |
 | Min poll (backoff floor) | 100 ms | Configurable |
-| Max poll (backoff ceiling) | 5000 ms | Configurable |
+| Max poll (backoff ceiling) | 60000 ms | Configurable |
 | Flush interval | 500 ms | Configurable |
 
 ### Jitter
 
-Poll intervals use ±25% random jitter to avoid predictable polling
-patterns. The jitter factor is `0.75 + (rand_byte / 255.0) * 0.5`.
+Poll intervals use ±75% random jitter to break periodic patterns.
+The jitter factor is `0.25 + (rand_byte / 255.0) * 1.5`, producing a
+0.25–1.75× range around the nominal interval.
+
+### Activity-based poll reset
+
+When a session enqueues outbound data (user activity), the poll timer
+resets to `minPollInterval` (100ms). This prevents the idle backoff from
+delaying the first response when a user starts browsing.
 
 ---
 

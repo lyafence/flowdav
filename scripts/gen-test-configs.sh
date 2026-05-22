@@ -16,7 +16,7 @@ cat > configs/flowdav_test.json <<END
     "token": "test",
     "base_path": "data_sync"
   },
-  "listen_addr": "127.0.0.1:1080",
+  "listen_addr": "0.0.0.0:1080",
   "enc_key": "${ENC_KEY}",
   "hmac_key": "${HMAC_KEY}",
   "refresh_rate_ms": 500,

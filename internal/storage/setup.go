@@ -8,7 +8,7 @@ import (
 	"github.com/lyafence/flowdav/internal/logger"
 )
 
-func NewBackendFromConfig(cfg *config.WebDAVConfig) (Backend, *MultiBackend, error) {
+func NewBackendFromConfig(cfg *config.WebDAVConfig, tlsFingerprint string) (Backend, *MultiBackend, error) {
 	if cfg == nil {
 		return nil, nil, errors.New("webdav config is nil")
 	}
@@ -17,7 +17,7 @@ func NewBackendFromConfig(cfg *config.WebDAVConfig) (Backend, *MultiBackend, err
 		backends := make([]Backend, len(cfg.Backends))
 		for i, be := range cfg.Backends {
 			var err error
-			backends[i], err = NewWebDAVBackend(be.Login, be.Token, be.BasePath, be.URL)
+			backends[i], err = NewWebDAVBackend(be.Login, be.Token, be.BasePath, be.URL, tlsFingerprint)
 			if err != nil {
 				return nil, nil, fmt.Errorf("backend[%d]: %w", i, err)
 			}
@@ -27,7 +27,7 @@ func NewBackendFromConfig(cfg *config.WebDAVConfig) (Backend, *MultiBackend, err
 		return multi, multi, nil
 	}
 
-	be, err := NewWebDAVBackend(cfg.Login, cfg.Token, cfg.BasePath, cfg.URL)
+	be, err := NewWebDAVBackend(cfg.Login, cfg.Token, cfg.BasePath, cfg.URL, tlsFingerprint)
 	if err != nil {
 		return nil, nil, err
 	}

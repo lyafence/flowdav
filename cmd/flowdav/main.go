@@ -68,8 +68,8 @@ func main() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: flowdav [flags]\n\n")
 		fmt.Fprintf(os.Stderr, "Modes (mutually exclusive):\n")
-		fmt.Fprintf(os.Stderr, "  -c, --client <path>     Run as SOCKS5 client\n")
-		fmt.Fprintf(os.Stderr, "  -s, --server <path>     Run as WebDAV server\n")
+		fmt.Fprintf(os.Stderr, "  -c, --client <path>     Run as client\n")
+		fmt.Fprintf(os.Stderr, "  -s, --server <path>     Run as server\n")
 		fmt.Fprintf(os.Stderr, "  -e, --encrypt <path>    Encrypt config file\n")
 		fmt.Fprintf(os.Stderr, "  -g, --gen   <path>      Generate config interactively\n")
 		fmt.Fprintf(os.Stderr, "  -g -e <path>            Generate + encrypt\n\n")
@@ -153,7 +153,7 @@ func runClient(configPath, password, logLevel string, askInteractive bool) {
 		logger.SetLevel(logLevel)
 	}
 
-	backend, multiBackend, err := storage.NewBackendFromConfig(appCfg.WebDAV)
+	backend, multiBackend, err := storage.NewBackendFromConfig(appCfg.WebDAV, appCfg.TLSFingerprint)
 	if err != nil {
 		log.Fatalf("Failed to init WebDAV storage: %v", err)
 	}
@@ -334,7 +334,7 @@ func runServer(configPath, password, logLevel string, askInteractive bool) {
 		logger.SetLevel(logLevel)
 	}
 
-	backend, _, err := storage.NewBackendFromConfig(appCfg.WebDAV)
+	backend, _, err := storage.NewBackendFromConfig(appCfg.WebDAV, appCfg.TLSFingerprint)
 	if err != nil {
 		log.Fatalf("Failed to init WebDAV storage: %v", err)
 	}

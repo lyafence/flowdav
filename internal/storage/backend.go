@@ -38,4 +38,8 @@ type Backend interface {
 
 	// DownloadByIndex downloads from a specific backend by index (for multi-backend mode).
 	DownloadByIndex(ctx context.Context, filename string, idx uint8) (io.ReadCloser, error)
+
+	// UploadAny uploads to the next available backend and returns the chosen index.
+	// Single-backend implementations return idx=0.
+	UploadAny(ctx context.Context, filename string, data io.Reader) (uint8, error)
 }

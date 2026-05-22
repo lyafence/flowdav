@@ -184,6 +184,9 @@ func parseConfigJSON(data []byte) (*config.AppConfig, error) {
 	if cfg.MaxMessageSize > 0 && cfg.MaxMessageSize < 65536 {
 		return nil, fmt.Errorf("max_message_size must be at least 65536 (64KB), got %d", cfg.MaxMessageSize)
 	}
+	if cfg.TLSFingerprint != "" && cfg.TLSFingerprint != "chrome" && cfg.TLSFingerprint != "chrome_auto" {
+		return nil, fmt.Errorf("invalid tls_fingerprint: %q", cfg.TLSFingerprint)
+	}
 	applyDefaults(&cfg)
 	return &cfg, nil
 }
@@ -282,7 +285,7 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 		pendingSocks5Pass = ""
 	}
 
-	backend, multiBackend, err := storage.NewBackendFromConfig(appCfg.WebDAV)
+	backend, multiBackend, err := storage.NewBackendFromConfig(appCfg.WebDAV, appCfg.TLSFingerprint)
 	if err != nil {
 		return fmt.Errorf("storage: %w", err)
 	}

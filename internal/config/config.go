@@ -147,6 +147,12 @@ type AppConfig struct {
 	// When set, a GET /health endpoint is available returning JSON Engine stats.
 	// If empty, no health server is started (zero overhead).
 	HealthPort string `json:"health_port,omitempty"`
+
+	// TLSFingerprint sets the TLS fingerprint profile for WebDAV connections.
+	// Supported: "" (default=Chrome 133), "chrome", "chrome_auto".
+	// Hardcoded to Chrome 133 when unset — no need to configure unless you
+	// need a different profile for compatibility reasons.
+	TLSFingerprint string `json:"tls_fingerprint,omitempty"`
 }
 
 // Load reads and parses a JSON config file.
@@ -231,6 +237,11 @@ func Load(path string) (*AppConfig, error) {
 	// Validate MaxMessageSize (if set)
 	if cfg.MaxMessageSize > 0 && cfg.MaxMessageSize < 65536 {
 		return nil, fmt.Errorf("max_message_size must be at least 65536 (64KB), got %d", cfg.MaxMessageSize)
+	}
+
+	// Validate TLSFingerprint (if set)
+	if cfg.TLSFingerprint != "" && cfg.TLSFingerprint != "chrome" && cfg.TLSFingerprint != "chrome_auto" {
+		return nil, fmt.Errorf("invalid tls_fingerprint: %q (supported: chrome, chrome_auto)", cfg.TLSFingerprint)
 	}
 
 	// Store decoded keys for use by transport layer

@@ -28,7 +28,7 @@
 | `cmd/android` | Gomobile bridge (exported to Android) |
 | `internal/config` | Load, validate, encrypt/decrypt configs |
 | `internal/transport` | Engine (poll loop, sessions), Envelope, Crypto, VirtualConn (SOCKS5), Pool |
-| `internal/storage` | WebDAV backend + MultiBackend (circuit breaker, round-robin) |
+| `internal/storage` | WebDAV backend + MultiBackend (circuit breaker, round-robin, 429-aware cooldown) |
 | `internal/logger` | Leveled logging |
 
 ## Architecture
@@ -48,6 +48,8 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 - Random filenames `{dir_byte}{16_hex}` — no metadata leaks. Mapped to `{subdir}/{uppercase_hex}` on storage (direction byte → subdirectory: `r`→`invoices`, `s`→`receipts`).
 - DNS leak protection: raw resolver, UDP explicitly blocked.
 - Multi-WebDAV: random session assignment, round-robin upload fallback.
+- **429-aware circuit breaker**: rate-limit (429) uses separate 60s cooldown without incrementing failure count. Session auto-migrates to another backend on 429. Download falls back to non-indexed search across all backends.
+- **TLS fingerprint masking**: uTLS `HelloChrome_133` by default (configurable via `tls_fingerprint`). User-Agent matches (`Chrome/133.0.0.0`).
 - No global state (exceptions: `transport.MaxMessageSize` / `storage.MaxFileSize` — package-level vars set at startup, justified by OOM prevention per `internal/transport/crypto.go` `MaxMessageSize` var; `cmd/android/bridge.go` — gomobile requires free functions, not objects, so global state is unavoidable and documented as intentional).
 - **Operational philosophy:** minimize external observability, avoid predictable patterns. When adding anything network-facing: is it optional? bounded? indistinguishable from noise?
 

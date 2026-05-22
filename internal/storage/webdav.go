@@ -2,6 +2,8 @@ package storage
 
 import (
 	"context"
+	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -11,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	utls "github.com/refraction-networking/utls"
 	gowebdav "github.com/studio-b12/gowebdav"
 
 	"github.com/lyafence/flowdav/internal/logger"
@@ -27,6 +30,78 @@ var (
 	dirRes = "receipts"
 )
 
+// chromeUA mimics a recent Chrome browser User-Agent to blend in with
+// legitimate WebDAV client traffic and avoid WAF/bot detection.
+const chromeUA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
+
+// HTTPError wraps an HTTP status code for storage-level error classification.
+type HTTPError struct {
+	Code int
+	Err  error
+}
+
+func (e *HTTPError) Error() string {
+	return fmt.Sprintf("HTTP %d: %v", e.Code, e.Err)
+}
+
+func (e *HTTPError) Unwrap() error {
+	return e.Err
+}
+
+// IsRateLimited checks if an error is a 429 Too Many Requests.
+func IsRateLimited(err error) bool {
+	var httpErr *HTTPError
+	if errors.As(err, &httpErr) {
+		return httpErr.Code == http.StatusTooManyRequests
+	}
+	return false
+}
+
+// userAgentTransport wraps an http.RoundTripper to inject a browser
+// User-Agent header on every request, preventing Go-http-client detection.
+type userAgentTransport struct {
+	inner http.RoundTripper
+	ua    string
+}
+
+func (t *userAgentTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req.Header.Set("User-Agent", t.ua)
+	return t.inner.RoundTrip(req)
+}
+
+// newUtlsDialer returns a TLS dial function matching the given fingerprint
+// profile. Empty string defaults to Chrome 133.
+func newUtlsDialer(fingerprint string) func(ctx context.Context, network, addr string) (net.Conn, error) {
+	var helloID utls.ClientHelloID
+	switch fingerprint {
+	case "", "chrome":
+		helloID = utls.HelloChrome_133
+	case "chrome_auto":
+		helloID = utls.HelloChrome_Auto
+	default:
+		helloID = utls.HelloChrome_133
+	}
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		tcpConn, err := (&net.Dialer{Timeout: 30 * time.Second}).DialContext(ctx, network, addr)
+		if err != nil {
+			return nil, err
+		}
+		host, _, err := net.SplitHostPort(addr)
+		if err != nil {
+			tcpConn.Close() //nolint:errcheck
+			return nil, err
+		}
+		uConn := utls.UClient(tcpConn, &utls.Config{
+			ServerName: host,
+		}, helloID)
+		if err := uConn.HandshakeContext(ctx); err != nil {
+			tcpConn.Close() //nolint:errcheck
+			return nil, err
+		}
+		return uConn, nil
+	}
+}
+
 type WebDAVBackend struct {
 	client     *gowebdav.Client
 	httpClient *http.Client
@@ -36,7 +111,7 @@ type WebDAVBackend struct {
 	basePath   string
 }
 
-func NewWebDAVBackend(login, token, basePath, url string) (*WebDAVBackend, error) {
+func NewWebDAVBackend(login, token, basePath, url, tlsFingerprint string) (*WebDAVBackend, error) {
 	if url == "" {
 		return nil, fmt.Errorf("WebDAV URL is required")
 	}
@@ -55,21 +130,28 @@ func NewWebDAVBackend(login, token, basePath, url string) (*WebDAVBackend, error
 	}
 
 	rootURL := url
-	// Connect directly to the rootURL (rclone serve webdav /data makes /data the root)
-	client := gowebdav.NewClient(rootURL, login, token)
+	dialTLS := newUtlsDialer(tlsFingerprint)
 	transport := &http.Transport{
 		MaxIdleConnsPerHost:   64,
 		IdleConnTimeout:       90 * time.Second,
 		DisableCompression:    true,
 		ResponseHeaderTimeout: 30 * time.Second,
 		ExpectContinueTimeout: 5 * time.Second,
+		DialTLSContext:        dialTLS,
+		TLSNextProto:          make(map[string]func(authority string, c *tls.Conn) http.RoundTripper),
 	}
-	client.SetTransport(transport)
+	wrappedTransport := &userAgentTransport{inner: transport, ua: chromeUA}
+
+	client := gowebdav.NewClient(rootURL, login, token)
+	client.SetTransport(wrappedTransport)
 	client.SetTimeout(90 * time.Second)
+	client.SetHeader("User-Agent", chromeUA)
+
 	httpClient := &http.Client{
 		Timeout:   90 * time.Second,
-		Transport: transport,
+		Transport: wrappedTransport,
 	}
+
 	backend := &WebDAVBackend{
 		client:     client,
 		httpClient: httpClient,
@@ -276,6 +358,9 @@ func (w *WebDAVBackend) Upload(ctx context.Context, filename string, data io.Rea
 
 	err = w.client.Write(full, content, 0644)
 	if err != nil {
+		if gowebdav.IsErrCode(err, http.StatusTooManyRequests) {
+			return &HTTPError{Code: http.StatusTooManyRequests, Err: err}
+		}
 		return fmt.Errorf("upload error: %w", err)
 	}
 	logger.Debug("WebDAV: uploaded %s (%d bytes)", filename, len(content))
@@ -299,10 +384,15 @@ func (w *WebDAVBackend) Download(ctx context.Context, filename string) (io.ReadC
 		return nil, fmt.Errorf("download error: %w", err)
 	}
 	req.SetBasicAuth(w.login, w.token)
+	req.Header.Set("User-Agent", chromeUA)
 
 	resp, err := w.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("download error: %w", err)
+	}
+	if resp.StatusCode == http.StatusTooManyRequests {
+		resp.Body.Close()
+		return nil, &HTTPError{Code: http.StatusTooManyRequests, Err: fmt.Errorf("HTTP %d", resp.StatusCode)}
 	}
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
@@ -338,6 +428,10 @@ func (w *WebDAVBackend) Delete(ctx context.Context, filename string) error {
 
 func (w *WebDAVBackend) UploadByIndex(ctx context.Context, filename string, data io.Reader, idx uint8) error {
 	return w.Upload(ctx, filename, data)
+}
+
+func (w *WebDAVBackend) UploadAny(ctx context.Context, filename string, data io.Reader) (uint8, error) {
+	return 0, w.Upload(ctx, filename, data)
 }
 
 func (w *WebDAVBackend) DownloadByIndex(ctx context.Context, filename string, idx uint8) (io.ReadCloser, error) {

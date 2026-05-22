@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"net/http"
 	"sync"
 	"time"
 
@@ -13,13 +14,20 @@ import (
 )
 
 const (
-	cbThreshold = 3
-	cbCooldown  = 30 * time.Second
+	cbThreshold       = 3
+	cbCooldown        = 30 * time.Second
+	rateLimitCooldown = 60 * time.Second
 )
 
 type backendHealth struct {
-	failures int
-	lastFail time.Time
+	failures         int
+	lastFail         time.Time
+	rateLimitedUntil time.Time
+}
+
+// isRateLimited returns true if this backend is in rate-limit cooldown.
+func (h *backendHealth) isRateLimited() bool {
+	return time.Now().Before(h.rateLimitedUntil)
 }
 
 type MultiBackend struct {
@@ -45,6 +53,9 @@ func (m *MultiBackend) isAvailable(idx int) (ok bool, resetNow bool) {
 		return false, false
 	}
 	h := &m.health[idx]
+	if h.isRateLimited() {
+		return false, false
+	}
 	if h.failures < cbThreshold {
 		return true, false
 	}
@@ -54,12 +65,21 @@ func (m *MultiBackend) isAvailable(idx int) (ok bool, resetNow bool) {
 	return false, false
 }
 
-func (m *MultiBackend) recordFailure(idx int) {
+func (m *MultiBackend) recordFailure(idx int, err error) {
 	if idx >= len(m.health) {
 		return
 	}
-	m.health[idx].failures++
-	m.health[idx].lastFail = time.Now()
+	h := &m.health[idx]
+	// Check if this is a 429 rate-limit error — immediate cooldown,
+	// not counted as a circuit breaker failure.
+	var httpErr *HTTPError
+	if errors.As(err, &httpErr) && httpErr.Code == http.StatusTooManyRequests {
+		h.rateLimitedUntil = time.Now().Add(rateLimitCooldown)
+		logger.Info("MultiBackend: backend[%d] rate-limited (429) until %s", idx, h.rateLimitedUntil.Format(time.RFC3339))
+		return
+	}
+	h.failures++
+	h.lastFail = time.Now()
 }
 
 func (m *MultiBackend) recordSuccess(idx int) {
@@ -113,21 +133,28 @@ func (m *MultiBackend) Login(ctx context.Context) error {
 }
 
 func (m *MultiBackend) Upload(ctx context.Context, filename string, data io.Reader) error {
+	_, err := m.UploadAny(ctx, filename, data)
+	return err
+}
+
+// UploadAny uploads to the next available backend and returns the chosen
+// backend index. Returns an error if no backends are available.
+func (m *MultiBackend) UploadAny(ctx context.Context, filename string, data io.Reader) (uint8, error) {
 	m.mu.Lock()
 	be, idx := m.nextAvailableBackend()
 	m.mu.Unlock()
 	if be == nil {
-		return errors.New("no backends available")
+		return 0, errors.New("no backends available")
 	}
 	err := be.Upload(ctx, filename, data)
 	m.mu.Lock()
 	if err != nil {
-		m.recordFailure(idx)
+		m.recordFailure(idx, err)
 	} else {
 		m.recordSuccess(idx)
 	}
 	m.mu.Unlock()
-	return err
+	return uint8(idx), err
 }
 
 func (m *MultiBackend) ListQuery(ctx context.Context, prefix string) ([]FileEntry, error) {
@@ -181,7 +208,7 @@ func (m *MultiBackend) UploadByIndex(ctx context.Context, filename string, data 
 
 	m.mu.Lock()
 	if err != nil {
-		m.recordFailure(int(idx))
+		m.recordFailure(int(idx), err)
 	} else {
 		m.recordSuccess(int(idx))
 	}
@@ -202,7 +229,7 @@ func (m *MultiBackend) DownloadByIndex(ctx context.Context, filename string, idx
 
 	m.mu.Lock()
 	if err != nil {
-		m.recordFailure(int(idx))
+		m.recordFailure(int(idx), err)
 	} else {
 		m.recordSuccess(int(idx))
 	}
@@ -212,10 +239,12 @@ func (m *MultiBackend) DownloadByIndex(ctx context.Context, filename string, idx
 
 // BackendStat exposes per-backend health for the health endpoint.
 type BackendStat struct {
-	URL            string `json:"url"`
-	Available      bool   `json:"available"`
-	Failures       int    `json:"failures"`
-	LastFailAgeSec int64  `json:"last_failure_age_sec,omitempty"`
+	URL                string `json:"url"`
+	Available          bool   `json:"available"`
+	Failures           int    `json:"failures"`
+	LastFailAgeSec     int64  `json:"last_failure_age_sec,omitempty"`
+	RateLimited        bool   `json:"rate_limited"`
+	RateLimitRemainSec int64  `json:"rate_limit_remain_sec,omitempty"`
 }
 
 func (m *MultiBackend) Stats() []BackendStat {
@@ -231,11 +260,18 @@ func (m *MultiBackend) Stats() []BackendStat {
 		if !m.health[i].lastFail.IsZero() {
 			age = int64(time.Since(m.health[i].lastFail).Seconds())
 		}
+		rlRemain := int64(0)
+		isRL := m.health[i].isRateLimited()
+		if isRL {
+			rlRemain = int64(time.Until(m.health[i].rateLimitedUntil).Seconds())
+		}
 		stats[i] = BackendStat{
-			URL:            url,
-			Available:      m.health[i].failures < cbThreshold || time.Since(m.health[i].lastFail) > cbCooldown,
-			Failures:       m.health[i].failures,
-			LastFailAgeSec: age,
+			URL:                url,
+			Available:          (!isRL && (m.health[i].failures < cbThreshold || time.Since(m.health[i].lastFail) > cbCooldown)),
+			Failures:           m.health[i].failures,
+			LastFailAgeSec:     age,
+			RateLimited:        isRL,
+			RateLimitRemainSec: rlRemain,
 		}
 	}
 	return stats

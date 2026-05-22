@@ -69,7 +69,7 @@ gen_config "flowdav_test.json" '{
     "token": "test",
     "base_path": "data_sync"
   },
-  "listen_addr": "0.0.0.0:11080",
+  "listen_addr": "0.0.0.0:1080",
   "enc_key": "'"$enc_key"'",
   "hmac_key": "'"$hmac_key"'",
   "refresh_rate_ms": 500,
@@ -104,7 +104,7 @@ gen_config "flowdav_test_multi.json" '{
       }
     ]
   },
-  "listen_addr": "0.0.0.0:11080",
+  "listen_addr": "0.0.0.0:1080",
   "enc_key": "'"$enc_key_multi"'",
   "hmac_key": "'"$hmac_key_multi"'",
   "refresh_rate_ms": 500,

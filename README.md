@@ -22,6 +22,9 @@ A lightweight SOCKS5 proxy that uses WebDAV as a transport layer. Route your tra
 **Key points:**
 - Server has no listening ports for data — all communication happens via WebDAV storage (optional health endpoint on loopback)
 - Sessions use random filenames `{dir_byte}{16_hex}` (direction byte + random hex, no client ID or timestamp leakage)
+- Adaptive polling: idle backoff up to 60s with ±75% jitter, instant reset on activity
+- TLS fingerprint masking (Chrome 133) + browser User-Agent
+- 429-aware circuit breaker (60s cooldown, session migration)
 - Client and server must use the same WebDAV storage and credentials
 - Default SOCKS5 port is 1080 (`127.0.0.1`)
 
@@ -202,10 +205,11 @@ docker run --rm -v ./config.json.enc:/app/configs/config.json.enc \
 | `max_connections` | int | `100` | ✓ | | Max concurrent SOCKS5 conns |
 | `refresh_rate_ms` | int | `500` | ✓ | ✓ | Poll interval |
 | `min_poll_ms` | int | `100` | ✓ | ✓ | Min poll jitter floor |
-| `max_poll_ms` | int | `5000` | ✓ | ✓ | Max poll jitter ceiling |
+| `max_poll_ms` | int | `60000` | ✓ | ✓ | Max poll jitter ceiling (idle backoff) |
 | `flush_rate_ms` | int | `500` | ✓ | ✓ | Flush interval |
 | `max_sessions` | int | `0` (∞) | ✓ | ✓ | Max WebDAV sessions |
 | `max_message_size` | int | `16777216` | ✓ | ✓ | Max payload (bytes) |
+| `tls_fingerprint` | string | `"chrome"` | ✓ | ✓ | TLS fingerprint profile (`chrome`, `chrome_auto`) |
 | `health_port` | string | `""` | ✓ | ✓ | Health endpoint (`host:port`) |
 
 Client-only fields (`listen_addr`, `socks5_user`, `socks5_pass`, `max_connections`) are absent from server configs. Unset fields use defaults.
@@ -227,7 +231,7 @@ Both the client and server support an optional HTTP health endpoint. Set `health
   "flush_ticker_ms": 500,
   "role": "client",
   "backends": [
-    {"url": "http://webdav1:8080", "available": true, "failures": 0}
+    {"url": "http://webdav1:8080", "available": true, "failures": 0, "rate_limited": false, "rate_limit_remain_sec": 0}
   ]
 }
 ```
@@ -235,7 +239,7 @@ Both the client and server support an optional HTTP health endpoint. Set `health
 - `active_sessions` / `closed_sessions` — current and completed WebDAV sessions.
 - `upload_retries` / `download_retries` — cumulative storage retry counters (reset on restart).
 - `tx_queue_bytes` / `tx_queue_sessions` — transmit buffer backpressure: how much data is waiting to be uploaded.
-- `backends` — per-backend health for multi-WebDAV setups (circuit breaker state). Omitted for single-backend configs.
+- `backends` — per-backend health for multi-WebDAV setups (circuit breaker + rate-limit state). Omitted for single-backend configs.
 
 ## Security
 

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/lyafence/flowdav/internal/logger"
+	"github.com/lyafence/flowdav/internal/storage"
 )
 
 const (
@@ -137,11 +138,24 @@ func (p *DownloadWorkerPool) processDownload(ctx context.Context, stopCh <-chan 
 		e.downloadRetries.Add(int64(attempts - 1))
 	}
 	if err != nil {
-		if rc != nil {
-			rc.Close()
+		// On 429 rate-limit, try non-indexed download (searches all backends)
+		if storage.IsRateLimited(err) {
+			logger.Info("download 429 %s (backend %d): trying fallback across all backends", job.filename, job.backendIdx)
+			if rc != nil {
+				rc.Close()
+			}
+			rc, err = e.backend.Download(ctx, job.filename)
+			if err == nil {
+				logger.Info("download fallback succeeded %s", job.filename)
+			}
 		}
-		logger.Info("download error %s (backend %d): %v", job.filename, job.backendIdx, err)
-		return
+		if err != nil {
+			if rc != nil {
+				rc.Close()
+			}
+			logger.Info("download error %s (backend %d): %v", job.filename, job.backendIdx, err)
+			return
+		}
 	}
 	defer rc.Close()
 
@@ -182,6 +196,12 @@ func (p *DownloadWorkerPool) processDownload(ctx context.Context, stopCh <-chan 
 			}
 			s = NewSession(env.SessionID)
 			s.BackendIdx = env.BackendIdx
+			s.notifyActivity = func() {
+				select {
+				case e.pollActivityCh <- struct{}{}:
+				default:
+				}
+			}
 			e.sessions[env.SessionID] = s
 			sessionID := env.SessionID
 			targetAddr := env.TargetAddr

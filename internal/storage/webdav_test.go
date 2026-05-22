@@ -116,7 +116,7 @@ func TestValidateNotPrivateURL(t *testing.T) {
 }
 
 func TestNewWebDAVBackendEmptyURL(t *testing.T) {
-	_, err := NewWebDAVBackend("", "", "", "")
+	_, err := NewWebDAVBackend("", "", "", "", "")
 	if err == nil {
 		t.Fatal("expected error for empty URL")
 	}

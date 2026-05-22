@@ -22,6 +22,7 @@ type mockBackend struct {
 	LoginFunc           func(ctx context.Context) error
 	UploadByIndexFunc   func(ctx context.Context, filename string, data io.Reader, idx uint8) error
 	DownloadByIndexFunc func(ctx context.Context, filename string, idx uint8) (io.ReadCloser, error)
+	UploadAnyFunc       func(ctx context.Context, filename string, data io.Reader) (uint8, error)
 }
 
 func (m *mockBackend) Upload(ctx context.Context, filename string, data io.Reader) error {
@@ -84,6 +85,14 @@ func (m *mockBackend) DownloadByIndex(ctx context.Context, filename string, idx 
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(io.ReadCloser), args.Error(1)
+}
+
+func (m *mockBackend) UploadAny(ctx context.Context, filename string, data io.Reader) (uint8, error) {
+	if m.UploadAnyFunc != nil {
+		return m.UploadAnyFunc(ctx, filename, data)
+	}
+	args := m.Called(ctx, filename, data)
+	return uint8(args.Int(0)), args.Error(1)
 }
 
 func TestMultiBackend(t *testing.T) {

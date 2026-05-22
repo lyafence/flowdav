@@ -37,6 +37,7 @@ type Engine struct {
 	minPollInterval time.Duration
 	maxPollInterval time.Duration
 	flushTicker     time.Duration
+	pollActivityCh  chan struct{}
 
 	// Server mode handler: called when a new session is discovered
 	OnNewSession func(sessionID, targetAddr string, s *Session)
@@ -77,6 +78,8 @@ type uploadJob struct {
 	filename   string
 	buf        bytes.Buffer
 	backendIdx uint8
+	sessions   []*Session // sessions contributing to this mux; used for backend migration on 429
+	numBackend int        // total backends, for ReassignBackend
 }
 
 func NewEngine(backend storage.Backend, isClient bool, cryptoCfg *CryptoConfig) *Engine {
@@ -90,8 +93,9 @@ func NewEngine(backend storage.Backend, isClient bool, cryptoCfg *CryptoConfig) 
 		// Default intervals: Poll (RX) and Flush (TX) - safe for cloud rate limits (~1 req/s)
 		pollTicker:      500 * time.Millisecond,
 		minPollInterval: 100 * time.Millisecond,
-		maxPollInterval: 5 * time.Second,
+		maxPollInterval: 60 * time.Second,
 		flushTicker:     500 * time.Millisecond,
+		pollActivityCh:  make(chan struct{}, 1),
 	}
 	if isClient {
 		e.myDir = DirReq
@@ -185,6 +189,12 @@ func (e *Engine) AddSession(s *Session) {
 	e.sessionMu.Lock()
 	defer e.sessionMu.Unlock()
 	e.sessions[s.ID] = s
+	s.notifyActivity = func() {
+		select {
+		case e.pollActivityCh <- struct{}{}:
+		default:
+		}
+	}
 	logger.Info("Engine.AddSession: Added session %s (Total now: %d)", s.ID, len(e.sessions))
 }
 
@@ -217,6 +227,7 @@ func (e *Engine) flushAll(ctx context.Context) {
 	e.sessionMu.Unlock()
 
 	muxes := make(map[muxKey][]Envelope)
+	muxSessions := make(map[muxKey][]*Session)
 	var closedSessionIDs []string
 	var sessionsToWake []*Session
 
@@ -246,15 +257,23 @@ func (e *Engine) flushAll(ctx context.Context) {
 
 		key := muxKey{BackendIdx: bidx}
 		muxes[key] = append(muxes[key], env)
+		muxSessions[key] = append(muxSessions[key], s)
 	}
 
 	for _, s := range sessionsToWake {
 		s.wakeupTx()
 	}
 
+	// Count total backends for session migration on 429
+	numBackend := 1
+	if mb, ok := e.backend.(*storage.MultiBackend); ok {
+		numBackend = mb.NumBackends()
+	}
+
 	for key, mux := range muxes {
 		// Split muxed envelopes into chunks that fit within the upload limit
 		// to prevent silent truncation by WebDAV upload limits
+		sessList := muxSessions[key]
 		remaining := mux
 		for len(remaining) > 0 {
 			var buf bytes.Buffer
@@ -280,7 +299,13 @@ func (e *Engine) flushAll(ctx context.Context) {
 			filename := randomFilename(uploadPrefix(e.myDir))
 
 			select {
-			case e.uploadJobs <- uploadJob{filename: filename, buf: buf, backendIdx: key.BackendIdx}:
+			case e.uploadJobs <- uploadJob{
+				filename:   filename,
+				buf:        buf,
+				backendIdx: key.BackendIdx,
+				sessions:   sessList,
+				numBackend: numBackend,
+			}:
 			case <-ctx.Done():
 				return
 			}
@@ -327,6 +352,16 @@ func (e *Engine) pollLoop(ctx context.Context) {
 			return
 		case <-e.stopCh:
 			return
+		case <-e.pollActivityCh:
+			currentPollInterval = e.minPollInterval
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			timer.Reset(jitterPollInterval(currentPollInterval))
+			continue
 		case <-timer.C:
 			if e.myDir == DirReq {
 				e.sessionMu.RLock()
@@ -410,7 +445,7 @@ func (e *Engine) pollLoop(ctx context.Context) {
 	}
 }
 
-// jitterPollInterval applies ±25% random jitter to the given duration
+// jitterPollInterval applies ±75% random jitter to the given duration
 // to reduce traffic fingerprinting via polling patterns.
 func jitterPollInterval(d time.Duration) time.Duration {
 	if d <= 0 {
@@ -420,8 +455,8 @@ func jitterPollInterval(d time.Duration) time.Duration {
 	if _, err := rand.Read(b[:]); err != nil {
 		return d
 	}
-	// 0.75–1.25 range
-	factor := 0.75 + float64(b[0])/255.0*0.5
+	// 0.25–1.75 range
+	factor := 0.25 + float64(b[0])/255.0*1.5
 	return time.Duration(float64(d) * factor)
 }
 
@@ -509,6 +544,21 @@ func (e *Engine) uploadWorker(ctx context.Context) {
 					e.uploadRetries.Add(int64(attempts - 1))
 				}
 				if err != nil {
+					// If rate-limited, try non-indexed upload (picks different backend)
+					if storage.IsRateLimited(err) {
+						logger.Info("upload 429 %s (backend %d): trying fallback", job.filename, job.backendIdx)
+						newIdx, fallbackErr := e.backend.UploadAny(ctx, job.filename, &job.buf)
+						if fallbackErr == nil {
+							logger.Info("upload fallback succeeded %s → backend %d", job.filename, newIdx)
+							for _, s := range job.sessions {
+								if s.ReassignBackend(job.numBackend) {
+									logger.Info("session %s migrated to backend %d after 429", s.ID, s.BackendIdx)
+								}
+							}
+							return
+						}
+						logger.Info("upload fallback also failed %s: %v", job.filename, fallbackErr)
+					}
 					logger.Info("upload error %s (backend %d): %v", job.filename, job.backendIdx, err)
 				}
 			}()
