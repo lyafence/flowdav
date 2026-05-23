@@ -32,7 +32,9 @@
                     android:layout_width="16dp"
                     android:layout_height="16dp"
                     android:background="@drawable/status_dot_stopped"
-                    android:layout_marginEnd="12dp" />
+                    android:layout_marginEnd="12dp"
+                    android:contentDescription="@string/status_dot_desc"
+                    android:importantForAccessibility="yes" />
 
                 <TextView
                     android:id="@+id/statusText"
@@ -61,7 +63,8 @@
                 android:layout_weight="1"
                 android:text="@string/mode_file"
                 app:icon="@android:drawable/ic_menu_myplaces"
-                android:checked="true" />
+                android:checked="true"
+                android:contentDescription="@string/mode_file_desc" />
 
             <Button
                 android:id="@+id/modeManual"
@@ -70,7 +73,8 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:text="@string/mode_manual"
-                app:icon="@android:drawable/ic_menu_edit" />
+                app:icon="@android:drawable/ic_menu_edit"
+                android:contentDescription="@string/mode_manual_desc" />
 
         </com.google.android.material.button.MaterialButtonToggleGroup>
 
@@ -101,7 +105,8 @@
                     app:chipBackgroundColor="?attr/colorSurfaceContainerHigh"
                     app:chipStartPadding="12dp"
                     app:chipEndPadding="12dp"
-                    app:closeIconTint="?attr/colorOnSurfaceVariant" />
+                    app:closeIconTint="?attr/colorOnSurfaceVariant"
+                    android:contentDescription="@string/config_chip_desc" />
 
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/passwordLayout"
@@ -153,7 +158,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="WebDAV"
+                    android:text="@string/section_webdav"
                     android:textAppearance="?attr/textAppearanceTitleSmall"
                     android:layout_marginBottom="12dp" />
 
@@ -217,7 +222,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Encryption Keys"
+                    android:text="@string/section_encryption_keys"
                     android:textAppearance="?attr/textAppearanceTitleSmall"
                     android:layout_marginTop="20dp"
                     android:layout_marginBottom="12dp" />
@@ -278,6 +283,8 @@
             android:layout_marginBottom="12dp"
             android:clickable="true"
             android:focusable="true"
+            android:contentDescription="@string/advanced_header_desc"
+            android:minHeight="48dp"
             android:foreground="?attr/selectableItemBackground"
             app:cardElevation="0dp"
             app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
@@ -306,8 +313,9 @@
                         android:id="@+id/advancedArrow"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="▼"
-                        android:textSize="16sp" />
+                        android:text="@string/arrow_collapsed"
+                        android:textSize="16sp"
+                        android:contentDescription="@string/advanced_toggle_desc" />
 
                 </LinearLayout>
 
@@ -336,7 +344,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="SOCKS5 Authentication"
+                        android:text="@string/section_socks5_auth"
                         android:textAppearance="?attr/textAppearanceTitleSmall"
                         android:layout_marginTop="16dp"
                         android:layout_marginBottom="8dp" />
@@ -499,12 +507,13 @@
 
                 <ImageButton
                     android:id="@+id/copyLogsBtn"
-                    android:layout_width="32dp"
-                    android:layout_height="32dp"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
                     android:src="@android:drawable/ic_menu_share"
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:contentDescription="@string/copy_logs"
-                    android:scaleType="centerInside" />
+                    android:scaleType="centerInside"
+                    android:padding="8dp" />
             </LinearLayout>
 
             <TextView

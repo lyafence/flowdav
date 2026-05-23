@@ -51,4 +51,29 @@
     <!-- Notification -->
     <string name="proxy_notification_channel">Proxy Status</string>
     <string name="proxy_running">Proxy running</string>
+    <string name="notification_stop">Stop</string>
+
+    <!-- A11y -->
+    <string name="status_dot_desc">Proxy status indicator</string>
+    <string name="mode_file_desc">Config file mode</string>
+    <string name="mode_manual_desc">Manual configuration mode</string>
+    <string name="config_chip_desc">Selected config file</string>
+    <string name="advanced_toggle_desc">Toggle advanced settings</string>
+    <string name="advanced_header_desc">Advanced settings, tap to expand or collapse</string>
+
+    <!-- Section headers -->
+    <string name="section_webdav">WebDAV</string>
+    <string name="section_encryption_keys">Encryption Keys</string>
+    <string name="section_socks5_auth">SOCKS5 Authentication</string>
+
+    <!-- Misc -->
+    <string name="arrow_collapsed">▼</string>
+    <string name="arrow_expanded">▲</string>
+    <string name="logs_copied">Logs copied</string>
+    <string name="version_prefix">v</string>
+
+    <!-- Permission rationale -->
+    <string name="notif_permission_title">Notification permission needed</string>
+    <string name="notif_permission_rationale">flowdav runs as a foreground service while the proxy is active. Android requires notification permission to show the persistent service notification. Without it, the proxy may be killed by the system.</string>
+    <string name="notif_permission_denied">Notification permission denied. The proxy may not stay running in the background.</string>
 </resources>
