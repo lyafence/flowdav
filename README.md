@@ -2,7 +2,7 @@
 
 A lightweight SOCKS5 proxy that uses WebDAV as a transport layer. Route your traffic through your home internet connection when connected to public Wi-Fi (cafe, hotel, etc.) by using WebDAV storage as an intermediary.
 
-![Go](https://img.shields.io/badge/go-1.26.3-blue)
+![Go](https://img.shields.io/badge/go-1.26.4-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Release](https://img.shields.io/github/v/release/lyafence/flowdav)
 
@@ -206,7 +206,7 @@ Both the client and server support an optional HTTP health endpoint. Set `health
 
 ## Troubleshooting
 
-- **First request is slow (~10s)** — this is normal. The client polls WebDAV every 500ms; subsequent requests are faster.
+- **First request may take 1–2 seconds** — this is normal. The client polls WebDAV every 500ms; subsequent requests are faster.
 - **HTTPS sites fail but HTTP works** — check DNS resolution from your server machine. The server resolves destination hostnames.
 - **"Failed to load config"** — if the file is encrypted, use `-p` flag or `FLOWDAV_PASSWORD` env var. If not, check the JSON syntax.
 - **Connection resets during active browsing** — enable debug logging with `-l debug` to see session-level errors.

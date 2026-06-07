@@ -162,7 +162,6 @@ func (s *Session) ExtractTxBatch(isClient bool) (payload []byte, seq uint64, clo
 
 func (s *Session) ProcessRx(env *Envelope) {
 	s.mu.Lock()
-	s.lastActivity = time.Now()
 
 	if s.rxClosed {
 		s.mu.Unlock()
@@ -174,6 +173,7 @@ func (s *Session) ProcessRx(env *Envelope) {
 	closeChannel := false
 
 	if env.Seq == s.rxSeq {
+		s.lastActivity = time.Now()
 		if len(env.Payload) > 0 {
 			// Deep copy to be consistent with queued packets
 			payloadsToSend = append(payloadsToSend, append([]byte{}, env.Payload...))

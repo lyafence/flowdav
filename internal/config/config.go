@@ -114,7 +114,7 @@ type AppConfig struct {
 	MinPollMs int `json:"min_poll_ms,omitempty"`
 
 	// MaxPollMs is the maximum polling interval in milliseconds (idle backoff ceiling).
-	// Default 5000ms (5s). Only used when RefreshRateMs is not set.
+	// Default 60000ms (60s). Only used when RefreshRateMs is not set.
 	MaxPollMs int `json:"max_poll_ms,omitempty"`
 
 	// FlushRateMs is the gathering (TX) interval in milliseconds for the engine.

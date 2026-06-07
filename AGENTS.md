@@ -11,6 +11,7 @@
 | `make test-e2e` | E2E tests (requires podman; runs `scripts/test_e2e.sh`) |
 | `make test-e2e-encrypted` | E2E + encrypted configs |
 | `make fuzz` | Run fuzz tests (30s each: transport envelope and crypto) |
+| `make vulncheck` | Run govulncheck vulnerability scan |
 | `make encrypt FILE=config.json` | Encrypt config (also: `FLOWDAV_PASSWORD=secret make encrypt`) |
 | `make tidy` | `go mod tidy -e` (CI checks `git diff go.mod go.sum`) |
 | `make nuke` | Full env reset (compose down, clean images, build artifacts) |
@@ -81,7 +82,7 @@ Install with `make hooks`.
 
 ## Coding Conventions
 
-- Go 1.26.3, stdlib preferred.
+- Go 1.26.4, stdlib preferred.
 - Tests: `testing` package, table-driven, `-race` enabled.
 - Imports: stdlib → third-party → internal, blank-line separated.
 - Naming: camelCase, no getters, unexported by default.

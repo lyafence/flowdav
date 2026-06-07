@@ -44,6 +44,10 @@ lint:
 vet:
 	go vet ./...
 
+vulncheck:
+	go install golang.org/x/vuln/cmd/govulncheck@latest
+	govulncheck ./...
+
 tidy:
 	go mod tidy -e
 

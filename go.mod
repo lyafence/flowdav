@@ -1,6 +1,6 @@
 module github.com/lyafence/flowdav
 
-go 1.26.3
+go 1.26.4
 
 require (
 	github.com/refraction-networking/utls v1.8.2

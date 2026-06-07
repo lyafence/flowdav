@@ -540,6 +540,12 @@ func (e *Engine) uploadWorker(ctx context.Context) {
 				attempts, err := retryStorage(ctx, e.stopCh, "upload "+job.filename, func() error {
 					return e.backend.UploadByIndex(ctx, job.filename, &job.buf, job.backendIdx)
 				})
+				if err == nil {
+					select {
+					case e.pollActivityCh <- struct{}{}:
+					default:
+					}
+				}
 				if attempts > 1 {
 					e.uploadRetries.Add(int64(attempts - 1))
 				}
