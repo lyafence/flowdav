@@ -58,6 +58,11 @@ type Session struct {
 	// notifyActivity is set by Engine.AddSession to reset the poll timer
 	// when new data is enqueued, ensuring fast polling after idle backoff.
 	notifyActivity func()
+
+	// IdleTimeout is the inactivity duration after which the session is
+	// automatically closed. Overridden by Engine.SessionIdleTimeout
+	// if set. Default 10s.
+	IdleTimeout time.Duration
 }
 
 // ReassignBackend picks a new random backend index different from the
@@ -85,6 +90,7 @@ func NewSession(id string) *Session {
 		lastActivity: time.Now(),
 		RxChan:       make(chan []byte, 1024),
 		txWait:       make(chan struct{}),
+		IdleTimeout:  10 * time.Second,
 	}
 	return s
 }
@@ -143,7 +149,7 @@ func (s *Session) ExtractTxBatch(isClient bool) (payload []byte, seq uint64, clo
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if time.Since(s.lastActivity) > 10*time.Second {
+	if time.Since(s.lastActivity) > s.IdleTimeout {
 		s.closed = true
 	}
 

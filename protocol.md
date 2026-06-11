@@ -327,7 +327,7 @@ for demultiplexing.
 | `MaxStringLen` | — | 65535 | Maximum length of SessionID or TargetAddr. |
 | `MaxRxQueueSize` | — | 1000 | Out-of-order packet queue limit per session. |
 | Retry attempts | — | 3 | Number of storage operation retries before giving up. |
-| Idle timeout | — | 10 s | Session idle timeout before forced close. |
+| Idle timeout | 10 s (configurable) | 30 s recommended | Session idle timeout before forced close. Set via `idle_timeout_ms` in config. |
 
 ### Poll intervals
 

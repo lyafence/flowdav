@@ -183,6 +183,9 @@ func runClient(configPath, password, logLevel string, askInteractive bool) {
 	if appCfg.MaxSessions > 0 {
 		engine.SetMaxSessions(appCfg.MaxSessions)
 	}
+	if appCfg.IdleTimeoutMs > 0 {
+		engine.SetSessionIdleTimeout(appCfg.IdleTimeoutMs)
+	}
 	engine.Start(ctx)
 
 	engine.OnSessionEnd = func(sessionID string) {
@@ -363,6 +366,9 @@ func runServer(configPath, password, logLevel string, askInteractive bool) {
 	}
 	if appCfg.MaxSessions > 0 {
 		engine.SetMaxSessions(appCfg.MaxSessions)
+	}
+	if appCfg.IdleTimeoutMs > 0 {
+		engine.SetSessionIdleTimeout(appCfg.IdleTimeoutMs)
 	}
 
 	engine.OnNewSession = func(sessionID, targetAddr string, session *transport.Session) {

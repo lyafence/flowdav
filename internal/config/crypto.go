@@ -26,6 +26,9 @@ type EncryptedConfig struct {
 }
 
 func EncryptConfig(plaintext []byte, password string) (*EncryptedConfig, error) {
+	if password == "" {
+		return nil, errors.New("password required")
+	}
 	salt := make([]byte, saltLen)
 	if _, err := rand.Read(salt); err != nil {
 		return nil, err
@@ -55,6 +58,9 @@ func EncryptConfig(plaintext []byte, password string) (*EncryptedConfig, error) 
 }
 
 func DecryptConfig(enc *EncryptedConfig, password string) ([]byte, error) {
+	if password == "" {
+		return nil, errors.New("password required")
+	}
 	kek, err := pbkdf2.Key(sha256.New, password, enc.Salt, pbkdf2Iter, keyLen)
 	if err != nil {
 		return nil, err

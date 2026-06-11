@@ -403,19 +403,40 @@ func (w *WebDAVBackend) Download(ctx context.Context, filename string) (io.ReadC
 		return nil, fmt.Errorf("download error: file too large: %d bytes (max %d)", resp.ContentLength, MaxFileSize)
 	}
 
-	return newLimitReadCloser(resp.Body, int64(MaxFileSize)+1), nil
+	return newMaxSizeReader(resp.Body, MaxFileSize), nil
 }
 
-type limitReadCloser struct {
-	io.Reader
-	io.Closer
+// maxSizeReader wraps an io.ReadCloser and ensures the total bytes read
+// do not exceed maxSize. Returns an error if the limit is exceeded.
+// Handles chunked responses where Content-Length is unavailable.
+type maxSizeReader struct {
+	rc    io.ReadCloser
+	limit int
+	total int
 }
 
-func newLimitReadCloser(r io.ReadCloser, limit int64) io.ReadCloser {
-	return &limitReadCloser{
-		Reader: io.LimitReader(r, limit),
-		Closer: r,
+func (r *maxSizeReader) Read(p []byte) (int, error) {
+	remain := r.limit + 1 - r.total
+	if remain <= 0 {
+		return 0, fmt.Errorf("file too large: exceeds %d bytes", r.limit)
 	}
+	if len(p) > remain {
+		p = p[:remain]
+	}
+	n, err := r.rc.Read(p)
+	r.total += n
+	if r.total > r.limit {
+		return n, fmt.Errorf("file too large: exceeds %d bytes", r.limit)
+	}
+	return n, err
+}
+
+func (r *maxSizeReader) Close() error {
+	return r.rc.Close()
+}
+
+func newMaxSizeReader(rc io.ReadCloser, maxSize int) io.ReadCloser {
+	return &maxSizeReader{rc: rc, limit: maxSize}
 }
 
 func (w *WebDAVBackend) Delete(ctx context.Context, filename string) error {

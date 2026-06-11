@@ -316,6 +316,9 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 	if appCfg.MaxSessions > 0 {
 		engine.SetMaxSessions(appCfg.MaxSessions)
 	}
+	if appCfg.IdleTimeoutMs > 0 {
+		engine.SetSessionIdleTimeout(appCfg.IdleTimeoutMs)
+	}
 	engine.Start(ctx)
 
 	engine.OnSessionEnd = func(sessionID string) {

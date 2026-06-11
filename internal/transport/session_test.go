@@ -188,6 +188,19 @@ func TestEnqueueTxCtxCancellationDuringWait(t *testing.T) {
 
 // TestProcessRxTimerReuseNoDeadlock verifies that the reusable timer in ProcessRx
 // does not cause deadlocks on subsequent calls.
+func TestSessionIdleTimeout(t *testing.T) {
+	s := NewSession("test-idle")
+	s.IdleTimeout = 50 * time.Millisecond
+	s.lastActivity = time.Now().Add(-100 * time.Millisecond)
+	_, _, closed, ok := s.ExtractTxBatch(false)
+	if !closed {
+		t.Error("session should be closed after idle timeout")
+	}
+	if !ok {
+		t.Error("ExtractTxBatch should return ok for closed session")
+	}
+}
+
 func TestProcessRxTimerReuseNoDeadlock(t *testing.T) {
 	s := NewSession("test-timer-reuse")
 

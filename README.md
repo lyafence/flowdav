@@ -164,6 +164,7 @@ docker run --rm -v ./config.json.enc:/app/configs/config.json.enc \
 | `max_poll_ms` | int | `60000` | ✓ | ✓ | Max poll jitter ceiling (idle backoff) |
 | `flush_rate_ms` | int | `500` | ✓ | ✓ | Flush interval |
 | `max_sessions` | int | `0` (∞) | ✓ | ✓ | Max WebDAV sessions |
+| `idle_timeout_ms` | int | `10000` | ✓ | ✓ | Session idle timeout (ms); 0 = default 10s |
 | `max_message_size` | int | `16777216` | ✓ | ✓ | Max payload (bytes) |
 | `tls_fingerprint` | string | `"chrome"` | ✓ | ✓ | TLS fingerprint profile (`chrome`, `chrome_auto`) |
 | `health_port` | string | `""` | ✓ | ✓ | Health endpoint (`host:port`) |

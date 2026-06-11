@@ -64,6 +64,10 @@ type Engine struct {
 	// MaxSessions limits the total number of concurrent sessions (0 = unlimited)
 	MaxSessions int
 
+	// SessionIdleTimeout overrides the default idle timeout for new sessions.
+	// 0 = use session default (10s).
+	SessionIdleTimeout time.Duration
+
 	// downloadPool limits goroutines in pollLoop
 	downloadPool *DownloadWorkerPool
 
@@ -140,6 +144,12 @@ func (e *Engine) SetMaxSessions(max int) {
 	e.MaxSessions = max
 }
 
+func (e *Engine) SetSessionIdleTimeout(ms int) {
+	if ms > 0 {
+		e.SessionIdleTimeout = time.Duration(ms) * time.Millisecond
+	}
+}
+
 func (e *Engine) Start(ctx context.Context) {
 	numWorkers := cap(e.sem)
 	e.wg.Add(3 + numWorkers)
@@ -189,6 +199,9 @@ func (e *Engine) AddSession(s *Session) {
 	e.sessionMu.Lock()
 	defer e.sessionMu.Unlock()
 	e.sessions[s.ID] = s
+	if e.SessionIdleTimeout > 0 {
+		s.IdleTimeout = e.SessionIdleTimeout
+	}
 	s.notifyActivity = func() {
 		select {
 		case e.pollActivityCh <- struct{}{}:

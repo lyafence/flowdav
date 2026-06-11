@@ -47,17 +47,6 @@ func TestEncryptDecryptCorruptedCiphertext(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestEncryptEmptyPassword(t *testing.T) {
-	original := []byte(`{"storage_type": "webdav"}`)
-
-	enc, err := EncryptConfig(original, "")
-	require.NoError(t, err)
-
-	decrypted, err := DecryptConfig(enc, "")
-	require.NoError(t, err)
-	require.Equal(t, original, decrypted)
-}
-
 func TestEncryptLargePayload(t *testing.T) {
 	payload := make([]byte, 1024*1024)
 	for i := range payload {

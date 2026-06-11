@@ -153,6 +153,11 @@ type AppConfig struct {
 	// Hardcoded to Chrome 133 when unset — no need to configure unless you
 	// need a different profile for compatibility reasons.
 	TLSFingerprint string `json:"tls_fingerprint,omitempty"`
+
+	// IdleTimeoutMs is the session idle timeout in milliseconds.
+	// If no data is exchanged for this duration, the session is
+	// automatically closed. Default 10000 (10s). 0 = use default.
+	IdleTimeoutMs int `json:"idle_timeout_ms,omitempty"`
 }
 
 // Load reads and parses a JSON config file.
