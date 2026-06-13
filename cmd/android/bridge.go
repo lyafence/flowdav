@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -187,6 +188,13 @@ func parseConfigJSON(data []byte) (*config.AppConfig, error) {
 	if cfg.TLSFingerprint != "" && cfg.TLSFingerprint != "chrome" && cfg.TLSFingerprint != "chrome_auto" {
 		return nil, fmt.Errorf("invalid tls_fingerprint: %q", cfg.TLSFingerprint)
 	}
+	if cfg.HealthPort != "" {
+		if !strings.HasPrefix(cfg.HealthPort, "127.0.0.1:") &&
+			!strings.HasPrefix(cfg.HealthPort, "localhost:") &&
+			!strings.HasPrefix(cfg.HealthPort, "[::1]:") {
+			return nil, fmt.Errorf("health_port must be loopback (127.0.0.1, localhost, or [::1]), got %q", cfg.HealthPort)
+		}
+	}
 	applyDefaults(&cfg)
 	return &cfg, nil
 }
@@ -301,6 +309,7 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 
 	ctx, ctxCancel := context.WithCancel(context.Background())
 	engine := transport.NewEngine(backend, true, cryptoCfg)
+
 	if appCfg.RefreshRateMs > 0 {
 		engine.SetPollRate(appCfg.RefreshRateMs)
 	}
@@ -318,6 +327,12 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 	}
 	if appCfg.IdleTimeoutMs > 0 {
 		engine.SetSessionIdleTimeout(appCfg.IdleTimeoutMs)
+	}
+	if appCfg.PaddingSize > 0 {
+		engine.SetPaddingSize(appCfg.PaddingSize)
+	}
+	if appCfg.HoldMs > 0 {
+		engine.SetHoldMax(appCfg.HoldMs)
 	}
 	engine.Start(ctx)
 

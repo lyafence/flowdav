@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -67,6 +68,94 @@ type userAgentTransport struct {
 func (t *userAgentTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	req.Header.Set("User-Agent", t.ua)
 	return t.inner.RoundTrip(req)
+}
+
+// randomHeaderTransport wraps an http.RoundTripper and randomizes
+// per-request headers to reduce HTTP fingerprinting.
+type randomHeaderTransport struct {
+	inner http.RoundTripper
+}
+
+func (t *randomHeaderTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// Random Accept — cycle through common values to avoid a fixed signature.
+	// Only set if not already present (gowebdav sets Accept for PROPFIND).
+	if req.Header.Get("Accept") == "" {
+		accepts := []string{
+			"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+			"*/*",
+			"text/html,application/json,application/xml;q=0.9,*/*;q=0.8",
+			"text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+		}
+		req.Header.Set("Accept", accepts[cryptoRandInt(len(accepts))])
+	}
+
+	// Random Accept-Language.
+	if req.Header.Get("Accept-Language") == "" {
+		langs := []string{"en-US,en;q=0.9", "en-GB,en;q=0.8", "en-US,en;q=0.7", "ru-RU,ru;q=0.8,en;q=0.5"}
+		req.Header.Set("Accept-Language", langs[cryptoRandInt(len(langs))])
+	}
+
+	// Vary Cache-Control.
+	if req.Header.Get("Cache-Control") == "" && cryptoRandInt(2) == 0 {
+		req.Header.Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	}
+
+	return t.inner.RoundTrip(req)
+}
+
+// redirectGuardTransport blocks cross-origin HTTP redirects to prevent SSRF
+// (e.g., a malicious WebDAV server redirecting to 169.254.169.254).
+// Same-origin redirects (same scheme + host + port) pass through.
+type redirectGuardTransport struct {
+	inner http.RoundTripper
+}
+
+func (t *redirectGuardTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.inner.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		loc, locErr := resp.Location()
+		if locErr == nil && isCrossOrigin(req.URL, loc) {
+			resp.Body.Close()
+			return nil, fmt.Errorf("cross-origin redirect blocked: %s -> %s", req.URL, loc)
+		}
+	}
+	return resp, nil
+}
+
+// isCrossOrigin returns true if two URLs differ in scheme, host, or port.
+func isCrossOrigin(a, b *url.URL) bool {
+	return a.Scheme != b.Scheme || a.Host != b.Host
+}
+
+// cryptoRandInt returns a non-negative random int in [0, max) using crypto/rand.
+// Uses rejection sampling to avoid modulo bias when max does not divide 256.
+// Currently called only with max ∈ {2, 4} where no rejection is needed.
+func cryptoRandInt(max int) int {
+	if max <= 0 {
+		return 0
+	}
+	// When max evenly divides 256, modulo has no bias.
+	if 256%max == 0 {
+		var b [1]byte
+		if _, err := rand.Read(b[:]); err != nil {
+			return 0
+		}
+		return int(b[0]) % max
+	}
+	// Rejection sampling for general case.
+	mask := byte(256 - (256 % max))
+	for {
+		var b [1]byte
+		if _, err := rand.Read(b[:]); err != nil {
+			return 0
+		}
+		if b[0] < mask {
+			return int(b[0]) % max
+		}
+	}
 }
 
 // newUtlsDialer returns a TLS dial function matching the given fingerprint
@@ -140,13 +229,13 @@ func NewWebDAVBackend(login, token, basePath, url, tlsFingerprint string) (*WebD
 		DialTLSContext:        dialTLS,
 		TLSNextProto:          make(map[string]func(authority string, c *tls.Conn) http.RoundTripper),
 	}
-	wrappedTransport := &userAgentTransport{inner: transport, ua: chromeUA}
+	uaTransport := &userAgentTransport{inner: transport, ua: chromeUA}
+	randomTransport := &randomHeaderTransport{inner: uaTransport}
+	wrappedTransport := &redirectGuardTransport{inner: randomTransport}
 
 	client := gowebdav.NewClient(rootURL, login, token)
 	client.SetTransport(wrappedTransport)
 	client.SetTimeout(90 * time.Second)
-	client.SetHeader("User-Agent", chromeUA)
-
 	httpClient := &http.Client{
 		Timeout:   90 * time.Second,
 		Transport: wrappedTransport,

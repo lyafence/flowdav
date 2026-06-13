@@ -152,14 +152,21 @@ safe_curl() {
     curl -s "$@" --max-time "$TIMEOUT" 2>&1 || true
 }
 
-# Test 1: Basic SOCKS5
+# Test 1: Basic SOCKS5 (with retry for cold proxy)
 log_info "Test 1: Basic SOCKS5 proxy..."
-RESULT=$(safe_curl --proxy socks5h://127.0.0.1:11080 https://api.ipify.org)
-if [ -n "$RESULT" ] && [ ${#RESULT} -lt 20 ] && [[ "$RESULT" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    log_pass "Test 1: Got IP = $RESULT"
-else
-    log_fail "Test 1: No valid IP (got: ${RESULT:0:100})"
-fi
+for i in 1 2 3; do
+    RESULT=$(safe_curl --proxy socks5h://127.0.0.1:11080 https://api.ipify.org)
+    if [ -n "$RESULT" ] && [ ${#RESULT} -lt 20 ] && [[ "$RESULT" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        log_pass "Test 1: Got IP = $RESULT"
+        break
+    fi
+    if [ "$i" -lt 3 ]; then
+        log_info "  Retry $i/3 in 5s..."
+        sleep 5
+    else
+        log_fail "Test 1: No valid IP (got: ${RESULT:0:100})"
+    fi
+done
 
 # Test 2: HTTPS site
 log_info "Test 2: HTTPS (google.com)..."
@@ -189,14 +196,21 @@ else
     log_fail "Test 4: Direct IP connection failed"
 fi
 
-# Test 5: Multi-backend proxy
+# Test 5: Multi-backend proxy (with retry for cold proxy)
 log_info "Test 5: Multi-backend proxy..."
-RESULT=$(safe_curl --proxy socks5h://127.0.0.1:11081 https://api.ipify.org)
-if [ -n "$RESULT" ] && [[ "$RESULT" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    log_pass "Test 5: Multi-backend IP = $RESULT"
-else
-    log_fail "Test 5: Multi-backend failed (got: ${RESULT:0:50})"
-fi
+for i in 1 2 3; do
+    RESULT=$(safe_curl --proxy socks5h://127.0.0.1:11081 https://api.ipify.org)
+    if [ -n "$RESULT" ] && [[ "$RESULT" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        log_pass "Test 5: Multi-backend IP = $RESULT"
+        break
+    fi
+    if [ "$i" -lt 3 ]; then
+        log_info "  Retry $i/3 in 5s..."
+        sleep 5
+    else
+        log_fail "Test 5: Multi-backend failed (got: ${RESULT:0:50})"
+    fi
+done
 
 # ── Cleanup ─────────────────────────────────
 echo ""

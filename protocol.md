@@ -270,7 +270,8 @@ new random value.
    buffer (`EnqueueTx`).
 2. Every `flush_rate_ms` (default 500 ms), the engine collects pending
    transmit data from all sessions, wraps each in an Envelope with an
-   incrementing sequence number, and uploads them to WebDAV as files.
+   incrementing sequence number, and uploads them to WebDAV as files
+   (with optional tail padding when `padding_size` is set).
 3. Server polls every `poll_ticker_ms` (default 500 ms) for new files
    with the expected direction prefix.
 4. Server downloads each new file, decrypts it, extracts envelopes, and
@@ -328,27 +329,35 @@ for demultiplexing.
 | `MaxRxQueueSize` | — | 1000 | Out-of-order packet queue limit per session. |
 | Retry attempts | — | 3 | Number of storage operation retries before giving up. |
 | Idle timeout | 10 s (configurable) | 30 s recommended | Session idle timeout before forced close. Set via `idle_timeout_ms` in config. |
+| Padding size | Off | — | Tail padding bucket (bytes). Set via `padding_size`. Hides exact payload size from storage observer. |
+| Hold max | Off | — | Server-side random delay before flushing (ms). Set via `hold_ms`. Adds latency. |
 
 ### Poll intervals
 
 | Parameter | Default | Range |
 |-----------|---------|-------|
 | Base poll interval | 500 ms | Configurable |
-| Min poll (backoff floor) | 100 ms | Configurable |
+| Min poll (backoff floor) | 500 ms | Configurable |
 | Max poll (backoff ceiling) | 60000 ms | Configurable |
 | Flush interval | 500 ms | Configurable |
 
 ### Jitter
 
-Poll intervals use ±75% random jitter to break periodic patterns.
-The jitter factor is `0.25 + (rand_byte / 255.0) * 1.5`, producing a
-0.25–1.75× range around the nominal interval.
+Poll and flush intervals use random jitter to break periodic patterns.
+
+| Parameter | Jitter range |
+|-----------|--------------|
+| Poll interval | 0.25–1.75× (±75%) |
+| Flush interval | 0.5–1.5× (±50%) |
+
+Jitter factor is computed as `min + (rand_byte / 255.0) * (max - min)`,
+using a single random byte from `crypto/rand`.
 
 ### Activity-based poll reset
 
 When a session enqueues outbound data (user activity), the poll timer
-resets to `minPollInterval` (100ms). This prevents the idle backoff from
-delaying the first response when a user starts browsing.
+resets to `minPollInterval` (default 500 ms). This prevents the idle
+backoff from delaying the first response when a user starts browsing.
 
 ---
 

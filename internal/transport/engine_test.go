@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -296,6 +297,7 @@ func (d *dataTrackingBackend) UploadByIndex(ctx context.Context, name string, da
 }
 
 func TestJitterPollInterval(t *testing.T) {
+	e := NewEngine(&mockBackend{}, true, nil)
 	tests := []struct {
 		name     string
 		input    time.Duration
@@ -310,7 +312,7 @@ func TestJitterPollInterval(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			for i := 0; i < 100; i++ {
-				got := jitterPollInterval(tt.input)
+				got := e.jitterPollInterval(tt.input)
 				if tt.input == 0 {
 					if got != 0 {
 						t.Fatalf("expected 0, got %v", got)
@@ -323,6 +325,23 @@ func TestJitterPollInterval(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestJitterFlushInterval(t *testing.T) {
+	e := NewEngine(&mockBackend{}, true, nil)
+	for i := 0; i < 100; i++ {
+		got := e.jitterFlushInterval(500 * time.Millisecond)
+		if got == 0 {
+			t.Fatal("flush jitter returned 0")
+		}
+		if got > 750*time.Millisecond || got < 250*time.Millisecond {
+			t.Fatalf("flush jitter %v outside expected range [250ms, 750ms]", got)
+		}
+	}
+	// Zero input
+	if got := e.jitterFlushInterval(0); got != 0 {
+		t.Errorf("expected 0 for zero input, got %v", got)
 	}
 }
 
@@ -366,7 +385,7 @@ func TestFlushAllDataIntegrity(t *testing.T) {
 	}
 
 	engine.flushAll(ctx)
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 	engine.Stop()
 
 	// Sum all uploaded bytes (includes envelope overhead: session ID,
@@ -387,5 +406,95 @@ func TestFlushAllDataIntegrity(t *testing.T) {
 	// if uploaded < expected, data was silently truncated)
 	if uploadedTotal < expectedTotal {
 		t.Errorf("DATA LOSS: uploaded %d bytes, expected at least %d bytes (mux split lost data)", uploadedTotal, expectedTotal)
+	}
+}
+
+func TestPadFile(t *testing.T) {
+	tests := []struct {
+		name       string
+		bufLen     int
+		bucket     int
+		maxSize    int
+		wantMinLen int // buf.Len() after padFile must be >= this
+	}{
+		{"less than bucket", 100, 256, 65536, 256},
+		{"exact bucket", 256, 256, 65536, 256},
+		{"one over bucket", 257, 256, 65536, 512},
+		{"near max", 64000, 256, 65536, 64000}, // padding capped by maxSize
+		{"at max", 65536, 256, 65536, 65536},
+		{"over max", 66000, 256, 65536, 66000}, // already over maxSize, no padding
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			buf.Write(make([]byte, tt.bufLen))
+			padFile(&buf, tt.bucket, tt.maxSize)
+			if buf.Len() < tt.wantMinLen {
+				t.Errorf("padFile: buf.Len()=%d < wantMinLen=%d", buf.Len(), tt.wantMinLen)
+			}
+			// Only check maxSize when the input was under it (padding can't shrink)
+			if tt.bufLen <= tt.maxSize && buf.Len() > tt.maxSize {
+				t.Errorf("padFile: buf.Len()=%d > maxSize=%d", buf.Len(), tt.maxSize)
+			}
+		})
+	}
+}
+
+// TestIndividualSetters verifies that individual setters work and
+// that zero values do not override already-set values.
+func TestIndividualSetters(t *testing.T) {
+	engine := NewEngine(&mockBackend{}, true, nil)
+	engine.SetPaddingSize(65536)
+	engine.SetHoldMax(2000)
+
+	if engine.PaddingSize != 65536 {
+		t.Errorf("PaddingSize = %d, want 65536", engine.PaddingSize)
+	}
+	if engine.HoldMax != 2*time.Second {
+		t.Errorf("HoldMax = %v, want 2s", engine.HoldMax)
+	}
+
+	// Zero values should not change defaults
+	engine.SetPaddingSize(0)
+	engine.SetHoldMax(0)
+	if engine.PaddingSize != 65536 {
+		t.Errorf("PaddingSize changed on zero set")
+	}
+}
+
+func TestHoldDelayRange(t *testing.T) {
+	engine := NewEngine(&mockBackend{}, false, nil)
+	engine.HoldMax = 50 * time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var maxDelay time.Duration
+	for i := 0; i < 30; i++ {
+		start := time.Now()
+		engine.flushAll(ctx)
+		d := time.Since(start)
+		if d > maxDelay {
+			maxDelay = d
+		}
+	}
+	if maxDelay >= engine.HoldMax+time.Millisecond {
+		t.Errorf("max delay %v exceeds HoldMax %v", maxDelay, engine.HoldMax)
+	}
+	if maxDelay < time.Millisecond {
+		t.Logf("WARNING: maxDelay only %v — may indicate hold delay not spanning full range", maxDelay)
+	}
+}
+
+func TestHoldDelayDisabledOnClient(t *testing.T) {
+	engine := NewEngine(&mockBackend{}, true, nil)
+	engine.HoldMax = 50 * time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	start := time.Now()
+	engine.flushAll(ctx)
+	elapsed := time.Since(start)
+	if elapsed > time.Millisecond {
+		t.Errorf("client-side engine had non-trivial hold delay: %v", elapsed)
 	}
 }

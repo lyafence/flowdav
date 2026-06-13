@@ -186,6 +186,12 @@ func runClient(configPath, password, logLevel string, askInteractive bool) {
 	if appCfg.IdleTimeoutMs > 0 {
 		engine.SetSessionIdleTimeout(appCfg.IdleTimeoutMs)
 	}
+	if appCfg.PaddingSize > 0 {
+		engine.SetPaddingSize(appCfg.PaddingSize)
+	}
+	if appCfg.HoldMs > 0 {
+		engine.SetHoldMax(appCfg.HoldMs)
+	}
 	engine.Start(ctx)
 
 	engine.OnSessionEnd = func(sessionID string) {
@@ -369,6 +375,12 @@ func runServer(configPath, password, logLevel string, askInteractive bool) {
 	}
 	if appCfg.IdleTimeoutMs > 0 {
 		engine.SetSessionIdleTimeout(appCfg.IdleTimeoutMs)
+	}
+	if appCfg.PaddingSize > 0 {
+		engine.SetPaddingSize(appCfg.PaddingSize)
+	}
+	if appCfg.HoldMs > 0 {
+		engine.SetHoldMax(appCfg.HoldMs)
 	}
 
 	engine.OnNewSession = func(sessionID, targetAddr string, session *transport.Session) {

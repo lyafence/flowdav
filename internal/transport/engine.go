@@ -68,6 +68,21 @@ type Engine struct {
 	// 0 = use session default (10s).
 	SessionIdleTimeout time.Duration
 
+	// PaddingSize is the bucket size for tail padding (0 = disabled).
+	PaddingSize int
+	// HoldMax is the max server-side random delay (0 = disabled).
+	HoldMax time.Duration
+
+	// pollJitterMin and pollJitterMax define the jitter range for poll
+	// intervals. Default 0.25–1.75 (±75%).
+	pollJitterMin float64
+	pollJitterMax float64
+
+	// flushJitterMin and flushJitterMax define the jitter range for flush
+	// intervals. Default 0.5–1.5 (±50%).
+	flushJitterMin float64
+	flushJitterMax float64
+
 	// downloadPool limits goroutines in pollLoop
 	downloadPool *DownloadWorkerPool
 
@@ -96,10 +111,14 @@ func NewEngine(backend storage.Backend, isClient bool, cryptoCfg *CryptoConfig) 
 		stopCh:         make(chan struct{}),
 		// Default intervals: Poll (RX) and Flush (TX) - safe for cloud rate limits (~1 req/s)
 		pollTicker:      500 * time.Millisecond,
-		minPollInterval: 100 * time.Millisecond,
+		minPollInterval: 500 * time.Millisecond,
 		maxPollInterval: 60 * time.Second,
 		flushTicker:     500 * time.Millisecond,
 		pollActivityCh:  make(chan struct{}, 1),
+		pollJitterMin:   0.25,
+		pollJitterMax:   1.75,
+		flushJitterMin:  0.5,
+		flushJitterMax:  1.5,
 	}
 	if isClient {
 		e.myDir = DirReq
@@ -147,6 +166,18 @@ func (e *Engine) SetMaxSessions(max int) {
 func (e *Engine) SetSessionIdleTimeout(ms int) {
 	if ms > 0 {
 		e.SessionIdleTimeout = time.Duration(ms) * time.Millisecond
+	}
+}
+
+func (e *Engine) SetPaddingSize(size int) {
+	if size > 0 {
+		e.PaddingSize = size
+	}
+}
+
+func (e *Engine) SetHoldMax(ms int) {
+	if ms > 0 {
+		e.HoldMax = time.Duration(ms) * time.Millisecond
 	}
 }
 
@@ -212,8 +243,8 @@ func (e *Engine) AddSession(s *Session) {
 }
 
 func (e *Engine) flushLoop(ctx context.Context) {
-	ticker := time.NewTicker(e.flushTicker)
-	defer ticker.Stop()
+	timer := time.NewTimer(e.flushTicker)
+	defer timer.Stop()
 
 	for {
 		select {
@@ -221,8 +252,9 @@ func (e *Engine) flushLoop(ctx context.Context) {
 			return
 		case <-e.stopCh:
 			return
-		case <-ticker.C:
+		case <-timer.C:
 			e.flushAll(ctx)
+			timer.Reset(e.jitterFlushInterval(e.flushTicker))
 		}
 	}
 }
@@ -238,6 +270,26 @@ func (e *Engine) flushAll(ctx context.Context) {
 		sessions = append(sessions, s)
 	}
 	e.sessionMu.Unlock()
+
+	// Server-side hold delay: random sleep before processing to
+	// decouple request timing from response timing.
+	if e.HoldMax > 0 && e.myDir == DirRes {
+		var b [8]byte
+		if _, err := rand.Read(b[:]); err != nil {
+			logger.Info("hold delay rand read error: %v", err)
+		}
+		n := int64(b[0]) | int64(b[1])<<8 | int64(b[2])<<16 | int64(b[3])<<24 |
+			int64(b[4])<<32 | int64(b[5])<<40 | int64(b[6])<<48 | int64(b[7])<<56
+		if n < 0 {
+			n = -n
+		}
+		d := time.Duration(n % int64(e.HoldMax))
+		select {
+		case <-time.After(d):
+		case <-ctx.Done():
+			return
+		}
+	}
 
 	muxes := make(map[muxKey][]Envelope)
 	muxSessions := make(map[muxKey][]*Session)
@@ -309,6 +361,12 @@ func (e *Engine) flushAll(ctx context.Context) {
 				consumed++
 			}
 
+			// Tail padding: add random bytes up to safeUploadSize to
+			// disguise the true payload size from storage observers.
+			if e.PaddingSize > 0 {
+				padFile(&buf, e.PaddingSize, safeUploadSize())
+			}
+
 			filename := randomFilename(uploadPrefix(e.myDir))
 
 			select {
@@ -373,7 +431,7 @@ func (e *Engine) pollLoop(ctx context.Context) {
 				default:
 				}
 			}
-			timer.Reset(jitterPollInterval(currentPollInterval))
+			timer.Reset(e.jitterPollInterval(currentPollInterval))
 			continue
 		case <-timer.C:
 			if e.myDir == DirReq {
@@ -381,7 +439,7 @@ func (e *Engine) pollLoop(ctx context.Context) {
 				count := len(e.sessions)
 				e.sessionMu.RUnlock()
 				if count == 0 {
-					timer.Reset(jitterPollInterval(currentPollInterval))
+					timer.Reset(e.jitterPollInterval(currentPollInterval))
 					continue
 				}
 			}
@@ -389,7 +447,7 @@ func (e *Engine) pollLoop(ctx context.Context) {
 			files, err := e.backend.ListQuery(ctx, peerPrefix)
 			if err != nil {
 				logger.Info("poll list error: %v", err)
-				timer.Reset(jitterPollInterval(currentPollInterval))
+				timer.Reset(e.jitterPollInterval(currentPollInterval))
 				continue
 			}
 
@@ -399,7 +457,7 @@ func (e *Engine) pollLoop(ctx context.Context) {
 				if currentPollInterval > e.maxPollInterval {
 					currentPollInterval = e.maxPollInterval
 				}
-				timer.Reset(jitterPollInterval(currentPollInterval))
+				timer.Reset(e.jitterPollInterval(currentPollInterval))
 				continue
 			}
 
@@ -452,15 +510,15 @@ func (e *Engine) pollLoop(ctx context.Context) {
 				}
 			}
 
-			timer.Reset(jitterPollInterval(currentPollInterval))
+			timer.Reset(e.jitterPollInterval(currentPollInterval))
 			continue
 		}
 	}
 }
 
-// jitterPollInterval applies ±75% random jitter to the given duration
-// to reduce traffic fingerprinting via polling patterns.
-func jitterPollInterval(d time.Duration) time.Duration {
+// jitterPollInterval applies random jitter within the engine's
+// configured range to reduce traffic fingerprinting.
+func (e *Engine) jitterPollInterval(d time.Duration) time.Duration {
 	if d <= 0 {
 		return d
 	}
@@ -468,8 +526,23 @@ func jitterPollInterval(d time.Duration) time.Duration {
 	if _, err := rand.Read(b[:]); err != nil {
 		return d
 	}
-	// 0.25–1.75 range
-	factor := 0.25 + float64(b[0])/255.0*1.5
+	rng := e.pollJitterMax - e.pollJitterMin
+	factor := e.pollJitterMin + float64(b[0])/255.0*rng
+	return time.Duration(float64(d) * factor)
+}
+
+// jitterFlushInterval applies random jitter within the engine's
+// configured flush range to avoid fixed-interval patterns.
+func (e *Engine) jitterFlushInterval(d time.Duration) time.Duration {
+	if d <= 0 {
+		return d
+	}
+	var b [1]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return d
+	}
+	rng := e.flushJitterMax - e.flushJitterMin
+	factor := e.flushJitterMin + float64(b[0])/255.0*rng
 	return time.Duration(float64(d) * factor)
 }
 
@@ -668,4 +741,30 @@ func pollPrefix(myDir Direction) string {
 		return "s"
 	}
 	return "r"
+}
+
+// padFile appends random bytes to buf up to a bucket boundary with
+// random slack, capping at maxSize to respect upload limits.
+func padFile(buf *bytes.Buffer, bucket, maxSize int) {
+	if buf.Len() >= maxSize {
+		return
+	}
+	// Always pad: when remain==0 (exact bucket multiple) we pad to the
+	// next bucket boundary + random slack, to avoid leaking alignment.
+	padLen := bucket - (buf.Len() % bucket)
+	var r [1]byte
+	if _, err := rand.Read(r[:]); err != nil {
+		logger.Info("padding rand read error: %v", err)
+	}
+	padLen += int(r[0])
+	if buf.Len()+padLen > maxSize {
+		padLen = maxSize - buf.Len()
+	}
+	if padLen > 0 {
+		pad := make([]byte, padLen)
+		if _, err := rand.Read(pad); err != nil {
+			logger.Info("padding rand read error: %v", err)
+		}
+		buf.Write(pad)
+	}
 }

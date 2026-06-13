@@ -37,10 +37,10 @@ Test the proxy after compose starts:
 
 ```bash
 # Single-backend proxy
-curl -s --proxy socks5h://127.0.0.1:11080 https://api.ipify.org
+curl -s --proxy socks5h://127.0.0.1:11080 https://www.google.com
 
 # Multi-backend proxy
-curl -s --proxy socks5h://127.0.0.1:11081 https://api.ipify.org
+curl -s --proxy socks5h://127.0.0.1:11081 https://www.google.com
 ```
 
 > **Port note:** The default SOCKS5 port is 1080 (localhost only). Docker Compose exposes the single-backend proxy as `11080` and multi-backend as `11081` on `0.0.0.0` to avoid conflicts and allow host access.

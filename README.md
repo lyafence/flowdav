@@ -160,13 +160,15 @@ docker run --rm -v ./config.json.enc:/app/configs/config.json.enc \
 | `socks5_pass` | string | `""` | ✓ | | SOCKS5 auth password |
 | `max_connections` | int | `100` | ✓ | | Max concurrent SOCKS5 conns |
 | `refresh_rate_ms` | int | `500` | ✓ | ✓ | Poll interval |
-| `min_poll_ms` | int | `100` | ✓ | ✓ | Min poll jitter floor |
+| `min_poll_ms` | int | `500` | ✓ | ✓ | Min poll interval (idle backoff floor) |
 | `max_poll_ms` | int | `60000` | ✓ | ✓ | Max poll jitter ceiling (idle backoff) |
 | `flush_rate_ms` | int | `500` | ✓ | ✓ | Flush interval |
 | `max_sessions` | int | `0` (∞) | ✓ | ✓ | Max WebDAV sessions |
 | `idle_timeout_ms` | int | `10000` | ✓ | ✓ | Session idle timeout (ms); 0 = default 10s |
 | `max_message_size` | int | `16777216` | ✓ | ✓ | Max payload (bytes) |
 | `tls_fingerprint` | string | `"chrome"` | ✓ | ✓ | TLS fingerprint profile (`chrome`, `chrome_auto`) |
+| `padding_size` | int | `0` (off) | ✓ | ✓ | Tail padding bucket size (bytes); hides exact payload size from storage observer. Adds overhead; try `4096` or `16384` with public WebDAV providers. |
+| `hold_ms` | int | `0` (off) | ✓ | ✓ | Max server-side random delay before flushing (ms). Adds latency. |
 | `health_port` | string | `""` | ✓ | ✓ | Health endpoint (`host:port`) |
 
 Client-only fields (`listen_addr`, `socks5_user`, `socks5_pass`, `max_connections`) are absent from server configs. Unset fields use defaults.
@@ -207,7 +209,7 @@ Both the client and server support an optional HTTP health endpoint. Set `health
 
 ## Troubleshooting
 
-- **First request may take 1–2 seconds** — this is normal. The client polls WebDAV every 500ms; subsequent requests are faster.
+- **First request may take a few seconds** — the client polls WebDAV every 500ms; idle backoff can increase latency on cold start.
 - **HTTPS sites fail but HTTP works** — check DNS resolution from your server machine. The server resolves destination hostnames.
 - **"Failed to load config"** — if the file is encrypted, use `-p` flag or `FLOWDAV_PASSWORD` env var. If not, check the JSON syntax.
 - **Connection resets during active browsing** — enable debug logging with `-l debug` to see session-level errors.

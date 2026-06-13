@@ -110,7 +110,7 @@ type AppConfig struct {
 	RefreshRateMs int `json:"refresh_rate_ms,omitempty"`
 
 	// MinPollMs is the minimum polling interval in milliseconds (idle backoff floor).
-	// Default 100ms. Only used when RefreshRateMs is not set.
+	// Default 500ms. Only used when RefreshRateMs is not set.
 	MinPollMs int `json:"min_poll_ms,omitempty"`
 
 	// MaxPollMs is the maximum polling interval in milliseconds (idle backoff ceiling).
@@ -158,6 +158,16 @@ type AppConfig struct {
 	// If no data is exchanged for this duration, the session is
 	// automatically closed. Default 10000 (10s). 0 = use default.
 	IdleTimeoutMs int `json:"idle_timeout_ms,omitempty"`
+
+	// PaddingSize is the bucket size in bytes for tail padding.
+	// All uploaded files are padded to a multiple of this size
+	// plus random slack. 0 = disabled.
+	PaddingSize int `json:"padding_size,omitempty"`
+
+	// HoldMs is the maximum random delay in milliseconds before
+	// the server responds to a request. Decouples request/response
+	// timing. 0 = disabled.
+	HoldMs int `json:"hold_ms,omitempty"`
 }
 
 // Load reads and parses a JSON config file.
@@ -247,6 +257,15 @@ func Load(path string) (*AppConfig, error) {
 	// Validate TLSFingerprint (if set)
 	if cfg.TLSFingerprint != "" && cfg.TLSFingerprint != "chrome" && cfg.TLSFingerprint != "chrome_auto" {
 		return nil, fmt.Errorf("invalid tls_fingerprint: %q (supported: chrome, chrome_auto)", cfg.TLSFingerprint)
+	}
+
+	// Validate HealthPort — must be loopback for security (design invariant)
+	if cfg.HealthPort != "" {
+		if !strings.HasPrefix(cfg.HealthPort, "127.0.0.1:") &&
+			!strings.HasPrefix(cfg.HealthPort, "localhost:") &&
+			!strings.HasPrefix(cfg.HealthPort, "[::1]:") {
+			return nil, fmt.Errorf("health_port must be loopback (127.0.0.1, localhost, or [::1]), got %q", cfg.HealthPort)
+		}
 	}
 
 	// Store decoded keys for use by transport layer

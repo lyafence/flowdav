@@ -153,3 +153,76 @@ func TestLoginMkdirForbidden(t *testing.T) {
 		t.Errorf("expected error to mention 403, got: %v", err)
 	}
 }
+
+func TestCryptoRandIntRange(t *testing.T) {
+	for max := 1; max <= 10; max++ {
+		for i := 0; i < 100; i++ {
+			got := cryptoRandInt(max)
+			if got < 0 || got >= max {
+				t.Fatalf("cryptoRandInt(%d) = %d, out of range [0, %d)", max, got, max)
+			}
+		}
+	}
+	// max ≤ 0 returns 0
+	if got := cryptoRandInt(0); got != 0 {
+		t.Errorf("cryptoRandInt(0) = %d, want 0", got)
+	}
+	if got := cryptoRandInt(-1); got != 0 {
+		t.Errorf("cryptoRandInt(-1) = %d, want 0", got)
+	}
+}
+
+func TestRandomHeaderTransport(t *testing.T) {
+	var seenAccept, seenLang, seenCC int
+	for i := 0; i < 50; i++ {
+		req, _ := http.NewRequest("GET", "http://example.com", nil)
+		tr := &randomHeaderTransport{inner: &nullTransport{}}
+		tr.RoundTrip(req)
+		if a := req.Header.Get("Accept"); a != "" {
+			seenAccept++
+		}
+		if l := req.Header.Get("Accept-Language"); l != "" {
+			seenLang++
+		}
+		if req.Header.Get("Cache-Control") != "" {
+			seenCC++
+		}
+	}
+	if seenAccept == 0 {
+		t.Error("Accept header never set")
+	}
+	if seenLang == 0 {
+		t.Error("Accept-Language header never set")
+	}
+	if seenCC == 0 {
+		t.Error("Cache-Control header never set (may be deleted randomly — low probability)")
+	}
+}
+
+func TestRandomHeaderTransportPreservesExisting(t *testing.T) {
+	for i := 0; i < 20; i++ {
+		req, _ := http.NewRequest("PROPFIND", "http://example.com", nil)
+		req.Header.Set("Accept", "application/xml,text/xml")
+		req.Header.Set("Accept-Language", "fr-FR,fr;q=0.9")
+		req.Header.Set("Cache-Control", "max-age=0")
+
+		tr := &randomHeaderTransport{inner: &nullTransport{}}
+		tr.RoundTrip(req)
+
+		if req.Header.Get("Accept") != "application/xml,text/xml" {
+			t.Fatal("randomHeaderTransport overwrote preset Accept header")
+		}
+		if req.Header.Get("Accept-Language") != "fr-FR,fr;q=0.9" {
+			t.Fatal("randomHeaderTransport overwrote preset Accept-Language header")
+		}
+		if req.Header.Get("Cache-Control") != "max-age=0" {
+			t.Fatal("randomHeaderTransport overwrote preset Cache-Control header")
+		}
+	}
+}
+
+type nullTransport struct{}
+
+func (t *nullTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return &http.Response{StatusCode: 200, Body: http.NoBody}, nil
+}
