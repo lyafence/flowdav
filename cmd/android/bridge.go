@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"strings"
 	"sync"
 	"time"
 
@@ -127,75 +126,14 @@ func decodeKey(keyB64 string, name string) ([]byte, error) {
 	return dec, nil
 }
 
-func applyDefaults(cfg *config.AppConfig) {
-	if cfg.StorageType == "" {
-		cfg.StorageType = "webdav"
-	}
-}
-
 func parseConfigJSON(data []byte) (*config.AppConfig, error) {
 	var cfg config.AppConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, err
 	}
-	if cfg.WebDAV == nil {
-		return nil, fmt.Errorf("webdav config is required")
-	}
-	hasBackends := len(cfg.WebDAV.Backends) > 0
-	hasLegacy := cfg.WebDAV.URL != ""
-	if hasBackends && hasLegacy {
-		return nil, fmt.Errorf("cannot use both 'webdav.backends' and legacy 'webdav.url' simultaneously")
-	}
-	if hasBackends {
-		if len(cfg.WebDAV.Backends) < 2 {
-			return nil, fmt.Errorf("webdav.backends requires at least 2 backends, got %d", len(cfg.WebDAV.Backends))
-		}
-		for i, be := range cfg.WebDAV.Backends {
-			if be.BasePath != "" {
-				if err := config.ValidateBasePath(be.BasePath, fmt.Sprintf("webdav.backends[%d].base_path", i)); err != nil {
-					return nil, err
-				}
-			}
-		}
-	} else if hasLegacy {
-		if cfg.WebDAV.BasePath != "" {
-			if err := config.ValidateBasePath(cfg.WebDAV.BasePath, "webdav.base_path"); err != nil {
-				return nil, err
-			}
-		}
-	} else {
-		return nil, fmt.Errorf("webdav config requires either 'url' or 'backends'")
-	}
-	if cfg.EncKey == "" {
-		return nil, fmt.Errorf("enc_key is required")
-	}
-	key, err := decodeKey(cfg.EncKey, "enc_key")
-	if err != nil {
+	if err := config.ValidateAppConfig(&cfg); err != nil {
 		return nil, err
 	}
-	cfg.EncKeyDecoded = key
-	if cfg.HMacKey == "" {
-		return nil, fmt.Errorf("hmac_key is required")
-	}
-	hmacKey, err := decodeKey(cfg.HMacKey, "hmac_key")
-	if err != nil {
-		return nil, err
-	}
-	cfg.HMacKeyDecoded = hmacKey
-	if cfg.MaxMessageSize > 0 && cfg.MaxMessageSize < 65536 {
-		return nil, fmt.Errorf("max_message_size must be at least 65536 (64KB), got %d", cfg.MaxMessageSize)
-	}
-	if cfg.TLSFingerprint != "" && cfg.TLSFingerprint != "chrome" && cfg.TLSFingerprint != "chrome_auto" {
-		return nil, fmt.Errorf("invalid tls_fingerprint: %q", cfg.TLSFingerprint)
-	}
-	if cfg.HealthPort != "" {
-		if !strings.HasPrefix(cfg.HealthPort, "127.0.0.1:") &&
-			!strings.HasPrefix(cfg.HealthPort, "localhost:") &&
-			!strings.HasPrefix(cfg.HealthPort, "[::1]:") {
-			return nil, fmt.Errorf("health_port must be loopback (127.0.0.1, localhost, or [::1]), got %q", cfg.HealthPort)
-		}
-	}
-	applyDefaults(&cfg)
 	return &cfg, nil
 }
 

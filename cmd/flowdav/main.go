@@ -383,9 +383,12 @@ func runServer(configPath, password, logLevel string, askInteractive bool) {
 		engine.SetHoldMax(appCfg.HoldMs)
 	}
 
+	var serverWg sync.WaitGroup
+
 	engine.OnNewSession = func(sessionID, targetAddr string, session *transport.Session) {
 		logger.Info("Server received new session %s destined for %s", sessionID, targetAddr)
-		go handleServerConn(sessionID, targetAddr, session, engine)
+		serverWg.Add(1)
+		go handleServerConn(ctx, &serverWg, sessionID, targetAddr, session, engine)
 	}
 
 	engine.Start(ctx)
@@ -423,9 +426,11 @@ func runServer(configPath, password, logLevel string, askInteractive bool) {
 
 	engine.Stop()
 	cancel()
+	serverWg.Wait()
 }
 
-func handleServerConn(sessionID, targetAddr string, session *transport.Session, engine *transport.Engine) {
+func handleServerConn(ctx context.Context, wg *sync.WaitGroup, sessionID, targetAddr string, session *transport.Session, engine *transport.Engine) {
+	defer wg.Done()
 	defer engine.RemoveSession(sessionID)
 
 	tcpAddr, err := net.ResolveTCPAddr("tcp", targetAddr)
@@ -465,6 +470,10 @@ func handleServerConn(sessionID, targetAddr string, session *transport.Session, 
 			select {
 			case <-done:
 				return
+			case <-ctx.Done():
+				conn.SetReadDeadline(time.Now())
+				closeConn()
+				return
 			default:
 			}
 
@@ -503,6 +512,9 @@ func handleServerConn(sessionID, targetAddr string, session *transport.Session, 
 			select {
 			case <-done:
 				return
+			case <-ctx.Done():
+				closeConn()
+				return
 			case data, ok := <-session.RxChan:
 				if !ok {
 					errCh <- fmt.Errorf("session closed by remote")
@@ -525,8 +537,12 @@ func handleServerConn(sessionID, targetAddr string, session *transport.Session, 
 		}
 	}()
 
-	connErr := <-errCh
-	logger.Info("Session %s: connection ended: %v", sessionID, connErr)
+	select {
+	case connErr := <-errCh:
+		logger.Info("Session %s: connection ended: %v", sessionID, connErr)
+	case <-ctx.Done():
+		logger.Info("Session %s: shutting down via context", sessionID)
+	}
 	closeConn()
 }
 

@@ -365,6 +365,6 @@ backoff from delaying the first response when a user starts browsing.
 
 - [Source: Binary envelope format](internal/transport/envelope.go)
 - [Source: Crypto wire format](internal/transport/crypto.go)
-- [Source: Filename generation](internal/transport/engine.go#L435)
+- [Source: Filename generation](internal/transport/engine.go)
 - [Source: Storage mapping](internal/storage/webdav.go)
 - [Source: Multiplexing logic](internal/transport/engine.go#L258)

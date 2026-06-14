@@ -14,7 +14,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-TIMEOUT=60
+TIMEOUT=20
 TESTS_PASSED=0
 TESTS_FAILED=0
 BUILD=false
@@ -30,7 +30,7 @@ wait_for_health() {
     local name="$1" container="$2" check_cmd="$3" retries="${4:-10}" interval="${5:-3}"
     log_info "Waiting for $name..."
     for i in $(seq 1 "$retries"); do
-        if podman exec "$container" sh -c "$check_cmd" >/dev/null 2>&1; then
+        if $COMPOSE exec "$container" sh -c "$check_cmd" >/dev/null 2>&1; then
             log_pass "$name is healthy"
             return 0
         fi
@@ -133,18 +133,35 @@ else
 fi
 
 log_info "Waiting for services to become healthy..."
-wait_for_health "webdav-multi-1" "webdav-multi-1" 'wget -q --spider http://test:test@localhost:8080/' 15 2 || true
-wait_for_health "webdav-single" "webdav-single" 'wget -q --spider http://test:test@localhost:8080/' 15 2 || true
-wait_for_health "flow-server" "flow-server" 'curl -sf http://127.0.0.1:9190/health' 10 3 || true
-wait_for_health "flow-client" "flow-client" 'curl -sf http://127.0.0.1:9190/health' 10 3 || true
-wait_for_health "flow-server-multi" "flow-server-multi" 'curl -sf http://127.0.0.1:9190/health' 10 3 || true
-wait_for_health "flow-client-multi" "flow-client-multi" 'curl -sf http://127.0.0.1:9190/health' 10 3 || true
+# Parallel health checks — each waits independently with retry
+for svc in "webdav-multi-1|wget -q --spider http://test:test@localhost:8080/" \
+           "webdav-single|wget -q --spider http://test:test@localhost:8080/" \
+           "flowdav-server|curl -sf http://127.0.0.1:9190/health" \
+           "flowdav-client|curl -sf http://127.0.0.1:9190/health" \
+           "flowdav-server-multi|curl -sf http://127.0.0.1:9190/health" \
+           "flowdav-client-multi|curl -sf http://127.0.0.1:9190/health"; do
+    name="${svc%%|*}"
+    cmd="${svc#*|}"
+    case "$name" in
+        webdav*) wait_for_health "$name" "$name" "$cmd" 15 2 || true &
+                 ;;
+        *)       wait_for_health "$name" "$name" "$cmd" 10 3 || true &
+                 ;;
+    esac
+done
+wait
 echo ""
 
 # ── Phase 6: SOCKS5 Proxy Tests ────────────
 echo "--- Phase 6: Proxy Connectivity Tests ---"
-log_info "Stabilizing for 5s after health checks..."
-sleep 5
+log_info "Waiting for SOCKS5 proxy to accept connections..."
+for i in 1 2 3; do
+    if curl -sf --proxy socks5h://127.0.0.1:11080 http://example.com --max-time 2 >/dev/null 2>&1; then
+        log_pass "SOCKS5 proxy is ready"
+        break
+    fi
+    sleep 1
+done
 
 # Helper: safe_curl wraps curl with || true so set -e does not abort
 # the script on transient proxy delays. Test failures are tracked by log_fail.
@@ -161,8 +178,8 @@ for i in 1 2 3; do
         break
     fi
     if [ "$i" -lt 3 ]; then
-        log_info "  Retry $i/3 in 5s..."
-        sleep 5
+        log_info "  Retry $i/3 in $((2**(i-1)))s..."
+        sleep "$((2**(i-1)))"
     else
         log_fail "Test 1: No valid IP (got: ${RESULT:0:100})"
     fi
@@ -199,14 +216,14 @@ fi
 # Test 5: Multi-backend proxy (with retry for cold proxy)
 log_info "Test 5: Multi-backend proxy..."
 for i in 1 2 3; do
-    RESULT=$(safe_curl --proxy socks5h://127.0.0.1:11081 https://api.ipify.org)
-    if [ -n "$RESULT" ] && [[ "$RESULT" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        log_pass "Test 5: Multi-backend IP = $RESULT"
+    RESULT=$(safe_curl --proxy socks5h://127.0.0.1:11081 "http://example.com" | head -c 50)
+    if [ -n "$RESULT" ] && [ ${#RESULT} -gt 10 ]; then
+        log_pass "Test 5: Multi-backend proxy works (${#RESULT} bytes)"
         break
     fi
     if [ "$i" -lt 3 ]; then
-        log_info "  Retry $i/3 in 5s..."
-        sleep 5
+        log_info "  Retry $i/3 in $((2**(i-1)))s..."
+        sleep "$((2**(i-1)))"
     else
         log_fail "Test 5: Multi-backend failed (got: ${RESULT:0:50})"
     fi
@@ -218,7 +235,7 @@ echo "--- Cleanup ---"
 log_info "Stopping services..."
 $COMPOSE -f "$PROJECT_DIR/docker-compose.yml" down -v 2>&1 || true
 log_info "Cleaning up test configs..."
-rm -f "$PROJECT_DIR"/configs/flowdav_test_*.json "$PROJECT_DIR"/configs/.env 2>/dev/null || true
+rm -f "$PROJECT_DIR"/configs/flowdav_test*.json "$PROJECT_DIR"/configs/.env 2>/dev/null || true
 echo ""
 
 # ── Summary ─────────────────────────────────

@@ -82,7 +82,8 @@ openssl rand -base64 32  # hmac_key
   "webdav": {
     "url": "https://your-webdav:8080",
     "login": "username",
-    "token": "YOUR_TOKEN"
+    "token": "YOUR_TOKEN",
+    "base_path": "data_sync"
   },
   "enc_key": "paste enc_key here",
   "hmac_key": "paste hmac_key here"

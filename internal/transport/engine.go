@@ -95,7 +95,7 @@ type Engine struct {
 
 type uploadJob struct {
 	filename   string
-	buf        bytes.Buffer
+	data       []byte
 	backendIdx uint8
 	sessions   []*Session // sessions contributing to this mux; used for backend migration on 429
 	numBackend int        // total backends, for ReassignBackend
@@ -160,6 +160,8 @@ func (e *Engine) SetFlushRate(ms int) {
 func (e *Engine) SetMaxSessions(max int) {
 	e.sessionMu.Lock()
 	defer e.sessionMu.Unlock()
+	// Lock intentional: MaxSessions is read under sessionMu in pool.go.
+	// Other setters are called only before Start() and need no lock.
 	e.MaxSessions = max
 }
 
@@ -372,7 +374,7 @@ func (e *Engine) flushAll(ctx context.Context) {
 			select {
 			case e.uploadJobs <- uploadJob{
 				filename:   filename,
-				buf:        buf,
+				data:       buf.Bytes(),
 				backendIdx: key.BackendIdx,
 				sessions:   sessList,
 				numBackend: numBackend,
@@ -497,7 +499,7 @@ func (e *Engine) pollLoop(ctx context.Context) {
 				default:
 				}
 			}
-			backoffTimer.Reset(100 * time.Millisecond)
+			backoffTimer.Reset(e.jitterPollInterval(100 * time.Millisecond))
 			pollAgain := true
 			for pollAgain {
 				select {
@@ -624,7 +626,7 @@ func (e *Engine) uploadWorker(ctx context.Context) {
 					}
 				}()
 				attempts, err := retryStorage(ctx, e.stopCh, "upload "+job.filename, func() error {
-					return e.backend.UploadByIndex(ctx, job.filename, &job.buf, job.backendIdx)
+					return e.backend.UploadByIndex(ctx, job.filename, bytes.NewReader(job.data), job.backendIdx)
 				})
 				if err == nil {
 					select {
@@ -639,7 +641,7 @@ func (e *Engine) uploadWorker(ctx context.Context) {
 					// If rate-limited, try non-indexed upload (picks different backend)
 					if storage.IsRateLimited(err) {
 						logger.Info("upload 429 %s (backend %d): trying fallback", job.filename, job.backendIdx)
-						newIdx, fallbackErr := e.backend.UploadAny(ctx, job.filename, &job.buf)
+						newIdx, fallbackErr := e.backend.UploadAny(ctx, job.filename, bytes.NewReader(job.data))
 						if fallbackErr == nil {
 							logger.Info("upload fallback succeeded %s → backend %d", job.filename, newIdx)
 							for _, s := range job.sessions {

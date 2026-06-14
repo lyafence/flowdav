@@ -331,6 +331,9 @@ class MainActivity : AppCompatActivity() {
 
             val goResult = withContext(Dispatchers.IO) {
                 try {
+                    if (socks5User != null && socks5Pass != null) {
+                        Flowdavmobile.setSocks5Auth(socks5User, socks5Pass)
+                    }
                     if (vm.isManualMode) {
                         val url = b.webdavUrlInput.text?.toString()?.ifBlank { null }
                         val login = b.webdavLoginInput.text?.toString()?.ifBlank { null }
@@ -345,9 +348,6 @@ class MainActivity : AppCompatActivity() {
                         val uri = fileUri ?: throw IllegalStateException(getString(R.string.select_file_first))
                         val data = ConfigHelper.readContent(this@MainActivity, uri).getOrThrow()
                         Flowdavmobile.startProxyFromData(data, password, listenAddr)
-                    }
-                    if (socks5User != null && socks5Pass != null) {
-                        Flowdavmobile.setSocks5Auth(socks5User, socks5Pass)
                     }
                     null as String?
                 } catch (e: Exception) {

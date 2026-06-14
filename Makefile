@@ -5,7 +5,7 @@ BUILD_FLAGS := -trimpath -ldflags="-s -w -X main.version=$(VERSION)"
 COMPOSE_FILE := docker-compose.yml
 HOST_IP := $(shell ip route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($$i=="src") print $$(i+1)}' || hostname -I 2>/dev/null | awk '{print $$1}' || echo "localhost")
 
-.PHONY: build openwrt test test-short test-e2e test-e2e-encrypted fuzz \
+.PHONY: build openwrt test test-short test-e2e test-e2e-encrypted fuzz vulncheck \
             lint vet tidy encrypt clean docker-build docker-e2e image-to-bin release \
             compose-down clean-images nuke check hooks android-init android-aar android-apk android-keystore \
             compose-android android-deploy
@@ -115,7 +115,7 @@ nuke: compose-down clean-images clean
 compose-android: docker-build
 	@bash scripts/gen-test-configs.sh "$(HOST_IP)" && \
 	podman-compose -f $(COMPOSE_FILE) down -v 2>/dev/null || true; \
-	podman-compose -f $(COMPOSE_FILE) up -d webdav-single flow-server flow-client; \
+	podman-compose -f $(COMPOSE_FILE) up -d webdav-single flowdav-server flowdav-client; \
 	echo ""; \
 	echo "=== Android test environment ==="; \
 	echo "WebDAV:   http://$(HOST_IP):8080 (user: test, pass: test)"; \

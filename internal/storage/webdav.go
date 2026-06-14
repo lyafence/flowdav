@@ -141,6 +141,7 @@ func cryptoRandInt(max int) int {
 	if 256%max == 0 {
 		var b [1]byte
 		if _, err := rand.Read(b[:]); err != nil {
+			logger.Info("cryptoRandInt rand read error: %v", err)
 			return 0
 		}
 		return int(b[0]) % max
@@ -150,6 +151,7 @@ func cryptoRandInt(max int) int {
 	for {
 		var b [1]byte
 		if _, err := rand.Read(b[:]); err != nil {
+			logger.Info("cryptoRandInt rand read error: %v", err)
 			return 0
 		}
 		if b[0] < mask {

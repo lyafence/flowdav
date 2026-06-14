@@ -39,7 +39,7 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 ```
 
 **Binary:** `flowdav` — unified entrypoint with `-c` (client), `-s` (server), `-e` (encrypt), `-g` (generate config) modes.  
-**Android bridge:** `cmd/android/bridge.go` — gomobile bind, exports `StartProxyFromData`/`StartProxyManual`/`StopProxy`/`GetStatus`/`StopAndError`/`SetSocks5Auth` to Kotlin. **Global state intentional** (gomobile exports free functions, not objects). **Config validation mirrors** `internal/config` — keep in sync (both check ≥2 backends, ≥64KB, base_path traversal, key length). **`GetStatus` violates "no getters" intentionally** — Java/Kotlin interop dictates Java Beans naming.
+**Android bridge:** `cmd/android/bridge.go` — gomobile bind, exports `StartProxyFromData`/`StartProxyManual`/`StopProxy`/`GetStatus`/`StopAndError`/`SetSocks5Auth` to Kotlin. **Global state intentional** (gomobile exports free functions, not objects). **Config validation delegates** to `config.ValidateAppConfig` — the two paths share the same validation logic. See `parseConfigJSON` in bridge.go. **`GetStatus` violates "no getters" intentionally** — Java/Kotlin interop dictates Java Beans naming.
 
 ## Design Invariants
 
@@ -51,7 +51,7 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 - Multi-WebDAV: random session assignment, round-robin upload fallback.
 - **429-aware circuit breaker**: rate-limit (429) uses separate 60s cooldown without incrementing failure count. Session auto-migrates to another backend on 429. Download falls back to non-indexed search across all backends.
 - **TLS fingerprint masking**: uTLS `HelloChrome_133` by default (configurable via `tls_fingerprint`). User-Agent matches (`Chrome/133.0.0.0`).
-- No global state (exceptions: `transport.MaxMessageSize` / `storage.MaxFileSize` — package-level vars set at startup, justified by OOM prevention per `internal/transport/crypto.go` `MaxMessageSize` var; `cmd/android/bridge.go` — gomobile requires free functions, not objects, so global state is unavoidable and documented as intentional).
+- No global state (exceptions: `transport.MaxMessageSize` / `storage.MaxFileSize` — package-level vars set at startup, justified by OOM prevention per `internal/transport/crypto.go` `MaxMessageSize` var; `internal/logger` — package-level `level` var for leveled logging is standard and excluded by convention; `cmd/android/bridge.go` — gomobile requires free functions, not objects, so global state is unavoidable and documented as intentional).
 - **Operational philosophy:** minimize external observability, avoid predictable patterns. When adding anything network-facing: is it optional? bounded? indistinguishable from noise?
 
 ## Pre-commit Hook
@@ -60,9 +60,9 @@ The pre-commit hook (`.githooks/pre-commit`) checks:
 - `gofmt` on `cmd/ internal/`
 - `goimports` with `-local github.com/lyafence/flowdav`
 - `go vet ./...`
-- Bans `math/rand`, `os/exec` in production code
-- Bans `database/sql` without justification
-- Bans `sync.Pool` without benchmark
+- Bans `math/rand`, `os/exec` in production code (`cmd/`, `internal/`, excludes `_test.go`)
+- Bans `database/sql` in production code (same scope)
+- Bans `sync.Pool` in production code (same scope)
 
 Install with `make hooks`.
 

@@ -170,6 +170,99 @@ type AppConfig struct {
 	HoldMs int `json:"hold_ms,omitempty"`
 }
 
+// ValidateAppConfig validates the config fields and decodes encryption keys.
+// Also applies defaults (StorageType defaults to "webdav").
+// Populates cfg.EncKeyDecoded and cfg.HMacKeyDecoded on success.
+// Called by Load and LoadEncrypted — all config validation lives here.
+func ValidateAppConfig(cfg *AppConfig) error {
+	// Only WebDAV storage is supported; default to it if not set.
+	if cfg.StorageType == "" {
+		cfg.StorageType = "webdav"
+	}
+	if cfg.WebDAV == nil {
+		return fmt.Errorf("webdav config is required")
+	}
+
+	// Unified format: check if single backend or multiple backends
+	hasBackendsArray := len(cfg.WebDAV.Backends) > 0
+	hasLegacyBackend := cfg.WebDAV.URL != ""
+
+	if hasBackendsArray && hasLegacyBackend {
+		return fmt.Errorf("cannot use both 'webdav.backends' and legacy 'webdav.url' simultaneously")
+	}
+
+	if hasBackendsArray {
+		// Multi-backend mode
+		if len(cfg.WebDAV.Backends) < 2 {
+			return fmt.Errorf("webdav.backends requires at least 2 backends, got %d", len(cfg.WebDAV.Backends))
+		}
+		for i, be := range cfg.WebDAV.Backends {
+			if be.BasePath != "" {
+				if err := ValidateBasePath(be.BasePath, fmt.Sprintf("webdav.backends[%d].base_path", i)); err != nil {
+					return err
+				}
+			}
+		}
+	} else if hasLegacyBackend {
+		// Single backend mode (legacy format)
+		if cfg.WebDAV.BasePath != "" {
+			if err := ValidateBasePath(cfg.WebDAV.BasePath, "webdav.base_path"); err != nil {
+				return err
+			}
+		}
+	} else {
+		return fmt.Errorf("webdav config requires either 'url' or 'backends'")
+	}
+
+	// Validate encryption keys (required)
+	if cfg.EncKey == "" {
+		return fmt.Errorf("enc_key is required")
+	}
+	key, err := base64.StdEncoding.DecodeString(cfg.EncKey)
+	if err != nil {
+		return fmt.Errorf("invalid enc_key: not valid base64: %w", err)
+	}
+	if len(key) != 32 {
+		return fmt.Errorf("invalid enc_key: must be 32 bytes after base64 decoding, got %d", len(key))
+	}
+
+	if cfg.HMacKey == "" {
+		return fmt.Errorf("hmac_key is required")
+	}
+	hmacKey, err := base64.StdEncoding.DecodeString(cfg.HMacKey)
+	if err != nil {
+		return fmt.Errorf("invalid hmac_key: not valid base64: %w", err)
+	}
+	if len(hmacKey) != 32 {
+		return fmt.Errorf("invalid hmac_key: must be 32 bytes after base64 decoding, got %d", len(hmacKey))
+	}
+
+	// Validate MaxMessageSize (if set)
+	if cfg.MaxMessageSize > 0 && cfg.MaxMessageSize < 65536 {
+		return fmt.Errorf("max_message_size must be at least 65536 (64KB), got %d", cfg.MaxMessageSize)
+	}
+
+	// Validate TLSFingerprint (if set)
+	if cfg.TLSFingerprint != "" && cfg.TLSFingerprint != "chrome" && cfg.TLSFingerprint != "chrome_auto" {
+		return fmt.Errorf("invalid tls_fingerprint: %q (supported: chrome, chrome_auto)", cfg.TLSFingerprint)
+	}
+
+	// Validate HealthPort — must be loopback for security (design invariant)
+	if cfg.HealthPort != "" {
+		if !strings.HasPrefix(cfg.HealthPort, "127.0.0.1:") &&
+			!strings.HasPrefix(cfg.HealthPort, "localhost:") &&
+			!strings.HasPrefix(cfg.HealthPort, "[::1]:") {
+			return fmt.Errorf("health_port must be loopback (127.0.0.1, localhost, or [::1]), got %q", cfg.HealthPort)
+		}
+	}
+
+	// Store decoded keys for use by transport layer
+	cfg.EncKeyDecoded = key
+	cfg.HMacKeyDecoded = hmacKey
+
+	return nil
+}
+
 // Load reads and parses a JSON config file.
 func Load(path string) (*AppConfig, error) {
 	b, err := os.ReadFile(path)
@@ -187,91 +280,9 @@ func Load(path string) (*AppConfig, error) {
 		return nil, fmt.Errorf("failed to parse config JSON: %w", err)
 	}
 
-	// Only WebDAV storage is supported; default to it if not set.
-	if cfg.StorageType == "" {
-		cfg.StorageType = "webdav"
+	if err := ValidateAppConfig(&cfg); err != nil {
+		return nil, err
 	}
-	if cfg.WebDAV == nil {
-		return nil, fmt.Errorf("webdav config is required")
-	}
-
-	// Unified format: check if single backend or multiple backends
-	hasBackendsArray := len(cfg.WebDAV.Backends) > 0
-	hasLegacyBackend := cfg.WebDAV.URL != ""
-
-	if hasBackendsArray && hasLegacyBackend {
-		return nil, fmt.Errorf("cannot use both 'webdav.backends' and legacy 'webdav.url' simultaneously")
-	}
-
-	if hasBackendsArray {
-		// Multi-backend mode
-		if len(cfg.WebDAV.Backends) < 2 {
-			return nil, fmt.Errorf("webdav.backends requires at least 2 backends, got %d", len(cfg.WebDAV.Backends))
-		}
-		for i, be := range cfg.WebDAV.Backends {
-			if be.BasePath != "" {
-				if err := ValidateBasePath(be.BasePath, fmt.Sprintf("webdav.backends[%d].base_path", i)); err != nil {
-					return nil, err
-				}
-			}
-		}
-	} else if hasLegacyBackend {
-		// Single backend mode (legacy format)
-		if cfg.WebDAV.BasePath != "" {
-			if err := ValidateBasePath(cfg.WebDAV.BasePath, "webdav.base_path"); err != nil {
-				return nil, err
-			}
-		}
-	} else {
-		return nil, fmt.Errorf("webdav config requires either 'url' or 'backends'")
-	}
-
-	// Validate encryption keys (required)
-	if cfg.EncKey == "" {
-		return nil, fmt.Errorf("enc_key is required")
-	}
-	key, err := base64.StdEncoding.DecodeString(cfg.EncKey)
-	if err != nil {
-		return nil, fmt.Errorf("invalid enc_key: not valid base64: %w", err)
-	}
-	if len(key) != 32 {
-		return nil, fmt.Errorf("invalid enc_key: must be 32 bytes after base64 decoding, got %d", len(key))
-	}
-
-	if cfg.HMacKey == "" {
-		return nil, fmt.Errorf("hmac_key is required")
-	}
-	hmacKey, err := base64.StdEncoding.DecodeString(cfg.HMacKey)
-	if err != nil {
-		return nil, fmt.Errorf("invalid hmac_key: not valid base64: %w", err)
-	}
-	if len(hmacKey) != 32 {
-		return nil, fmt.Errorf("invalid hmac_key: must be 32 bytes after base64 decoding, got %d", len(hmacKey))
-	}
-
-	// Validate MaxMessageSize (if set)
-	if cfg.MaxMessageSize > 0 && cfg.MaxMessageSize < 65536 {
-		return nil, fmt.Errorf("max_message_size must be at least 65536 (64KB), got %d", cfg.MaxMessageSize)
-	}
-
-	// Validate TLSFingerprint (if set)
-	if cfg.TLSFingerprint != "" && cfg.TLSFingerprint != "chrome" && cfg.TLSFingerprint != "chrome_auto" {
-		return nil, fmt.Errorf("invalid tls_fingerprint: %q (supported: chrome, chrome_auto)", cfg.TLSFingerprint)
-	}
-
-	// Validate HealthPort — must be loopback for security (design invariant)
-	if cfg.HealthPort != "" {
-		if !strings.HasPrefix(cfg.HealthPort, "127.0.0.1:") &&
-			!strings.HasPrefix(cfg.HealthPort, "localhost:") &&
-			!strings.HasPrefix(cfg.HealthPort, "[::1]:") {
-			return nil, fmt.Errorf("health_port must be loopback (127.0.0.1, localhost, or [::1]), got %q", cfg.HealthPort)
-		}
-	}
-
-	// Store decoded keys for use by transport layer
-	cfg.EncKeyDecoded = key
-	cfg.HMacKeyDecoded = hmacKey
-
 	return &cfg, nil
 }
 
@@ -293,25 +304,8 @@ func LoadEncrypted(path, password string) (*AppConfig, error) {
 	if err := json.Unmarshal(plaintext, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse decrypted config JSON: %w", err)
 	}
-	if cfg.EncKey != "" {
-		key, err := base64.StdEncoding.DecodeString(cfg.EncKey)
-		if err != nil {
-			return nil, fmt.Errorf("invalid enc_key in encrypted config: %w", err)
-		}
-		if len(key) != 32 {
-			return nil, fmt.Errorf("invalid enc_key length: %d", len(key))
-		}
-		cfg.EncKeyDecoded = key
-	}
-	if cfg.HMacKey != "" {
-		hmacKey, err := base64.StdEncoding.DecodeString(cfg.HMacKey)
-		if err != nil {
-			return nil, fmt.Errorf("invalid hmac_key in encrypted config: %w", err)
-		}
-		if len(hmacKey) != 32 {
-			return nil, fmt.Errorf("invalid hmac_key length: %d", len(hmacKey))
-		}
-		cfg.HMacKeyDecoded = hmacKey
+	if err := ValidateAppConfig(&cfg); err != nil {
+		return nil, err
 	}
 	return &cfg, nil
 }

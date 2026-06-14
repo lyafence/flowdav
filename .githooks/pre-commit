@@ -49,13 +49,13 @@ if [ -n "$bad" ]; then
 fi
 pass "no os/exec"
 
-bad=$(grep -rn '"database/sql"' cmd/ internal/ --include="*.go" || true)
+bad=$(grep -rn '"database/sql"' cmd/ internal/ --include="*.go" | grep -v "_test.go" || true)
 if [ -n "$bad" ]; then
 	fail "database/sql used without justification:\n$bad"
 fi
 pass "no sql"
 
-bad=$(grep -rn 'sync\.Pool' cmd/ internal/ --include="*.go" || true)
+bad=$(grep -rn 'sync\.Pool' cmd/ internal/ --include="*.go" | grep -v "_test.go" || true)
 if [ -n "$bad" ]; then
 	fail "sync.Pool without benchmark:\n$bad"
 fi

@@ -19,7 +19,7 @@ func (s *Session) wakeupTx() {
 	close(ch)
 }
 
-// Direction indicates if a file is req (client to server) or res (server to client)
+// Direction indicates if a file is rq (client to server) or rs (server to client)
 type Direction string
 
 const (

@@ -55,7 +55,7 @@ func TestParseConfigJSON(t *testing.T) {
 		{"invalid JSON", []byte(`{bad`), "invalid character"},
 		{"bad enc_key", makeCfg("!!!", validKey), "invalid enc_key:"},
 		{"bad hmac_key", makeCfg(validKey, "!!!"), "invalid hmac_key:"},
-		{"short key", makeCfg(base64.StdEncoding.EncodeToString(make([]byte, 16)), validKey), "enc_key must be 32 bytes, got 16"},
+		{"short key", makeCfg(base64.StdEncoding.EncodeToString(make([]byte, 16)), validKey), "invalid enc_key: must be 32 bytes"},
 	}
 
 	for _, tt := range tests {

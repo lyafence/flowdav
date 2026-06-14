@@ -86,9 +86,9 @@ services:
     networks:
       - flow-net
 
-  flow-server:
+  flowdav-server:
     image: localhost/flowdav:latest
-    container_name: flow-server
+    container_name: flowdav-server
     stop_grace_period: 10s
     mem_limit: 64m
     depends_on:
@@ -109,15 +109,15 @@ services:
     networks:
       - flow-net
 
-  flow-client:
+  flowdav-client:
     image: localhost/flowdav:latest
-    container_name: flow-client
+    container_name: flowdav-client
     stop_grace_period: 10s
     mem_limit: 64m
     depends_on:
       webdav-single:
         condition: service_healthy
-      flow-server:
+      flowdav-server:
         condition: service_healthy
     volumes:
       - ./configs/flowdav_test.json:/app/configs/flowdav_test.json:Z
@@ -137,9 +137,9 @@ services:
       - flow-net
 
   # Multi-backend WebDAV tests
-  flow-server-multi:
+  flowdav-server-multi:
     image: localhost/flowdav:latest
-    container_name: flow-server-multi
+    container_name: flowdav-server-multi
     stop_grace_period: 10s
     mem_limit: 64m
     depends_on:
@@ -164,9 +164,9 @@ services:
     networks:
       - flow-net
 
-  flow-client-multi:
+  flowdav-client-multi:
     image: localhost/flowdav:latest
-    container_name: flow-client-multi
+    container_name: flowdav-client-multi
     stop_grace_period: 10s
     mem_limit: 64m
     depends_on:
@@ -176,7 +176,7 @@ services:
         condition: service_healthy
       webdav-multi-3:
         condition: service_healthy
-      flow-server-multi:
+      flowdav-server-multi:
         condition: service_healthy
     volumes:
       - ./configs/flowdav_test_multi.json:/app/configs/flowdav_test_multi.json:Z
