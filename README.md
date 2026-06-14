@@ -231,6 +231,10 @@ Each archive contains: a single `flowdav` binary (unified: client, server, encry
 
 Run `flowdav --version` to print the release version; `flowdav --help` for all modes.
 
+## Similar Projects
+
+- [webdav-tunnel](https://github.com/spkprsnts/webdav-tunnel) — TCP tunnel over WebDAV with self-hosted mode (embedded server) and yamux multiplexing. Uses a different wire protocol and is **not compatible** with flowdav.
+
 ## License
 
 MIT — see [LICENSE](./LICENSE) for details.
