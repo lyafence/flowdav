@@ -379,9 +379,15 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 			}
 		}()
 		if err := server.Serve(listener); err != nil && !errors.Is(err, net.ErrClosed) {
-			socksErrCh <- err
 			mu.Lock()
+			if socksErrCh != nil {
+				select {
+				case socksErrCh <- err:
+				default:
+				}
+			}
 			lastError = err.Error()
+			stopLocked()
 			mu.Unlock()
 			logEvent("SOCKS5 error: %v", err)
 		}
@@ -442,6 +448,20 @@ func GetStatus() *Status {
 	return s
 }
 
+// StopAndError returns a deferred error that occurred after a successful
+// StartProxy* call.
+//
+// Two-phase error protocol:
+//
+//	Phase 1 — StartProxyFromData / StartProxyManual returns error synchronously
+//	           (Go error → Java exception thrown by gomobile).
+//	Phase 2 — If phase 1 succeeds but the SOCKS5 goroutine fails shortly
+//	           after, StopAndError reads the deferred error from socksErrCh
+//	           (filled by the SOCKS5 serve goroutine at line 381).
+//
+// Kotlin caller (MainActivity / ProxyManager) uses this sequence:
+//
+//	try { proxy.StartProxy*(...); if (!GetStatus().running) { err = StopAndError() } }
 func StopAndError() string {
 	mu.Lock()
 	defer mu.Unlock()
