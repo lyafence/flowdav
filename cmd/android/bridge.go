@@ -94,6 +94,20 @@ func (rawResolver) Resolve(ctx context.Context, name string) (context.Context, n
 	return ctx, nil, nil
 }
 
+// isLoopbackAddr reports whether addr is a loopback TCP address
+// (127.0.0.1, ::1, or localhost).
+func isLoopbackAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 func generateSessionID() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
@@ -223,6 +237,9 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 
 	logger.SetLevel(appCfg.LogLevel)
 	logEvent("Starting proxy on %s (WebDAV: %s)", listenAddr, appCfg.WebDAV.URL)
+	if (appCfg.SOCKS5User == "" || appCfg.SOCKS5Pass == "") && !isLoopbackAddr(listenAddr) {
+		logEvent("Warning: SOCKS5 listening on %s without authentication", listenAddr)
+	}
 
 	if pendingSocks5User != "" {
 		appCfg.SOCKS5User = pendingSocks5User

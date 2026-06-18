@@ -44,6 +44,20 @@ func (rawResolver) Resolve(ctx context.Context, name string) (context.Context, n
 	return ctx, nil, nil
 }
 
+// isLoopbackAddr reports whether addr is a loopback TCP address
+// (127.0.0.1, ::1, or localhost).
+func isLoopbackAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 func main() {
 	password, askInteractive, cleanArgs := config.ResolvePassword(os.Args[1:])
 	os.Args = append([]string{os.Args[0]}, cleanArgs...)
@@ -226,6 +240,9 @@ func runClient(configPath, password, logLevel string, askInteractive bool) {
 	listenAddr := appCfg.ListenAddr
 	if listenAddr == "" {
 		listenAddr = "127.0.0.1:1080"
+	}
+	if (appCfg.SOCKS5User == "" || appCfg.SOCKS5Pass == "") && !isLoopbackAddr(listenAddr) {
+		logger.Warn("SOCKS5 listening on non-loopback address %s without authentication", listenAddr)
 	}
 
 	maxConns := appCfg.MaxConnections

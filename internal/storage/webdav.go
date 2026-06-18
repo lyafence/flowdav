@@ -130,6 +130,14 @@ func isCrossOrigin(a, b *url.URL) bool {
 	return a.Scheme != b.Scheme || a.Host != b.Host
 }
 
+// isCGNAT reports whether ip belongs to the carrier-grade NAT shared
+// address space (100.64.0.0/10, RFC 6598). Go's IsPrivate does not
+// cover this range, so an explicit check is required.
+func isCGNAT(ip net.IP) bool {
+	v4 := ip.To4()
+	return v4 != nil && v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127
+}
+
 // cryptoRandInt returns a non-negative random int in [0, max) using crypto/rand.
 // Uses rejection sampling to avoid modulo bias when max does not divide 256.
 // Currently called only with max ∈ {2, 4} where no rejection is needed.
@@ -321,14 +329,14 @@ func validateNotPrivateURL(rawURL string) error {
 		}
 		for _, addr := range addrs {
 			ip = net.ParseIP(addr)
-			if ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified()) {
+			if ip != nil && (ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsPrivate() || ip.IsUnspecified() || isCGNAT(ip)) {
 				return fmt.Errorf("WebDAV URL cannot point to private/loopback IP: %s (resolved from %s)", ip, host)
 			}
 		}
 		return nil
 	}
 
-	if ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() {
+	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsPrivate() || ip.IsUnspecified() || isCGNAT(ip) {
 		return fmt.Errorf("WebDAV URL cannot point to private/loopback IP: %s", ip)
 	}
 

@@ -2,6 +2,7 @@ package transport
 
 import (
 	"bytes"
+	"encoding/binary"
 	"io"
 	"testing"
 )
@@ -260,6 +261,56 @@ func TestDecodeWithNilCrypto(t *testing.T) {
 	}
 	if decoded.SessionID != env.SessionID {
 		t.Errorf("SessionID mismatch")
+	}
+}
+
+// TestDecodeLargePayload rejects a payload length header that exceeds
+// MaxMessageSize on both 32-bit and 64-bit builds in the no-crypto path.
+func TestDecodeLargePayload(t *testing.T) {
+	var buf bytes.Buffer
+	buf.WriteByte(MagicByte)
+	buf.WriteByte(VersionByte)
+	// SessionID length = 0
+	buf.WriteByte(0)
+	buf.WriteByte(0)
+	// Seq = 0
+	buf.Write([]byte{0, 0, 0, 0, 0, 0, 0, 0})
+	// TargetAddr length = 0
+	buf.WriteByte(0)
+	buf.WriteByte(0)
+	// Close = false
+	buf.WriteByte(0)
+	// Payload length = 0x80000000 (2 GB)
+	plen := make([]byte, 4)
+	binary.BigEndian.PutUint32(plen, 0x80000000)
+	buf.Write(plen)
+
+	env := &Envelope{}
+	if err := env.Decode(&buf); err == nil {
+		t.Fatal("expected error for oversized payload length")
+	}
+}
+
+// TestDecodeEnvelopeWithCryptoLargeLength rejects a length header that
+// exceeds MaxMessageSize on both 32-bit and 64-bit builds. Before the fix,
+// the int(dataLen) comparison wrapped on 32-bit and allowed an OOM allocation.
+func TestDecodeEnvelopeWithCryptoLargeLength(t *testing.T) {
+	cfg := &CryptoConfig{
+		EncKey:  make([]byte, 32),
+		HMacKey: make([]byte, 32),
+	}
+
+	// 0x80000000 (2 GB) is larger than MaxMessageSize and, on 32-bit,
+	// wraps to a negative int. The uint32 comparison must reject it.
+	buf := make([]byte, 4)
+	binary.BigEndian.PutUint32(buf, 0x80000000)
+
+	_, err := DecodeEnvelopeWithCrypto(bytes.NewReader(buf), cfg)
+	if err == nil {
+		t.Fatal("expected error for oversized length header")
+	}
+	if !bytes.Contains([]byte(err.Error()), []byte("too large")) {
+		t.Fatalf("expected 'too large' error, got: %v", err)
 	}
 }
 

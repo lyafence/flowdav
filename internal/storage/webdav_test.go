@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -89,6 +90,10 @@ func TestIsLocalURL(t *testing.T) {
 		{"http://localhost:8080", true},
 		{"http://127.0.0.1:8080", true},
 		{"https://example.com", false},
+		// Link-local and CGNAT are not "local" for the HTTP/SSRF exemption;
+		// they must still pass HTTPS and validateNotPrivateURL.
+		{"http://169.254.169.254:80/", false},
+		{"http://100.64.0.1:8080/", false},
 	}
 	for _, tt := range tests {
 		result := isLocalURL(tt.url)
@@ -99,19 +104,47 @@ func TestIsLocalURL(t *testing.T) {
 }
 
 func TestValidateNotPrivateURL(t *testing.T) {
-	err := validateNotPrivateURL("https://192.168.1.1/path")
-	if err == nil {
-		t.Error("validateNotPrivateURL should reject private IP 192.168.1.1")
+	tests := []struct {
+		url     string
+		reject  bool
+		comment string
+	}{
+		{"https://192.168.1.1/path", true, "private IP 192.168.1.1"},
+		{"https://10.0.0.1/path", true, "private IP 10.0.0.1"},
+		{"https://127.0.0.1/path", true, "loopback 127.0.0.1"},
+		{"https://169.254.169.254/path", true, "link-local metadata IP"},
+		{"https://100.64.0.1/path", true, "CGNAT shared address space"},
+		{"https://1.1.1.1/path", false, "public IP"},
+		{"https://example.com/path", false, "public hostname"},
 	}
-
-	err = validateNotPrivateURL("https://10.0.0.1/path")
-	if err == nil {
-		t.Error("validateNotPrivateURL should reject private IP 10.0.0.1")
+	for _, tt := range tests {
+		err := validateNotPrivateURL(tt.url)
+		if tt.reject && err == nil {
+			t.Errorf("validateNotPrivateURL should reject %s (%s)", tt.url, tt.comment)
+		}
+		if !tt.reject && err != nil {
+			t.Errorf("validateNotPrivateURL should accept %s (%s): %v", tt.url, tt.comment, err)
+		}
 	}
+}
 
-	err = validateNotPrivateURL("https://127.0.0.1/path")
-	if err == nil {
-		t.Error("validateNotPrivateURL should reject loopback 127.0.0.1")
+func TestIsCGNAT(t *testing.T) {
+	tests := []struct {
+		ip   string
+		want bool
+	}{
+		{"100.64.0.0", true},
+		{"100.64.0.1", true},
+		{"100.127.255.255", true},
+		{"100.63.255.255", false},
+		{"100.128.0.1", false},
+		{"1.1.1.1", false},
+	}
+	for _, tt := range tests {
+		got := isCGNAT(net.ParseIP(tt.ip))
+		if got != tt.want {
+			t.Errorf("isCGNAT(%s) = %v, want %v", tt.ip, got, tt.want)
+		}
 	}
 }
 

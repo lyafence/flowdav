@@ -141,8 +141,9 @@ func DecodeEnvelopeWithCrypto(r io.Reader, cfg *CryptoConfig) (*Envelope, error)
 	}
 	dataLen := binary.BigEndian.Uint32(lenBuf)
 
-	// Validate dataLen to prevent overflow and OOM
-	if int(dataLen) > MaxMessageSize {
+	// Validate dataLen to prevent overflow and OOM. Compare as uint32 before
+	// converting to int so 32-bit builds cannot bypass the check via sign wrap.
+	if dataLen > uint32(MaxMessageSize) {
 		return nil, fmt.Errorf("message too large: %d bytes (max %d)", dataLen, MaxMessageSize)
 	}
 	if dataLen < 32 {
