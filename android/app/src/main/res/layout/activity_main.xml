@@ -36,11 +36,22 @@
                     android:contentDescription="@string/status_dot_desc"
                     android:importantForAccessibility="yes" />
 
+                <com.google.android.material.progressindicator.CircularProgressIndicator
+                    android:id="@+id/connectingProgress"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:layout_marginEnd="12dp"
+                    android:visibility="gone"
+                    android:indeterminate="true"
+                    app:indicatorColor="?attr/colorTertiary"
+                    app:trackThickness="3dp" />
+
                 <TextView
                     android:id="@+id/statusText"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
+                    android:accessibilityLiveRegion="polite"
                     android:text="@string/status_stopped"
                     android:textAppearance="?attr/textAppearanceTitleLarge" />
 
@@ -163,58 +174,46 @@
                     android:layout_marginBottom="12dp" />
 
                 <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/webdavUrlLayout"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    style="@style/Widget.Material3.TextInputLayout.FilledBox"
-                    app:boxCornerRadiusTopStart="4dp"
-                    app:boxCornerRadiusTopEnd="4dp"
-                    app:boxCornerRadiusBottomStart="0dp"
-                    app:boxCornerRadiusBottomEnd="0dp">
+                    android:hint="@string/webdav_url">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/webdavUrlInput"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:hint="@string/webdav_url"
                         android:inputType="textUri" />
 
                 </com.google.android.material.textfield.TextInputLayout>
 
                 <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/webdavLoginLayout"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    style="@style/Widget.Material3.TextInputLayout.FilledBox"
-                    app:boxCornerRadiusTopStart="4dp"
-                    app:boxCornerRadiusTopEnd="4dp"
-                    app:boxCornerRadiusBottomStart="0dp"
-                    app:boxCornerRadiusBottomEnd="0dp">
+                    android:hint="@string/webdav_login">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/webdavLoginInput"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:hint="@string/webdav_login"
                         android:inputType="text" />
 
                 </com.google.android.material.textfield.TextInputLayout>
 
                 <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/webdavTokenLayout"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    style="@style/Widget.Material3.TextInputLayout.FilledBox"
-                    app:boxCornerRadiusTopStart="4dp"
-                    app:boxCornerRadiusTopEnd="4dp"
-                    app:boxCornerRadiusBottomStart="0dp"
-                    app:boxCornerRadiusBottomEnd="0dp"
+                    android:hint="@string/webdav_token"
                     app:endIconMode="password_toggle">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/webdavTokenInput"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:hint="@string/webdav_token"
                         android:inputType="textPassword" />
 
                 </com.google.android.material.textfield.TextInputLayout>
@@ -231,19 +230,15 @@
                     android:id="@+id/encKeyLayout"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    style="@style/Widget.Material3.TextInputLayout.FilledBox"
-                    app:boxCornerRadiusTopStart="4dp"
-                    app:boxCornerRadiusTopEnd="4dp"
-                    app:boxCornerRadiusBottomStart="0dp"
-                    app:boxCornerRadiusBottomEnd="0dp"
+                    android:hint="@string/enc_key"
                     app:endIconMode="custom"
-                    app:endIconDrawable="@drawable/ic_paste">
+                    app:endIconDrawable="@drawable/ic_paste"
+                    app:endIconContentDescription="@string/paste_desc">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/encKeyInput"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:hint="@string/enc_key"
                         android:inputType="text" />
 
                 </com.google.android.material.textfield.TextInputLayout>
@@ -253,19 +248,15 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    style="@style/Widget.Material3.TextInputLayout.FilledBox"
-                    app:boxCornerRadiusTopStart="4dp"
-                    app:boxCornerRadiusTopEnd="4dp"
-                    app:boxCornerRadiusBottomStart="0dp"
-                    app:boxCornerRadiusBottomEnd="0dp"
+                    android:hint="@string/hmac_key"
                     app:endIconMode="custom"
-                    app:endIconDrawable="@drawable/ic_paste">
+                    app:endIconDrawable="@drawable/ic_paste"
+                    app:endIconContentDescription="@string/paste_desc">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/hmacKeyInput"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:hint="@string/hmac_key"
                         android:inputType="text" />
 
                 </com.google.android.material.textfield.TextInputLayout>
@@ -328,15 +319,15 @@
                     android:visibility="gone">
 
                     <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/listenAddrLayout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+                        android:hint="@string/listen_addr">
 
                         <com.google.android.material.textfield.TextInputEditText
                             android:id="@+id/listenAddrInput"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:hint="@string/listen_addr"
                             android:inputType="text" />
 
                     </com.google.android.material.textfield.TextInputLayout>
@@ -350,39 +341,31 @@
                         android:layout_marginBottom="8dp" />
 
                     <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/socks5UserLayout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                        app:boxCornerRadiusTopStart="4dp"
-                        app:boxCornerRadiusTopEnd="4dp"
-                        app:boxCornerRadiusBottomStart="0dp"
-                        app:boxCornerRadiusBottomEnd="0dp">
+                        android:hint="@string/socks5_user">
 
                         <com.google.android.material.textfield.TextInputEditText
                             android:id="@+id/socks5UserInput"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:hint="@string/socks5_user"
                             android:inputType="text" />
 
                     </com.google.android.material.textfield.TextInputLayout>
 
                     <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/socks5PassLayout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                        app:boxCornerRadiusTopStart="4dp"
-                        app:boxCornerRadiusTopEnd="4dp"
-                        app:boxCornerRadiusBottomStart="0dp"
-                        app:boxCornerRadiusBottomEnd="0dp"
+                        android:hint="@string/socks5_pass"
                         app:endIconMode="password_toggle">
 
                         <com.google.android.material.textfield.TextInputEditText
                             android:id="@+id/socks5PassInput"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:hint="@string/socks5_pass"
                             android:inputType="textPassword" />
 
                     </com.google.android.material.textfield.TextInputLayout>
@@ -398,7 +381,8 @@
             android:id="@+id/actionButton"
             style="?attr/materialButtonStyle"
             android:layout_width="match_parent"
-            android:layout_height="56dp"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
             android:layout_marginTop="4dp"
             android:text="@string/start_proxy"
             android:textAppearance="?attr/textAppearanceLabelLarge"
@@ -433,7 +417,8 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
-                    android:textColor="?attr/colorOnSurface" />
+                    android:textColor="?attr/colorOnSurface"
+                    android:contentDescription="@string/address_label" />
             </LinearLayout>
 
             <LinearLayout
@@ -455,7 +440,8 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
-                    android:textColor="?attr/colorOnSurface" />
+                    android:textColor="?attr/colorOnSurface"
+                    android:contentDescription="@string/sessions_label" />
             </LinearLayout>
 
             <LinearLayout
@@ -477,7 +463,8 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
-                    android:textColor="?attr/colorOnSurface" />
+                    android:textColor="?attr/colorOnSurface"
+                    android:contentDescription="@string/uptime_label" />
             </LinearLayout>
 
         </LinearLayout>
@@ -516,18 +503,18 @@
                     android:padding="8dp" />
             </LinearLayout>
 
-            <TextView
-                android:id="@+id/logText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:maxLines="15"
-                android:gravity="start"
-                android:fontFamily="monospace"
-                android:lineSpacingExtra="2dp"
-                android:textAppearance="?attr/textAppearanceBodySmall"
-                android:textColor="?attr/colorOnSurfaceVariant"
-                android:textSize="11sp" />
+                <TextView
+                    android:id="@+id/logText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:maxLines="15"
+                    android:gravity="start"
+                    android:fontFamily="monospace"
+                    android:lineSpacingExtra="2dp"
+                    android:textIsSelectable="true"
+                    android:textAppearance="?attr/textAppearanceBodySmall"
+                    android:textColor="?attr/colorOnSurfaceVariant" />
         </LinearLayout>
 
     </LinearLayout>
