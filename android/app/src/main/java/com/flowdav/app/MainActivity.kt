@@ -21,7 +21,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.flowdav.app.databinding.ActivityMainBinding
-import com.flowdav.app.flowdavmobile.Flowdavmobile
+
 import com.google.android.material.color.DynamicColors
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.snackbar.Snackbar
@@ -126,7 +126,7 @@ class MainActivity : AppCompatActivity() {
         val savedUri = getPrefs().getString(PREF_URI, null)
         if (savedUri != null) {
             fileUri = android.net.Uri.parse(savedUri)
-            refreshFileInfo(fileUri)
+            fileUri?.let { refreshFileInfo(it) }
         }
 
         b.passwordInput.setText(getPrefs().getString(PREF_PASSWORD, ""))

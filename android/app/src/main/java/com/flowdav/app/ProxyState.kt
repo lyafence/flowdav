@@ -2,7 +2,7 @@ package com.flowdav.app
 
 data class ProxyState(
     val running: Boolean = false,
-    val sessions: Int = 0,
+    val sessions: Long = 0L,
     val listenAddr: String = "",
     val logs: String = "",
     val error: String? = null,

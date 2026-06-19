@@ -126,9 +126,11 @@ class ProxyManager(
                 delay(1000)
                 val s = Flowdavmobile.getStatus() ?: continue
                 if (!s.running) {
-                    Flowdavmobile.stopAndError()
+                    val deferredErr = Flowdavmobile.stopAndError()
+                    val errorMsg = s.error?.ifEmpty { null } ?: deferredErr.ifEmpty { null }
                     _state.value = ProxyState(
-                        status = ProxyState.Status.STOPPED
+                        status = if (errorMsg != null) ProxyState.Status.ERROR else ProxyState.Status.STOPPED,
+                        error = errorMsg
                     )
                     return@launch
                 }
