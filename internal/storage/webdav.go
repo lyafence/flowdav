@@ -138,24 +138,24 @@ func isCGNAT(ip net.IP) bool {
 	return v4 != nil && v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127
 }
 
-// cryptoRandInt returns a non-negative random int in [0, max) using crypto/rand.
-// Uses rejection sampling to avoid modulo bias when max does not divide 256.
-// Currently called only with max ∈ {2, 4} where no rejection is needed.
-func cryptoRandInt(max int) int {
-	if max <= 0 {
+// cryptoRandInt returns a non-negative random int in [0, n) using crypto/rand.
+// Uses rejection sampling to avoid modulo bias when n does not divide 256.
+// Currently called only with n ∈ {2, 4} where no rejection is needed.
+func cryptoRandInt(n int) int {
+	if n <= 0 {
 		return 0
 	}
-	// When max evenly divides 256, modulo has no bias.
-	if 256%max == 0 {
+	// When n evenly divides 256, modulo has no bias.
+	if 256%n == 0 {
 		var b [1]byte
 		if _, err := rand.Read(b[:]); err != nil {
 			logger.Info("cryptoRandInt rand read error: %v", err)
 			return 0
 		}
-		return int(b[0]) % max
+		return int(b[0]) % n
 	}
 	// Rejection sampling for general case.
-	mask := byte(256 - (256 % max))
+	mask := byte(256 - (256 % n))
 	for {
 		var b [1]byte
 		if _, err := rand.Read(b[:]); err != nil {
@@ -163,7 +163,7 @@ func cryptoRandInt(max int) int {
 			return 0
 		}
 		if b[0] < mask {
-			return int(b[0]) % max
+			return int(b[0]) % n
 		}
 	}
 }
@@ -383,7 +383,7 @@ func (w *WebDAVBackend) fullPath(name string) (string, error) {
 	return path.Join(w.basePath, name), nil
 }
 
-func (w *WebDAVBackend) Login(ctx context.Context) error {
+func (w *WebDAVBackend) Login(_ context.Context) error {
 	// Create basePath + subdirectories
 	dirs := []string{w.basePath}
 	if w.basePath != "" {
@@ -406,7 +406,7 @@ func (w *WebDAVBackend) Login(ctx context.Context) error {
 	return nil
 }
 
-func (w *WebDAVBackend) ListQuery(ctx context.Context, prefix string) ([]FileEntry, error) {
+func (w *WebDAVBackend) ListQuery(_ context.Context, prefix string) ([]FileEntry, error) {
 	// Map direction prefix → subdirectory
 	var sub string
 	switch prefix {
@@ -440,6 +440,7 @@ func (w *WebDAVBackend) ListQuery(ctx context.Context, prefix string) ([]FileEnt
 }
 
 func (w *WebDAVBackend) Upload(ctx context.Context, filename string, data io.Reader) error {
+	_ = ctx
 	full, err := w.fullPath(filename)
 	if err != nil {
 		return fmt.Errorf("upload error: %w", err)
@@ -539,6 +540,7 @@ func newMaxSizeReader(rc io.ReadCloser, maxSize int) io.ReadCloser {
 }
 
 func (w *WebDAVBackend) Delete(ctx context.Context, filename string) error {
+	_ = ctx
 	full, err := w.fullPath(filename)
 	if err != nil {
 		return fmt.Errorf("delete error: %w", err)
@@ -547,6 +549,7 @@ func (w *WebDAVBackend) Delete(ctx context.Context, filename string) error {
 }
 
 func (w *WebDAVBackend) UploadByIndex(ctx context.Context, filename string, data io.Reader, idx uint8) error {
+	_ = idx
 	return w.Upload(ctx, filename, data)
 }
 
@@ -555,5 +558,6 @@ func (w *WebDAVBackend) UploadAny(ctx context.Context, filename string, data io.
 }
 
 func (w *WebDAVBackend) DownloadByIndex(ctx context.Context, filename string, idx uint8) (io.ReadCloser, error) {
+	_ = idx
 	return w.Download(ctx, filename)
 }

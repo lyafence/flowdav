@@ -3,11 +3,14 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -366,4 +369,45 @@ func TestRandBackendIndex(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestMultiBackend429RateLimit(t *testing.T) {
+	mock1 := &mockBackend{}
+	multi := NewMultiBackend([]Backend{mock1})
+
+	err429 := &HTTPError{Code: http.StatusTooManyRequests, Err: fmt.Errorf("rate limited")}
+	multi.mu.Lock()
+	multi.recordFailure(0, err429)
+	multi.mu.Unlock()
+
+	multi.mu.Lock()
+	ok, expired := multi.isAvailable(0)
+	failures := multi.health[0].failures
+	multi.mu.Unlock()
+
+	assert.False(t, ok, "backend should be unavailable due to rate limit")
+	assert.False(t, expired, "rate limit should not report cooldown expired")
+	assert.Equal(t, 0, failures, "429 must NOT increment failure count")
+
+	multi.mu.Lock()
+	multi.health[0].rateLimitedUntil = time.Now().Add(-time.Second)
+	multi.mu.Unlock()
+
+	multi.mu.Lock()
+	ok, expired = multi.isAvailable(0)
+	failures = multi.health[0].failures
+	multi.mu.Unlock()
+
+	assert.True(t, ok, "backend should recover after rate-limit cooldown")
+	assert.False(t, expired, "no cooldown expiry flag when there were no circuit breaker failures")
+	assert.Equal(t, 0, failures, "failures must still be 0 after rate limit")
+
+	multi.mu.Lock()
+	multi.recordFailure(0, errors.New("connection timeout"))
+	multi.mu.Unlock()
+
+	multi.mu.Lock()
+	failures = multi.health[0].failures
+	multi.mu.Unlock()
+	assert.Equal(t, 1, failures, "non-429 must increment failure count")
 }

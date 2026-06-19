@@ -157,12 +157,12 @@ func (e *Engine) SetFlushRate(ms int) {
 	}
 }
 
-func (e *Engine) SetMaxSessions(max int) {
+func (e *Engine) SetMaxSessions(n int) {
 	e.sessionMu.Lock()
 	defer e.sessionMu.Unlock()
 	// Lock intentional: MaxSessions is read under sessionMu in pool.go.
 	// Other setters are called only before Start() and need no lock.
-	e.MaxSessions = max
+	e.MaxSessions = n
 }
 
 func (e *Engine) SetSessionIdleTimeout(ms int) {

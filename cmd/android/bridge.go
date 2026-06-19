@@ -2,19 +2,15 @@ package flowdavmobile
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"sync"
 	"time"
 
 	"github.com/things-go/go-socks5"
-	"github.com/things-go/go-socks5/statute"
 
 	"github.com/lyafence/flowdav/internal/config"
 	"github.com/lyafence/flowdav/internal/logger"
@@ -86,34 +82,6 @@ func wipeBytes(b []byte) {
 	for i := range b {
 		b[i] = 0
 	}
-}
-
-type rawResolver struct{}
-
-func (rawResolver) Resolve(ctx context.Context, name string) (context.Context, net.IP, error) {
-	return ctx, nil, nil
-}
-
-// isLoopbackAddr reports whether addr is a loopback TCP address
-// (127.0.0.1, ::1, or localhost).
-func isLoopbackAddr(addr string) bool {
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		return false
-	}
-	if host == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
-}
-
-func generateSessionID() string {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		panic("crypto/rand read failed: " + err.Error())
-	}
-	return hex.EncodeToString(b)
 }
 
 type Status struct {
@@ -237,10 +205,6 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 
 	logger.SetLevel(appCfg.LogLevel)
 	logEvent("Starting proxy on %s (WebDAV: %s)", listenAddr, appCfg.WebDAV.URL)
-	if (appCfg.SOCKS5User == "" || appCfg.SOCKS5Pass == "") && !isLoopbackAddr(listenAddr) {
-		logEvent("Warning: SOCKS5 listening on %s without authentication", listenAddr)
-	}
-
 	if pendingSocks5User != "" {
 		appCfg.SOCKS5User = pendingSocks5User
 		appCfg.SOCKS5Pass = pendingSocks5Pass
@@ -295,62 +259,20 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 		logEvent("Session %s ended", sessionID)
 	}
 
-	maxConns := appCfg.MaxConnections
-	if maxConns <= 0 {
-		maxConns = 100
-	}
-	connLimit := make(chan struct{}, maxConns)
-
-	serverOpts := []socks5.Option{
-		socks5.WithDial(func(dc context.Context, network, addr string) (net.Conn, error) {
-			sessionID := generateSessionID()
-			select {
-			case connLimit <- struct{}{}:
-			default:
-				return nil, transport.ErrTooManyConns
-			}
-			released := false
-			defer func() {
-				if !released {
-					<-connLimit
-				}
-			}()
-			session := transport.NewSession(sessionID)
-			session.TargetAddr = addr
-			if host, port, err := net.SplitHostPort(addr); err == nil {
-				if net.ParseIP(host) != nil {
-					logger.Info("New covert session %s targeting RAW IP %s:%s (Warning: Local DNS Leak?)", sessionID, host, port)
-				} else {
-					logger.Info("New covert session %s targeting SECURE DOMAIN %s:%s", sessionID, host, port)
-				}
-			}
-			if multiBackend != nil {
-				session.BackendIdx = uint8(storage.RandBackendIndex(multiBackend.NumBackends()))
-				logger.Info("Session %s assigned to backend %d", sessionID, session.BackendIdx)
-			}
-			engine.AddSession(session)
-			session.EnqueueTx(nil)
-			released = true
-			return transport.NewVirtualConnWithOnClose(session, engine, func() { <-connLimit }), nil
-		}),
-		socks5.WithAssociateHandle(func(ctx context.Context, w io.Writer, req *socks5.Request) error {
-			socks5.SendReply(w, statute.RepCommandNotSupported, nil)
-			return fmt.Errorf("UDP not supported")
-		}),
-		socks5.WithResolver(rawResolver{}),
-	}
-
-	if appCfg.SOCKS5User != "" && appCfg.SOCKS5Pass != "" {
-		creds := socks5.StaticCredentials{appCfg.SOCKS5User: appCfg.SOCKS5Pass}
-		serverOpts = append(serverOpts, socks5.WithAuthMethods([]socks5.Authenticator{
-			socks5.UserPassAuthenticator{Credentials: creds},
-		}))
-		logEvent("SOCKS5 authentication enabled for user: %s", appCfg.SOCKS5User)
-	} else {
-		serverOpts = append(serverOpts, socks5.WithAuthMethods([]socks5.Authenticator{
-			socks5.NoAuthAuthenticator{},
-		}))
-		logEvent("Warning: SOCKS5 running without authentication")
+	serverOpts, err := transport.NewSocks5Options(transport.Socks5Config{
+		ListenAddr:   listenAddr,
+		User:         appCfg.SOCKS5User,
+		Pass:         appCfg.SOCKS5Pass,
+		MaxConns:     appCfg.MaxConnections,
+		Engine:       engine,
+		MultiBackend: multiBackend,
+		LogFn:        logEvent,
+	})
+	if err != nil {
+		engine.Stop()
+		ctxCancel()
+		logger.Error("SOCKS5 options: %v", err)
+		return fmt.Errorf("SOCKS5 options: %w", err)
 	}
 
 	server := socks5.NewServer(serverOpts...)

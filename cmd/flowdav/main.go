@@ -2,13 +2,10 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"net/http"
@@ -19,7 +16,6 @@ import (
 	"time"
 
 	"github.com/things-go/go-socks5"
-	"github.com/things-go/go-socks5/statute"
 	"golang.org/x/term"
 
 	"github.com/lyafence/flowdav/internal/config"
@@ -29,34 +25,6 @@ import (
 )
 
 var version = "dev"
-
-func generateSessionID() string {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		panic("crypto/rand read failed: " + err.Error())
-	}
-	return hex.EncodeToString(b)
-}
-
-type rawResolver struct{}
-
-func (rawResolver) Resolve(ctx context.Context, name string) (context.Context, net.IP, error) {
-	return ctx, nil, nil
-}
-
-// isLoopbackAddr reports whether addr is a loopback TCP address
-// (127.0.0.1, ::1, or localhost).
-func isLoopbackAddr(addr string) bool {
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		return false
-	}
-	if host == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
-}
 
 func main() {
 	password, askInteractive, cleanArgs := config.ResolvePassword(os.Args[1:])
@@ -214,9 +182,9 @@ func runClient(configPath, password, logLevel string, askInteractive bool) {
 
 	if appCfg.HealthPort != "" {
 		mux := http.ServeMux{}
-		mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(engine.Stats())
+			_ = json.NewEncoder(w).Encode(engine.Stats())
 		})
 		ln, err := net.Listen("tcp", appCfg.HealthPort)
 		if err != nil {
@@ -241,74 +209,17 @@ func runClient(configPath, password, logLevel string, askInteractive bool) {
 	if listenAddr == "" {
 		listenAddr = "127.0.0.1:1080"
 	}
-	if (appCfg.SOCKS5User == "" || appCfg.SOCKS5Pass == "") && !isLoopbackAddr(listenAddr) {
-		logger.Warn("SOCKS5 listening on non-loopback address %s without authentication", listenAddr)
-	}
 
-	maxConns := appCfg.MaxConnections
-	if maxConns <= 0 {
-		maxConns = 100
-	}
-	connLimit := make(chan struct{}, maxConns)
-
-	serverOpts := []socks5.Option{
-		socks5.WithDial(func(dc context.Context, network, addr string) (net.Conn, error) {
-			sessionID := generateSessionID()
-
-			host, port, err := net.SplitHostPort(addr)
-			if err == nil {
-				if net.ParseIP(host) != nil {
-					logger.Info("New covert session %s targeting RAW IP %s:%s (Warning: Local DNS Leak?)", sessionID, host, port)
-				} else {
-					logger.Info("New covert session %s targeting SECURE DOMAIN %s:%s", sessionID, host, port)
-				}
-			} else {
-				logger.Info("New covert session %s targeting %s", sessionID, addr)
-			}
-
-			select {
-			case connLimit <- struct{}{}:
-			default:
-				return nil, transport.ErrTooManyConns
-			}
-			released := false
-			defer func() {
-				if !released {
-					<-connLimit
-				}
-			}()
-
-			session := transport.NewSession(sessionID)
-			session.TargetAddr = addr
-			if multiBackend != nil {
-				session.BackendIdx = uint8(storage.RandBackendIndex(multiBackend.NumBackends()))
-				logger.Info("Session %s assigned to backend %d", sessionID, session.BackendIdx)
-			}
-			engine.AddSession(session)
-
-			session.EnqueueTx(nil)
-
-			released = true
-			return transport.NewVirtualConnWithOnClose(session, engine, func() { <-connLimit }), nil
-		}),
-		socks5.WithAssociateHandle(func(ctx context.Context, w io.Writer, req *socks5.Request) error {
-			socks5.SendReply(w, statute.RepCommandNotSupported, nil)
-			return fmt.Errorf("covert UDP not supported")
-		}),
-		socks5.WithResolver(rawResolver{}),
-	}
-
-	if appCfg.SOCKS5User != "" && appCfg.SOCKS5Pass != "" {
-		credentials := socks5.StaticCredentials{appCfg.SOCKS5User: appCfg.SOCKS5Pass}
-		serverOpts = append(serverOpts, socks5.WithAuthMethods([]socks5.Authenticator{
-			socks5.UserPassAuthenticator{Credentials: credentials},
-		}))
-		logger.Info("SOCKS5 authentication enabled for user: %s", appCfg.SOCKS5User)
-	} else {
-		serverOpts = append(serverOpts, socks5.WithAuthMethods([]socks5.Authenticator{
-			socks5.NoAuthAuthenticator{},
-		}))
-		logger.Info("WARNING: SOCKS5 server running WITHOUT authentication. Anyone with network access can use this proxy!")
+	serverOpts, err := transport.NewSocks5Options(transport.Socks5Config{
+		ListenAddr:   listenAddr,
+		User:         appCfg.SOCKS5User,
+		Pass:         appCfg.SOCKS5Pass,
+		MaxConns:     appCfg.MaxConnections,
+		Engine:       engine,
+		MultiBackend: multiBackend,
+	})
+	if err != nil {
+		log.Fatalf("Failed to create SOCKS5 options: %v", err)
 	}
 
 	server := socks5.NewServer(serverOpts...)
@@ -413,9 +324,9 @@ func runServer(configPath, password, logLevel string, askInteractive bool) {
 
 	if appCfg.HealthPort != "" {
 		mux := http.ServeMux{}
-		mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(engine.Stats())
+			_ = json.NewEncoder(w).Encode(engine.Stats())
 		})
 		ln, err := net.Listen("tcp", appCfg.HealthPort)
 		if err != nil {
@@ -460,8 +371,8 @@ func handleServerConn(ctx context.Context, wg *sync.WaitGroup, sessionID, target
 		logger.Info("Dial error to %s: %v", targetAddr, err)
 		return
 	}
-	conn.SetKeepAlive(true)
-	conn.SetKeepAlivePeriod(30 * time.Second)
+	_ = conn.SetKeepAlive(true)
+	_ = conn.SetKeepAlivePeriod(30 * time.Second)
 	defer conn.Close()
 
 	done := make(chan struct{})
