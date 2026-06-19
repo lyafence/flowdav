@@ -47,7 +47,8 @@
     <string name="select_file_first">Please select a config file first</string>
     <string name="fill_all_fields">Please fill all fields</string>
     <string name="socks5_partial_error">Both SOCKS5 user and password are required, or leave both empty</string>
-    <string name="start_failed">Failed to start: %s</string>
+    <string name="error_required">This field is required</string>
+    <string name="error_invalid_listen">Must be in format IP:port, e.g. 127.0.0.1:1080</string>
 
     <!-- Notification -->
     <string name="proxy_notification_channel">Proxy Status</string>
@@ -72,6 +73,7 @@
     <string name="arrow_expanded">▲</string>
     <string name="logs_copied">Logs copied</string>
     <string name="version_prefix">v</string>
+    <string name="paste_desc">Paste from clipboard</string>
 
     <!-- Permission rationale -->
     <string name="notif_permission_title">Notification permission needed</string>

@@ -19,6 +19,11 @@ class ProxyService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) {
+            Flowdavmobile.stopProxy()
+            stopSelf()
+            return START_NOT_STICKY
+        }
         startForeground(NOTIFICATION_ID, buildNotification(getString(R.string.proxy_running)))
         return START_NOT_STICKY
     }
@@ -47,11 +52,10 @@ class ProxyService : Service() {
         val openPending = PendingIntent.getActivity(this, 0, openIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
-        val stopIntent = Intent(this, MainActivity::class.java).apply {
+        val stopIntent = Intent(this, ProxyService::class.java).apply {
             action = ACTION_STOP
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
-        val stopPending = PendingIntent.getActivity(this, 1, stopIntent,
+        val stopPending = PendingIntent.getService(this, 1, stopIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
@@ -72,6 +76,30 @@ class ProxyService : Service() {
         fun startRunning(context: Context) {
             val intent = Intent(context, ProxyService::class.java)
             context.startForegroundService(intent)
+        }
+
+        fun updateNotification(context: Context, addr: String, uptime: String) {
+            val intent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+            val openPending = PendingIntent.getActivity(context, 0, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            val stopIntent = Intent(context, ProxyService::class.java).apply {
+                action = ACTION_STOP
+            }
+            val stopPending = PendingIntent.getService(context, 1, stopIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+                .setContentTitle(context.getString(R.string.app_name))
+                .setContentText("$addr · $uptime")
+                .setSmallIcon(R.drawable.ic_launcher_monochrome)
+                .setOngoing(true)
+                .setContentIntent(openPending)
+                .addAction(android.R.drawable.ic_menu_close_clear_cancel,
+                    context.getString(R.string.notification_stop), stopPending)
+                .build()
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.notify(NOTIFICATION_ID, notification)
         }
     }
 }

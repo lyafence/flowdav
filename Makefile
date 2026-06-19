@@ -46,7 +46,7 @@ vet:
 
 vulncheck:
 	go install golang.org/x/vuln/cmd/govulncheck@latest
-	govulncheck ./...
+	PATH="$$(go env GOPATH)/bin:$$PATH" govulncheck ./...
 
 tidy:
 	go mod tidy -e

@@ -103,9 +103,10 @@ class ProxyManager(
             } else {
                 // Phase 2: deferred error (see bridge.go StopAndError doc)
                 val deferredErr = Flowdavmobile.stopAndError()
+                val errorMsg = status?.error?.ifEmpty { null } ?: deferredErr.ifEmpty { null }
                 _state.value = ProxyState(
                     status = ProxyState.Status.ERROR,
-                    error = deferredErr.ifEmpty { "unknown error" }
+                    error = errorMsg ?: "Failed to start"
                 )
             }
         }

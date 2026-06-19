@@ -12,6 +12,7 @@ import android.os.Bundle
 import android.provider.OpenableColumns
 import android.text.SpannableString
 import android.text.style.ForegroundColorSpan
+import android.transition.TransitionManager
 import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -26,6 +27,7 @@ import com.google.android.material.color.DynamicColors
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.textfield.TextInputEditText
+import java.net.InetSocketAddress
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -48,6 +50,7 @@ class MainActivity : AppCompatActivity() {
     private var isEncrypted = true
     private var pulseAnimator: ValueAnimator? = null
     private var proxyServiceStarted = false
+    private var autoScrollLogs = true
 
     private val notifPermLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -108,6 +111,13 @@ class MainActivity : AppCompatActivity() {
             b.manualSection.visibility = View.VISIBLE
             b.modeToggle.check(R.id.modeManual)
         }
+        savedInstanceState?.let { state ->
+            b.webdavUrlInput.setText(state.getString("webdavUrl", ""))
+            b.webdavLoginInput.setText(state.getString("webdavLogin", ""))
+            b.webdavTokenInput.setText(state.getString("webdavToken", ""))
+            b.encKeyInput.setText(state.getString("encKey", ""))
+            b.hmacKeyInput.setText(state.getString("hmacKey", ""))
+        }
 
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
         if (clipboard != null) {
@@ -118,10 +128,6 @@ class MainActivity : AppCompatActivity() {
         b.listenAddrInput.setText(DEFAULT_LISTEN_ADDR)
 
         setupListeners()
-
-        if (intent?.action == ProxyService.ACTION_STOP) {
-            stopProxy()
-        }
 
         val savedUri = getPrefs().getString(PREF_URI, null)
         if (savedUri != null) {
@@ -147,18 +153,16 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        if (intent.action == ProxyService.ACTION_STOP) {
-            stopProxy()
-        }
-    }
-
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putBoolean("isManualMode", isManualMode)
         outState.putBoolean("isEncrypted", isEncrypted)
         outState.putBoolean("advancedExpanded", b.advancedContent.visibility == View.VISIBLE)
+        outState.putString("webdavUrl", b.webdavUrlInput.text?.toString())
+        outState.putString("webdavLogin", b.webdavLoginInput.text?.toString())
+        outState.putString("webdavToken", b.webdavTokenInput.text?.toString())
+        outState.putString("encKey", b.encKeyInput.text?.toString())
+        outState.putString("hmacKey", b.hmacKeyInput.text?.toString())
     }
 
     private fun setupListeners() {
@@ -179,8 +183,14 @@ class MainActivity : AppCompatActivity() {
             b.configChip.setCloseIconVisible(false)
         }
 
+        b.contentScroll.viewTreeObserver.addOnScrollChangedListener {
+            val sv = b.contentScroll
+            autoScrollLogs = sv.getChildAt(0).bottom - (sv.height + sv.scrollY) <= 0
+        }
+
         b.advancedHeader.setOnClickListener {
             val expanded = b.advancedContent.visibility == View.VISIBLE
+            TransitionManager.beginDelayedTransition(b.advancedHeader)
             b.advancedContent.visibility = if (expanded) View.GONE else View.VISIBLE
             b.advancedArrow.text = if (expanded) getString(R.string.arrow_collapsed) else getString(R.string.arrow_expanded)
         }
@@ -206,22 +216,30 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startProxy() {
+        clearInputErrors()
+
+        var hasError = false
+
         val listenAddr = b.listenAddrInput.text?.toString()?.ifBlank { DEFAULT_LISTEN_ADDR }
             ?: DEFAULT_LISTEN_ADDR
+        try {
+            val addr = InetSocketAddress.createUnresolved(
+                listenAddr.substringBeforeLast(":"),
+                listenAddr.substringAfterLast(":").toInt()
+            )
+            if (addr.port < 1 || addr.port > 65535) throw NumberFormatException()
+        } catch (_: Exception) {
+            b.listenAddrLayout.error = getString(R.string.error_invalid_listen)
+            hasError = true
+        }
 
         val socks5User = b.socks5UserInput.text?.toString()?.ifBlank { null }
         val socks5Pass = b.socks5PassInput.text?.toString()?.ifBlank { null }
-
         if ((socks5User != null) != (socks5Pass != null)) {
-            Snackbar.make(b.root, R.string.socks5_partial_error, Snackbar.LENGTH_LONG).show()
-            return
+            b.socks5UserLayout.error = getString(R.string.socks5_partial_error)
+            b.socks5PassLayout.error = getString(R.string.socks5_partial_error)
+            hasError = true
         }
-
-        val password = if (isEncrypted) {
-            val pw = b.passwordInput.text?.toString() ?: ""
-            getPrefs().edit().putString(PREF_PASSWORD, pw).apply()
-            pw
-        } else ""
 
         var manualFields: ProxyManager.ManualFields? = null
         if (isManualMode) {
@@ -230,15 +248,24 @@ class MainActivity : AppCompatActivity() {
             val token = b.webdavTokenInput.text?.toString()?.ifBlank { null }
             val encKey = b.encKeyInput.text?.toString()?.ifBlank { null }
             val hmacKey = b.hmacKeyInput.text?.toString()?.ifBlank { null }
-            if (url == null || login == null || token == null || encKey == null || hmacKey == null) {
-                Snackbar.make(b.root, R.string.fill_all_fields, Snackbar.LENGTH_LONG).show()
-                return
-            }
-            manualFields = ProxyManager.ManualFields(url, login, token, encKey, hmacKey)
+            if (url == null) { b.webdavUrlLayout.error = getString(R.string.error_required); hasError = true }
+            if (login == null) { b.webdavLoginLayout.error = getString(R.string.error_required); hasError = true }
+            if (token == null) { b.webdavTokenLayout.error = getString(R.string.error_required); hasError = true }
+            if (encKey == null) { b.encKeyLayout.error = getString(R.string.error_required); hasError = true }
+            if (hmacKey == null) { b.hmacKeyLayout.error = getString(R.string.error_required); hasError = true }
+            if (!hasError) manualFields = ProxyManager.ManualFields(url!!, login!!, token!!, encKey!!, hmacKey!!)
         } else if (fileUri == null) {
             Snackbar.make(b.root, R.string.select_file_first, Snackbar.LENGTH_LONG).show()
-            return
+            hasError = true
         }
+
+        if (hasError) return
+
+        val password = if (isEncrypted) {
+            val pw = b.passwordInput.text?.toString() ?: ""
+            getPrefs().edit().putString(PREF_PASSWORD, pw).apply()
+            pw
+        } else ""
 
         currentFocus?.let { view ->
             val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
@@ -275,9 +302,12 @@ class MainActivity : AppCompatActivity() {
             ProxyState.Status.STOPPED -> {
                 val color = getColorFromAttr(com.google.android.material.R.attr.colorOnSurfaceVariant)
                 setStatusUi(color, color, getString(R.string.status_stopped))
+                b.statusDot.visibility = View.VISIBLE
+                b.connectingProgress.visibility = View.GONE
                 b.dashboard.visibility = View.GONE
                 b.logSection.visibility = View.GONE
                 b.actionButton.text = getString(R.string.start_proxy)
+                b.actionButton.contentDescription = getString(R.string.start_proxy)
                 b.actionButton.isEnabled = true
                 setButtonTint(false)
                 setInputsEnabled(true)
@@ -287,15 +317,19 @@ class MainActivity : AppCompatActivity() {
             ProxyState.Status.CONNECTING -> {
                 val color = getColorFromAttr(com.google.android.material.R.attr.colorTertiary)
                 setStatusUi(color, color, getString(R.string.status_connecting))
+                b.statusDot.visibility = View.GONE
+                b.connectingProgress.visibility = View.VISIBLE
                 b.actionButton.isEnabled = false
                 setInputsEnabled(false)
-                startPulse()
             }
 
             ProxyState.Status.RUNNING -> {
                 val color = getColorFromAttr(androidx.appcompat.R.attr.colorPrimary)
                 setStatusUi(color, color, getString(R.string.status_running))
+                b.statusDot.visibility = View.VISIBLE
+                b.connectingProgress.visibility = View.GONE
                 b.actionButton.text = getString(R.string.stop_proxy)
+                b.actionButton.contentDescription = getString(R.string.stop_proxy)
                 b.actionButton.isEnabled = true
                 setButtonTint(true)
                 setInputsEnabled(false)
@@ -308,20 +342,29 @@ class MainActivity : AppCompatActivity() {
                 if (logs.isNotBlank()) {
                     b.logText.text = highlightLogs(logs)
                     b.logSection.visibility = View.VISIBLE
-                    b.contentScroll.post { b.contentScroll.fullScroll(android.view.View.FOCUS_DOWN) }
+                    if (autoScrollLogs) {
+                        b.contentScroll.post { b.contentScroll.fullScroll(android.view.View.FOCUS_DOWN) }
+                    }
                 }
+                b.addrValue.contentDescription = "${getString(R.string.address_label)}: ${state.listenAddr.ifBlank { DEFAULT_LISTEN_ADDR }}"
+                b.sessionsValue.contentDescription = "${getString(R.string.sessions_label)}: ${state.sessions}"
+                b.uptimeValue.contentDescription = "${getString(R.string.uptime_label)}: ${formatDuration(elapsed)}"
                 if (!proxyServiceStarted) {
                     proxyServiceStarted = true
                     ProxyService.startRunning(this)
+                } else {
+                    ProxyService.updateNotification(this, state.listenAddr.ifBlank { DEFAULT_LISTEN_ADDR }, formatDuration(elapsed))
                 }
             }
 
             ProxyState.Status.ERROR -> {
                 val color = getColorFromAttr(androidx.appcompat.R.attr.colorError)
                 setStatusUi(color, color, state.error ?: getString(R.string.status_error))
+                b.statusDot.visibility = View.VISIBLE
+                b.connectingProgress.visibility = View.GONE
                 b.dashboard.visibility = View.GONE
-                b.logSection.visibility = View.GONE
                 b.actionButton.text = getString(R.string.start_proxy)
+                b.actionButton.contentDescription = getString(R.string.start_proxy)
                 b.actionButton.isEnabled = true
                 setButtonTint(false)
                 setInputsEnabled(true)
@@ -334,6 +377,7 @@ class MainActivity : AppCompatActivity() {
         (b.statusDot.background as? GradientDrawable)?.setColor(dotColor)
         b.statusText.setTextColor(textColor)
         b.statusText.text = text
+        b.statusDot.contentDescription = "${getString(R.string.status_dot_desc)}: $text"
     }
 
     private fun startPulse() {
@@ -367,6 +411,17 @@ class MainActivity : AppCompatActivity() {
         b.actionButton.setTextColor(fg)
     }
 
+    private fun clearInputErrors() {
+        b.listenAddrLayout.error = null
+        b.socks5UserLayout.error = null
+        b.socks5PassLayout.error = null
+        b.webdavUrlLayout.error = null
+        b.webdavLoginLayout.error = null
+        b.webdavTokenLayout.error = null
+        b.encKeyLayout.error = null
+        b.hmacKeyLayout.error = null
+    }
+
     private fun setInputsEnabled(enabled: Boolean) {
         b.configChip.isEnabled = enabled
         b.passwordLayout.isEnabled = enabled
@@ -385,6 +440,7 @@ class MainActivity : AppCompatActivity() {
     private fun showFileChip(name: String) {
         b.configChip.text = name
         b.configChip.setCloseIconVisible(true)
+        b.configChip.contentDescription = "${getString(R.string.config_chip_desc)}: $name"
     }
 
     private fun pasteFromClipboard(clipboard: android.content.ClipboardManager, target: TextInputEditText) {
@@ -442,7 +498,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun highlightLogs(text: String): SpannableString {
         val ss = SpannableString(text)
-        val warnColor = 0xFFB0A000.toInt()
+        val warnColor = getColorFromAttr(com.google.android.material.R.attr.colorTertiary)
         for (line in text.lines()) {
             val start = text.indexOf(line)
             if (start < 0) continue
