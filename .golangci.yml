@@ -81,4 +81,5 @@ formatters:
     - goimports
   settings:
     goimports:
-      local-prefixes: github.com/lyafence/flowdav
+      local-prefixes:
+        - github.com/lyafence/flowdav

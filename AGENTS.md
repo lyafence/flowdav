@@ -83,7 +83,7 @@ Install with `make hooks`.
 
 ## Coding Conventions
 
-- Go 1.26.4, stdlib preferred.
+- Go 1.26.5, stdlib preferred.
 - Tests: `testing` package, table-driven, `-race` enabled.
 - Imports: stdlib → third-party → internal, blank-line separated.
 - Naming: camelCase, no getters, unexported by default.
