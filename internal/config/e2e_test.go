@@ -103,7 +103,7 @@ func TestEncryptedConfigEndToEnd(t *testing.T) {
 		var out bytes.Buffer
 		cmd.Stdout = &out
 		cmd.Stderr = &out
-		cmd.Run() // ignore error, process gets killed by timeout
+		_ = cmd.Run() // ignore error, process gets killed by timeout
 		output := out.String()
 		if !ciFold(output, "start") && !ciFold(output, "listening") && !ciFold(output, "poll") {
 			t.Fatalf("expected startup via env, got: %s", output)

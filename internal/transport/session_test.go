@@ -30,13 +30,33 @@ func TestEnqueueTxCtxCancellation(t *testing.T) {
 func TestEnqueueTxBasic(t *testing.T) {
 	s := NewSession("test-session")
 
-	s.EnqueueTx([]byte("test data"))
+	s.EnqueueTx(context.Background(), []byte("test data"))
 
 	s.mu.Lock()
 	if len(s.txBuf) == 0 {
 		t.Error("txBuf should contain data")
 	}
 	s.mu.Unlock()
+}
+
+func TestEnqueueTxCanceledContext(t *testing.T) {
+	s := NewSession("test-session")
+	s.txBuf = make([]byte, 2*1024*1024) // fill buffer to trigger backpressure
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	done := make(chan struct{})
+	go func() {
+		s.EnqueueTx(ctx, []byte("more data"))
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Error("EnqueueTx blocked on backpressure despite cancelled context")
+	}
 }
 
 func TestSessionProcessRx(t *testing.T) {
@@ -99,7 +119,7 @@ func TestSessionProcessRxOutOfOrder(t *testing.T) {
 	}
 }
 
-func TestEnqueueTxCtxCancellationBeforeBackpressure(t *testing.T) {
+func TestEnqueueTxCtxCancellationBeforeBackpressure(_ *testing.T) {
 	s := NewSession("test-session")
 
 	s.mu.Lock()
@@ -162,7 +182,7 @@ func TestEnqueueTxCtxCancelDuringBackpressureWait(t *testing.T) {
 	}
 }
 
-func TestEnqueueTxCtxCancellationDuringWait(t *testing.T) {
+func TestEnqueueTxCtxCancellationDuringWait(_ *testing.T) {
 	s := NewSession("test-session")
 
 	s.mu.Lock()

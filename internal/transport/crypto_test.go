@@ -75,7 +75,7 @@ func TestEncodeDecodeWithCrypto(t *testing.T) {
 	var buf bytes.Buffer
 
 	go func() {
-		io.Copy(&buf, pr)
+		_, _ = io.Copy(&buf, pr)
 		done <- true
 	}()
 
@@ -115,12 +115,14 @@ func TestDecodeInvalidHMAC(t *testing.T) {
 
 	pr, pw := io.Pipe()
 	go func() {
-		env.EncodeWithCrypto(pw, cfg)
+		_ = env.EncodeWithCrypto(pw, cfg)
 		pw.Close()
 	}()
 
 	var buf bytes.Buffer
-	io.Copy(&buf, pr)
+	if _, err := io.Copy(&buf, pr); err != nil {
+		t.Fatal(err)
+	}
 
 	// Corrupt the HMAC
 	data := buf.Bytes()
@@ -250,7 +252,7 @@ func TestDecodeWithNilCrypto(t *testing.T) {
 	go func() {
 		data, err := env.MarshalBinary()
 		if err == nil {
-			pw.Write(data)
+			_, _ = pw.Write(data)
 		}
 		pw.Close()
 	}()

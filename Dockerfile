@@ -1,4 +1,4 @@
-FROM golang:1.26.4-alpine AS builder
+FROM golang:1.26.5-alpine AS builder
 
 RUN apk --no-cache add git make
 
@@ -9,7 +9,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/flowdav ./cmd/flowdav
 
-FROM alpine:3.23
+FROM alpine:3.24
 RUN apk --no-cache add ca-certificates curl
 
 RUN addgroup -g 1000 flow && \

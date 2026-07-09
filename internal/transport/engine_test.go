@@ -20,35 +20,35 @@ type mockBackend struct {
 	listFiles  []storage.FileEntry
 }
 
-func (m *mockBackend) Login(ctx context.Context) error { return nil }
-func (m *mockBackend) Upload(ctx context.Context, name string, data io.Reader) error {
+func (m *mockBackend) Login(_ context.Context) error { return nil }
+func (m *mockBackend) Upload(_ context.Context, name string, _ io.Reader) error {
 	m.mu.Lock()
 	m.uploaded = append(m.uploaded, name)
 	m.mu.Unlock()
 	return nil
 }
-func (m *mockBackend) ListQuery(ctx context.Context, prefix string) ([]storage.FileEntry, error) {
+func (m *mockBackend) ListQuery(_ context.Context, _ string) ([]storage.FileEntry, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.listFiles, nil
 }
-func (m *mockBackend) Download(ctx context.Context, name string) (io.ReadCloser, error) {
+func (m *mockBackend) Download(_ context.Context, name string) (io.ReadCloser, error) {
 	m.mu.Lock()
 	m.downloaded = append(m.downloaded, name)
 	m.mu.Unlock()
 	return nil, nil
 }
-func (m *mockBackend) Delete(ctx context.Context, name string) error {
+func (m *mockBackend) Delete(_ context.Context, name string) error {
 	m.mu.Lock()
 	m.deleted = append(m.deleted, name)
 	m.mu.Unlock()
 	return nil
 }
-func (m *mockBackend) UploadByIndex(ctx context.Context, name string, data io.Reader, idx uint8) error {
+func (m *mockBackend) UploadByIndex(ctx context.Context, name string, data io.Reader, _ uint8) error {
 	return m.Upload(ctx, name, data)
 }
-func (m *mockBackend) DownloadByIndex(ctx context.Context, name string, idx uint8) (io.ReadCloser, error) {
-	m.Download(ctx, name)
+func (m *mockBackend) DownloadByIndex(ctx context.Context, name string, _ uint8) (io.ReadCloser, error) {
+	_, _ = m.Download(ctx, name)
 	return nil, nil
 }
 func (m *mockBackend) UploadAny(ctx context.Context, name string, data io.Reader) (uint8, error) {
@@ -73,7 +73,7 @@ func TestEngineStop(t *testing.T) {
 	}
 }
 
-func TestEngineStopMultipleCalls(t *testing.T) {
+func TestEngineStopMultipleCalls(_ *testing.T) {
 	backend := &mockBackend{}
 	engine := NewEngine(backend, true, nil)
 
@@ -88,7 +88,7 @@ func TestEngineStopMultipleCalls(t *testing.T) {
 	cancel()
 }
 
-func TestEngineStartStopCycle(t *testing.T) {
+func TestEngineStartStopCycle(_ *testing.T) {
 	backend := &mockBackend{}
 	engine := NewEngine(backend, true, nil)
 
@@ -131,6 +131,130 @@ func TestEngineFastShutdownOnStopSignal(t *testing.T) {
 // TestBackendIdxDataRace verifies that s.BackendIdx is read under s.mu in flushAll.
 // Starts the engine so upload workers consume jobs (preventing uploadJobs buffer deadlock).
 // Re-seeds txBuf after each flushAll so all iterations exercise the read path.
+func TestAddSessionAfterStop(t *testing.T) {
+	backend := &mockBackend{}
+	engine := NewEngine(backend, true, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	engine.Start(ctx)
+	time.Sleep(50 * time.Millisecond)
+
+	engine.Stop()
+	cancel()
+
+	session := NewSession("test-session-after-stop")
+	engine.AddSession(session)
+
+	engine.sessionMu.RLock()
+	count := len(engine.sessions)
+	engine.sessionMu.RUnlock()
+
+	if count != 0 {
+		t.Errorf("expected 0 sessions after AddSession on stopped engine, got %d", count)
+	}
+}
+
+// TestFlushAllRespectsStopCh verifies that flushAll returns promptly
+// when stopCh is closed, rather than blocking on a full uploadJobs channel.
+func TestFlushAllRespectsStopCh(t *testing.T) {
+	backend := &mockBackend{}
+	engine := NewEngine(backend, true, nil)
+	engine.SetFlushRate(3600000) // prevent spontaneous flushLoop ticks (1 hour in ms)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	engine.Start(ctx)
+	// Do not start upload workers from exiting; instead fill the channel.
+	for i := 0; i < cap(engine.uploadJobs); i++ {
+		engine.uploadJobs <- uploadJob{filename: fmt.Sprintf("filler-%d", i)}
+	}
+
+	// Add a session with pending data so flushAll has work to do.
+	session := NewSession("flush-stop-test")
+	session.txBuf = []byte("pending data")
+	engine.sessionMu.Lock()
+	engine.sessions[session.ID] = session
+	engine.sessionMu.Unlock()
+
+	// Close stopCh as Stop() would.
+	engine.wgMu.Lock()
+	engine.stopped = true
+	close(engine.stopCh)
+	engine.wgMu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		engine.flushAll(ctx)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Error("flushAll blocked on full uploadJobs channel despite closed stopCh")
+	}
+}
+
+// TestEngineDrain flushes pending session data to the backend.
+func TestEngineDrain(t *testing.T) {
+	backend := &mockBackend{}
+	engine := NewEngine(backend, true, nil)
+	engine.SetFlushRate(3600000) // prevent spontaneous flushLoop ticks (1 hour in ms)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	engine.Start(ctx)
+	defer engine.Stop()
+
+	session := NewSession("drain-test")
+	session.txBuf = []byte("pending drain data")
+	engine.sessionMu.Lock()
+	engine.sessions[session.ID] = session
+	engine.sessionMu.Unlock()
+
+	drainCtx, cancelDrain := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelDrain()
+	if err := engine.Drain(drainCtx); err != nil {
+		t.Fatalf("Drain failed: %v", err)
+	}
+
+	backend.mu.Lock()
+	uploaded := len(backend.uploaded)
+	backend.mu.Unlock()
+
+	if uploaded == 0 {
+		t.Error("expected backend to receive upload after Drain")
+	}
+}
+
+// TestEngineDrainTimeout verifies Drain returns ctx.Err() when data cannot
+// be flushed within the timeout.
+func TestEngineDrainTimeout(t *testing.T) {
+	backend := &mockBackend{}
+	engine := NewEngine(backend, true, nil)
+	engine.SetFlushRate(3600000)
+
+	// Do not start engine so uploadJobs has no consumers.
+
+	// Saturate uploadJobs so flushAll cannot make progress.
+	for i := 0; i < cap(engine.uploadJobs); i++ {
+		engine.uploadJobs <- uploadJob{filename: fmt.Sprintf("filler-%d", i)}
+	}
+
+	session := NewSession("drain-timeout-test")
+	session.txBuf = []byte("pending data")
+	engine.sessionMu.Lock()
+	engine.sessions[session.ID] = session
+	engine.sessionMu.Unlock()
+
+	drainCtx, cancelDrain := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancelDrain()
+	err := engine.Drain(drainCtx)
+	if err == nil {
+		t.Error("expected Drain to timeout")
+	}
+}
+
 func TestBackendIdxDataRace(t *testing.T) {
 	be := &mockBackend{}
 	engine := NewEngine(be, true, nil)
@@ -168,7 +292,10 @@ func TestBackendIdxDataRace(t *testing.T) {
 				Payload:    []byte("hello"),
 				BackendIdx: uint8(i % 4),
 			}
-			if s := engine.sessionByID(fmt.Sprintf("race-session-%d", i)); s != nil {
+			engine.sessionMu.RLock()
+			s, exists := engine.sessions[fmt.Sprintf("race-session-%d", i)]
+			engine.sessionMu.RUnlock()
+			if exists {
 				s.ProcessRx(env)
 			}
 		}
@@ -182,7 +309,10 @@ func TestBackendIdxDataRace(t *testing.T) {
 		for iter := 0; iter < 50; iter++ {
 			engine.flushAll(ctx)
 			for j := range numSessions {
-				if s := engine.sessionByID(fmt.Sprintf("race-session-%d", j)); s != nil {
+				engine.sessionMu.RLock()
+				s, exists := engine.sessions[fmt.Sprintf("race-session-%d", j)]
+				engine.sessionMu.RUnlock()
+				if exists {
 					s.mu.Lock()
 					s.txBuf = []byte("more data")
 					s.mu.Unlock()
@@ -196,7 +326,7 @@ func TestBackendIdxDataRace(t *testing.T) {
 
 // TestRemoveSessionDataRace verifies that RemoveSession does not perform a data race
 // on len(e.sessions) after releasing the sessionMu lock.
-func TestRemoveSessionDataRace(t *testing.T) {
+func TestRemoveSessionDataRace(_ *testing.T) {
 	backend := &mockBackend{}
 	engine := NewEngine(backend, true, nil)
 
@@ -281,7 +411,7 @@ type dataTrackingBackend struct {
 	uploadedData map[string]int64 // filename → total bytes
 }
 
-func (d *dataTrackingBackend) UploadByIndex(ctx context.Context, name string, data io.Reader, idx uint8) error {
+func (d *dataTrackingBackend) UploadByIndex(_ context.Context, name string, data io.Reader, _ uint8) error {
 	content, err := io.ReadAll(data)
 	if err != nil {
 		return err

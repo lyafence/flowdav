@@ -44,7 +44,7 @@ func NewSocks5Options(cfg Socks5Config) ([]socks5.Option, error) {
 	connLimit := make(chan struct{}, cfg.MaxConns)
 
 	opts := []socks5.Option{
-		socks5.WithDial(func(_ context.Context, _, addr string) (net.Conn, error) {
+		socks5.WithDial(func(ctx context.Context, _, addr string) (net.Conn, error) {
 			sessionID := generateSessionID()
 
 			host, port, err := net.SplitHostPort(addr)
@@ -78,10 +78,10 @@ func NewSocks5Options(cfg Socks5Config) ([]socks5.Option, error) {
 			}
 			cfg.Engine.AddSession(session)
 
-			session.EnqueueTx(nil)
+			session.EnqueueTx(ctx, nil)
 
 			released = true
-			return NewVirtualConnWithOnClose(session, cfg.Engine, func() { <-connLimit }), nil
+			return NewVirtualConnWithOnClose(ctx, session, cfg.Engine, func() { <-connLimit }), nil
 		}),
 		socks5.WithAssociateHandle(func(_ context.Context, w io.Writer, _ *socks5.Request) error {
 			_ = socks5.SendReply(w, statute.RepCommandNotSupported, nil)

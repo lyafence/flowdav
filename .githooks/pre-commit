@@ -61,4 +61,12 @@ if [ -n "$bad" ]; then
 fi
 pass "no sync.Pool"
 
+# 5. Gitleaks (опционально) — сканирует staged изменения на секреты
+if command -v gitleaks &>/dev/null; then
+  gitleaks git --log-opts="--cached" . 2>/dev/null
+  pass "gitleaks"
+else
+  echo "  SKIP gitleaks (not installed)"
+fi
+
 echo "=== all checks passed ==="

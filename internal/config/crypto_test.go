@@ -169,7 +169,8 @@ func TestLoadEncryptedWrongPassword(t *testing.T) {
 
 	f, err := os.CreateTemp(t.TempDir(), "*.enc")
 	require.NoError(t, err)
-	f.Write(MarshalEncrypted(enc))
+	_, err = f.Write(MarshalEncrypted(enc))
+	require.NoError(t, err)
 	f.Close()
 
 	_, err = LoadEncrypted(f.Name(), "wrong-password")
@@ -179,7 +180,8 @@ func TestLoadEncryptedWrongPassword(t *testing.T) {
 func TestLoadEncryptedCorruptedFile(t *testing.T) {
 	f, err := os.CreateTemp(t.TempDir(), "*.enc")
 	require.NoError(t, err)
-	f.Write([]byte{0, 1, 2, 3})
+	_, err = f.Write([]byte{0, 1, 2, 3})
+	require.NoError(t, err)
 	f.Close()
 
 	_, err = LoadEncrypted(f.Name(), "password")
@@ -197,7 +199,8 @@ func TestLoadEncryptedInvalidConfigJSON(t *testing.T) {
 
 	f, err := os.CreateTemp(t.TempDir(), "*.enc")
 	require.NoError(t, err)
-	f.Write(MarshalEncrypted(enc))
+	_, err = f.Write(MarshalEncrypted(enc))
+	require.NoError(t, err)
 	f.Close()
 
 	_, err = LoadEncrypted(f.Name(), "password")
@@ -210,7 +213,8 @@ func TestErrEncryptedConfigDetection(t *testing.T) {
 
 	f, err := os.CreateTemp(t.TempDir(), "*.cfg")
 	require.NoError(t, err)
-	f.Write(MarshalEncrypted(enc))
+	_, err = f.Write(MarshalEncrypted(enc))
+	require.NoError(t, err)
 	f.Close()
 
 	_, err = Load(f.Name())

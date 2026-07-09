@@ -24,7 +24,6 @@ import (
 type Engine struct {
 	backend storage.Backend
 	myDir   Direction // DirReq for client, DirRes for server
-	peerDir Direction // DirRes for client, DirReq for server
 
 	sessions  map[string]*Session
 	sessionMu sync.RWMutex
@@ -122,10 +121,8 @@ func NewEngine(backend storage.Backend, isClient bool, cryptoCfg *CryptoConfig) 
 	}
 	if isClient {
 		e.myDir = DirReq
-		e.peerDir = DirRes
 	} else {
 		e.myDir = DirRes
-		e.peerDir = DirReq
 	}
 	e.sem = make(chan struct{}, 8)
 	e.downloadPool = NewDownloadWorkerPool(e, 16)
@@ -222,15 +219,48 @@ func (e *Engine) Stop() {
 	e.downloadPool.Stop()
 }
 
-func (e *Engine) sessionByID(id string) *Session {
-	e.sessionMu.RLock()
-	defer e.sessionMu.RUnlock()
-	return e.sessions[id]
+// Drain flushes all pending session data to upload jobs until either all
+// txBufs and the uploadJobs channel are empty or ctx is cancelled.
+// It is intended to be called during graceful shutdown before Stop.
+func (e *Engine) Drain(ctx context.Context) error {
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			e.sessionMu.RLock()
+			pendingBuf := false
+			for _, s := range e.sessions {
+				if s.TxBufLen() > 0 {
+					pendingBuf = true
+					break
+				}
+			}
+			e.sessionMu.RUnlock()
+
+			if !pendingBuf && len(e.uploadJobs) == 0 {
+				return nil
+			}
+
+			e.flushAll(ctx)
+		}
+	}
 }
 
 func (e *Engine) AddSession(s *Session) {
 	e.sessionMu.Lock()
 	defer e.sessionMu.Unlock()
+
+	select {
+	case <-e.stopCh:
+		logger.Info("Engine.AddSession: rejected session %s, engine stopped", s.ID)
+		return
+	default:
+	}
+
 	e.sessions[s.ID] = s
 	if e.SessionIdleTimeout > 0 {
 		s.IdleTimeout = e.SessionIdleTimeout
@@ -253,6 +283,7 @@ func (e *Engine) flushLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-e.stopCh:
+			e.flushAll(ctx)
 			return
 		case <-timer.C:
 			e.flushAll(ctx)
@@ -380,6 +411,8 @@ func (e *Engine) flushAll(ctx context.Context) {
 				numBackend: numBackend,
 			}:
 			case <-ctx.Done():
+				return
+			case <-e.stopCh:
 				return
 			}
 			remaining = remaining[consumed:]
@@ -560,16 +593,18 @@ func randomFilename(dirByte string) string {
 
 func (e *Engine) RemoveSession(id string) {
 	e.sessionMu.Lock()
+
+	// Add tombstone BEFORE deleting from sessions so that a concurrent
+	// download worker cannot recreate the session in the gap.
+	e.closedSessionsMu.Lock()
+	e.closedSessions[id] = time.Now()
+	e.closedSessionsMu.Unlock()
+
 	delete(e.sessions, id)
 	count := len(e.sessions)
 	e.sessionMu.Unlock()
 
 	logger.Info("Engine: Session %s removed (Total now: %d)", id, count)
-
-	// Add to tombstone list
-	e.closedSessionsMu.Lock()
-	e.closedSessions[id] = time.Now()
-	e.closedSessionsMu.Unlock()
 
 	// Notify listener if set
 	if e.OnSessionEnd != nil {

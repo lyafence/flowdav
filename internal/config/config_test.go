@@ -115,7 +115,7 @@ func TestValidateBasePathRejectsEncodedNullByte(t *testing.T) {
 // Practical impact is LOW: the WebDAV server would receive "%00" literally
 // in the path, and modern servers do not interpret percent-encoded null
 // bytes as path traversal vectors. This test exists to document the gap.
-func TestValidateBasePathTripleEncodedNull(t *testing.T) {
+func TestValidateBasePathTripleEncodedNull(_ *testing.T) {
 	// Triple encoding bypass — code only does 2 decode levels
 	err := ValidateBasePath("%252500", "test.field")
 	if err != nil {

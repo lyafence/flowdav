@@ -4,7 +4,9 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"golang.org/x/term"
@@ -17,8 +19,8 @@ func prompt(label, defaultVal string) string {
 	}
 	fmt.Fprintf(os.Stderr, "%s%s: ", label, dflt)
 	var s string
-	n, _ := fmt.Scanln(&s)
-	if n == 0 || s == "" {
+	n, err := fmt.Scanln(&s)
+	if n == 0 || s == "" || (err != nil && !errors.Is(err, io.EOF)) {
 		return defaultVal
 	}
 	return s

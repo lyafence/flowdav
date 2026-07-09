@@ -187,14 +187,14 @@ func newUtlsDialer(fingerprint string) func(ctx context.Context, network, addr s
 		}
 		host, _, err := net.SplitHostPort(addr)
 		if err != nil {
-			tcpConn.Close() //nolint:errcheck
+			tcpConn.Close()
 			return nil, err
 		}
 		uConn := utls.UClient(tcpConn, &utls.Config{
 			ServerName: host,
 		}, helloID)
 		if err := uConn.HandshakeContext(ctx); err != nil {
-			tcpConn.Close() //nolint:errcheck
+			tcpConn.Close()
 			return nil, err
 		}
 		return uConn, nil

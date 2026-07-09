@@ -84,18 +84,3 @@ func TestParseConfigJSONDefaults(t *testing.T) {
 	require.Equal(t, "debug", cfg.LogLevel)
 	require.Equal(t, "webdav", cfg.StorageType)
 }
-
-func TestWipeBytes(t *testing.T) {
-	b := []byte{1, 2, 3, 4, 5}
-	wipeBytes(b)
-	for i, v := range b {
-		if v != 0 {
-			t.Errorf("b[%d] = %d, want 0", i, v)
-		}
-	}
-}
-
-func TestWipeBytesEmpty(t *testing.T) {
-	require.NotPanics(t, func() { wipeBytes(nil) })
-	require.NotPanics(t, func() { wipeBytes([]byte{}) })
-}

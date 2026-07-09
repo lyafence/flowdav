@@ -252,8 +252,20 @@ func runClient(configPath, password, logLevel string, askInteractive bool) {
 	logger.Info("Shutting down...")
 	listener.Close()
 
-	engine.Stop()
 	cancel()
+
+	drainCtx, cancelDrain := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancelDrain()
+	if err := engine.Drain(drainCtx); err != nil {
+		logger.Warn("Drain incomplete: %v", err)
+	}
+
+	engine.Stop()
+
+	config.WipeBytes(appCfg.EncKeyDecoded)
+	config.WipeBytes(appCfg.HMacKeyDecoded)
+	appCfg.EncKey = ""
+	appCfg.HMacKey = ""
 }
 
 func runServer(configPath, password, logLevel string, askInteractive bool) {
@@ -316,7 +328,7 @@ func runServer(configPath, password, logLevel string, askInteractive bool) {
 	engine.OnNewSession = func(sessionID, targetAddr string, session *transport.Session) {
 		logger.Info("Server received new session %s destined for %s", sessionID, targetAddr)
 		serverWg.Add(1)
-		go handleServerConn(ctx, &serverWg, sessionID, targetAddr, session, engine)
+		go handleServerConn(ctx, &serverWg, sessionID, targetAddr, session)
 	}
 
 	engine.Start(ctx)
@@ -352,14 +364,26 @@ func runServer(configPath, password, logLevel string, askInteractive bool) {
 	<-sigCh
 	logger.Info("Shutting down server...")
 
-	engine.Stop()
 	cancel()
 	serverWg.Wait()
+
+	drainCtx, cancelDrain := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancelDrain()
+	if err := engine.Drain(drainCtx); err != nil {
+		logger.Warn("Drain incomplete: %v", err)
+	}
+
+	engine.Stop()
+
+	config.WipeBytes(appCfg.EncKeyDecoded)
+	config.WipeBytes(appCfg.HMacKeyDecoded)
+	appCfg.EncKey = ""
+	appCfg.HMacKey = ""
 }
 
-func handleServerConn(ctx context.Context, wg *sync.WaitGroup, sessionID, targetAddr string, session *transport.Session, engine *transport.Engine) {
+func handleServerConn(ctx context.Context, wg *sync.WaitGroup, sessionID, targetAddr string, session *transport.Session) {
 	defer wg.Done()
-	defer engine.RemoveSession(sessionID)
+	defer session.Close()
 
 	tcpAddr, err := net.ResolveTCPAddr("tcp", targetAddr)
 	if err != nil {
@@ -409,7 +433,7 @@ func handleServerConn(ctx context.Context, wg *sync.WaitGroup, sessionID, target
 			n, err := conn.Read(buf)
 			if n > 0 {
 				logger.Info("Session %s: read %d bytes from target", sessionID, n)
-				session.EnqueueTx(buf[:n])
+				session.EnqueueTx(ctx, buf[:n])
 			}
 			if err != nil {
 				select {
@@ -508,7 +532,7 @@ func runEncrypt(configPath, password string) {
 
 	encPath := configPath + ".enc"
 	data := config.MarshalEncrypted(encrypted)
-	if err := os.WriteFile(encPath, data, 0600); err != nil { //nolint:gosec
+	if err := os.WriteFile(encPath, data, 0600); err != nil {
 		log.Fatalf("failed to write %s: %v", encPath, err)
 	}
 	fmt.Printf("Encrypted: %s\n", encPath)
@@ -542,7 +566,7 @@ func runGenAndEncrypt(configPath, password string) {
 
 	encPath := configPath + ".enc"
 	out := config.MarshalEncrypted(encrypted)
-	if err := os.WriteFile(encPath, out, 0600); err != nil { //nolint:gosec
+	if err := os.WriteFile(encPath, out, 0600); err != nil {
 		log.Fatalf("failed to write %s: %v", encPath, err)
 	}
 	fmt.Printf("Generated and encrypted: %s\n", encPath)

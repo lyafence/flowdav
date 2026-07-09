@@ -95,14 +95,29 @@ func NewSession(id string) *Session {
 	return s
 }
 
+// Close marks the session as closed and wakes any blocked writers.
+func (s *Session) Close() {
+	s.mu.Lock()
+	s.closed = true
+	s.rxClosed = true
+	s.mu.Unlock()
+	s.rxOnce.Do(func() {
+		close(s.RxChan)
+	})
+	s.wakeupTx()
+}
+
 func (s *Session) TxBufLen() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.txBuf)
 }
 
-func (s *Session) EnqueueTx(data []byte) {
-	s.EnqueueTxCtx(context.Background(), data)
+func (s *Session) EnqueueTx(ctx context.Context, data []byte) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	s.EnqueueTxCtx(ctx, data)
 }
 
 func (s *Session) EnqueueTxCtx(ctx context.Context, data []byte) {
@@ -216,7 +231,7 @@ func (s *Session) ProcessRx(env *Envelope) {
 	} else if env.Seq > s.rxSeq {
 		// Check queue size to prevent memory exhaustion from out-of-order packets
 		if len(s.rxQueue) >= MaxRxQueueSize {
-			logger.Info("Session %s: rxQueue full, dropping packet seq=%d", s.ID, env.Seq)
+			logger.Warn("Session %s: rxQueue full, dropping packet seq=%d", s.ID, env.Seq)
 			s.mu.Unlock()
 			return
 		}

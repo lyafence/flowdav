@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestSetLevel(t *testing.T) {
+func TestSetLevel(_ *testing.T) {
 	SetLevel("debug")
 	SetLevel("info")
 	SetLevel("warn")
@@ -20,7 +20,10 @@ func TestSetLevel(t *testing.T) {
 func TestLevels(t *testing.T) {
 	// Capture stderr
 	originalStderr := os.Stderr
-	r, w, _ := os.Pipe()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
 	os.Stderr = w
 
 	SetLevel("debug")
@@ -33,7 +36,9 @@ func TestLevels(t *testing.T) {
 	os.Stderr = originalStderr
 
 	var output bytes.Buffer
-	io.Copy(&output, r)
+	if _, err := io.Copy(&output, r); err != nil {
+		t.Fatal(err)
+	}
 	result := output.String()
 
 	if !strings.Contains(result, "DEBUG") {
@@ -55,7 +60,10 @@ func TestLevelFiltering(t *testing.T) {
 
 	var buf bytes.Buffer
 	originalStderr := os.Stderr
-	r, w, _ := os.Pipe()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
 	os.Stderr = w
 
 	Debug("should not appear")
@@ -66,7 +74,9 @@ func TestLevelFiltering(t *testing.T) {
 	w.Close()
 	os.Stderr = originalStderr
 
-	io.Copy(&buf, r)
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatal(err)
+	}
 	result := buf.String()
 
 	if strings.Contains(result, "should not appear") {

@@ -14,35 +14,71 @@ linters:
     - revive
     - misspell
     - unconvert
-    - wastedassign
     - gosec
     - bodyclose
+    - godox
+    - nolintlint
+    - thelper
+    - goconst
+    - prealloc
   settings:
     errcheck:
       exclude-functions:
-        - "(*os.File).Close"
         - "(*net.TCPConn).Close"
-        - "(*net.TCPConn).SetKeepAlive"
-        - "(*net.TCPConn).SetKeepAlivePeriod"
         - "(*net.TCPConn).SetReadDeadline"
         - "(*compress/gzip.Reader).Close"
         - "(net.Listener).Close"
-        - "(net/http.ResponseWriter).Write"
-        - "(*encoding/json.Encoder).Encode"
-        - "(*os.File).WriteString"
-        - "os.Unsetenv"
-        - "os.Setenv"
-        - "github.com/things-go/go-socks5.SendReply"
     revive:
       rules:
         - name: var-naming
+        - name: error-return
+        - name: error-naming
+        - name: blank-imports
+        - name: unused-parameter
+    gosec:
+      includes:
+        - G101
+        - G102
+        - G107
+        - G108
+        - G110
+        - G111
+        - G112
+        - G114
+        - G115
+        - G304
+        - G401
+        - G402
+        - G505
+    goconst:
+      ignore-tests: true
+      min-occurrences: 4
+    nolintlint:
+      allow-unused: false
+      require-explanation: true
+      require-specific: true
   exclusions:
-    paths:
-      - _test\.go
+    presets:
+      - std-error-handling
+      - common-false-positives
     rules:
+      # errcheck: close/discard patterns not covered by exclude-functions
       - linters:
           - errcheck
         text: "conn\\.(Close|SetReadDeadline)|(resp|rc)\\.Body\\.Close|rc\\.Close"
+      # gosec G115: integer conversions are safe because bounded (MaxMessageSize, MaxStringLen, numBackends < 256)
       - linters:
           - gosec
-        text: "G104|G115|G114|G304|G706"
+        text: "G115"
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes: github.com/lyafence/flowdav

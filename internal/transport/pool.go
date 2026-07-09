@@ -117,16 +117,14 @@ func (p *DownloadWorkerPool) processDownload(ctx context.Context, stopCh <-chan 
 
 	e := p.engine
 
-	e.sem <- struct{}{}
-	defer func() { <-e.sem }()
-
 	select {
+	case e.sem <- struct{}{}:
 	case <-ctx.Done():
 		return
 	case <-stopCh:
 		return
-	default:
 	}
+	defer func() { <-e.sem }()
 
 	var rc io.ReadCloser
 	attempts, err := retryStorage(ctx, stopCh, "download "+job.filename, func() error {
@@ -186,31 +184,45 @@ func (p *DownloadWorkerPool) processDownload(ctx context.Context, stopCh <-chan 
 		}
 		e.closedSessionsMu.Unlock()
 
-		e.sessionMu.Lock()
+		e.sessionMu.RLock()
 		s, exists := e.sessions[env.SessionID]
+		e.sessionMu.RUnlock()
+
 		if !exists && e.myDir == DirRes && e.OnNewSession != nil {
-			if e.MaxSessions > 0 && len(e.sessions) >= e.MaxSessions {
-				e.sessionMu.Unlock()
-				logger.Info("Engine: session limit reached (%d), dropping new session %s", e.MaxSessions, env.SessionID)
-				continue
-			}
-			s = NewSession(env.SessionID)
-			s.BackendIdx = env.BackendIdx
-			s.notifyActivity = func() {
-				select {
-				case e.pollActivityCh <- struct{}{}:
-				default:
+			e.sessionMu.Lock()
+			s, exists = e.sessions[env.SessionID] // double-check
+			if !exists {
+				e.closedSessionsMu.Lock()
+				if _, tombstoned := e.closedSessions[env.SessionID]; tombstoned {
+					e.closedSessionsMu.Unlock()
+					e.sessionMu.Unlock()
+					continue
 				}
+				e.closedSessionsMu.Unlock()
+
+				if e.MaxSessions > 0 && len(e.sessions) >= e.MaxSessions {
+					e.sessionMu.Unlock()
+					logger.Info("Engine: session limit reached (%d), dropping new session %s", e.MaxSessions, env.SessionID)
+					continue
+				}
+				s = NewSession(env.SessionID)
+				s.BackendIdx = env.BackendIdx
+				s.notifyActivity = func() {
+					select {
+					case e.pollActivityCh <- struct{}{}:
+					default:
+					}
+				}
+				e.sessions[env.SessionID] = s
 			}
-			e.sessions[env.SessionID] = s
 			sessionID := env.SessionID
 			targetAddr := env.TargetAddr
 			backendIdx := env.BackendIdx
 			e.sessionMu.Unlock()
-			logger.Info("Engine: Triggering new session %s (backend %d)", sessionID, backendIdx)
-			e.OnNewSession(sessionID, targetAddr, s)
-		} else {
-			e.sessionMu.Unlock()
+			if !exists {
+				logger.Info("Engine: Triggering new session %s (backend %d)", sessionID, backendIdx)
+				e.OnNewSession(sessionID, targetAddr, s)
+			}
 		}
 
 		if s != nil {

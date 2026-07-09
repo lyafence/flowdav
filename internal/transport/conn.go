@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -18,6 +19,7 @@ var ErrTooManyConns = fmt.Errorf("too many concurrent connections")
 // simultaneously. Neither mu nor deadlineMu is ever held during a call into
 // Session (session.mu is acquired only after releasing VirtualConn locks).
 type VirtualConn struct {
+	ctx     context.Context
 	session *Session
 	engine  *Engine
 	readBuf []byte
@@ -33,8 +35,12 @@ type VirtualConn struct {
 	readWake  chan struct{} // closed on Close() to unblock Read
 }
 
-func NewVirtualConnWithOnClose(s *Session, e *Engine, fn func()) *VirtualConn {
+func NewVirtualConnWithOnClose(ctx context.Context, s *Session, e *Engine, fn func()) *VirtualConn {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	return &VirtualConn{
+		ctx:      ctx,
 		session:  s,
 		engine:   e,
 		onClose:  fn,
@@ -171,7 +177,7 @@ func (v *VirtualConn) Write(b []byte) (n int, err error) {
 	if closed {
 		return 0, io.ErrClosedPipe
 	}
-	v.session.EnqueueTx(b)
+	v.session.EnqueueTx(v.ctx, b)
 	return len(b), nil
 }
 

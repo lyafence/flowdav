@@ -163,6 +163,15 @@ for i in 1 2 3; do
     sleep 1
 done
 
+log_info "Waiting for multi-backend SOCKS5 proxy..."
+for i in 1 2 3; do
+    if curl -sf --proxy socks5h://127.0.0.1:11081 http://example.com --max-time 2 >/dev/null 2>&1; then
+        log_pass "Multi-backend SOCKS5 proxy is ready"
+        break
+    fi
+    sleep 1
+done
+
 # Helper: safe_curl wraps curl with || true so set -e does not abort
 # the script on transient proxy delays. Test failures are tracked by log_fail.
 safe_curl() {

@@ -11,7 +11,7 @@ import (
 
 func TestVirtualConnWriteClosed(t *testing.T) {
 	s := NewSession("test-write-closed")
-	v := NewVirtualConnWithOnClose(s, nil, nil)
+	v := NewVirtualConnWithOnClose(context.Background(), s, nil, nil)
 	s.mu.Lock()
 	s.closed = true
 	s.mu.Unlock()
@@ -35,12 +35,15 @@ func TestVirtualConnClosePreservesSessionForFlush(t *testing.T) {
 
 	s := NewSession("test-close-preserve")
 	engine.AddSession(s)
-	v := NewVirtualConnWithOnClose(s, engine, nil)
-	v.Write([]byte("final data"))
+	v := NewVirtualConnWithOnClose(context.Background(), s, engine, nil)
+	_, _ = v.Write([]byte("final data"))
 	v.Close()
 
 	// Session must remain in engine after Close for flushLoop to upload remaining txBuf
-	if engine.sessionByID("test-close-preserve") == nil {
+	engine.sessionMu.RLock()
+	_, exists := engine.sessions["test-close-preserve"]
+	engine.sessionMu.RUnlock()
+	if !exists {
 		t.Fatal("expected session to remain in engine after Close for pending flush")
 	}
 
@@ -55,8 +58,8 @@ func TestVirtualConnClosePreservesSessionForFlush(t *testing.T) {
 
 func TestVirtualConnWriteDeadlineExpired(t *testing.T) {
 	s := NewSession("test-deadline")
-	v := NewVirtualConnWithOnClose(s, nil, nil)
-	v.SetWriteDeadline(time.Now().Add(-1 * time.Second))
+	v := NewVirtualConnWithOnClose(context.Background(), s, nil, nil)
+	_ = v.SetWriteDeadline(time.Now().Add(-1 * time.Second))
 
 	n, err := v.Write([]byte("data"))
 	if err != os.ErrDeadlineExceeded {
@@ -69,8 +72,8 @@ func TestVirtualConnWriteDeadlineExpired(t *testing.T) {
 
 func TestVirtualConnReadDeadlineExpired(t *testing.T) {
 	s := NewSession("test-read-deadline")
-	v := NewVirtualConnWithOnClose(s, nil, nil)
-	v.SetReadDeadline(time.Now().Add(-1 * time.Second))
+	v := NewVirtualConnWithOnClose(context.Background(), s, nil, nil)
+	_ = v.SetReadDeadline(time.Now().Add(-1 * time.Second))
 
 	_, err := v.Read(make([]byte, 1024))
 	if err != os.ErrDeadlineExceeded {
@@ -80,7 +83,7 @@ func TestVirtualConnReadDeadlineExpired(t *testing.T) {
 
 func TestVirtualConnReadWithData(t *testing.T) {
 	s := NewSession("test-read-data")
-	v := NewVirtualConnWithOnClose(s, nil, nil)
+	v := NewVirtualConnWithOnClose(context.Background(), s, nil, nil)
 
 	expected := []byte("hello proxy")
 	s.RxChan <- expected
@@ -97,7 +100,7 @@ func TestVirtualConnReadWithData(t *testing.T) {
 
 func TestVirtualConnWriteNormalFlow(t *testing.T) {
 	s := NewSession("test-write-normal")
-	v := NewVirtualConnWithOnClose(s, nil, nil)
+	v := NewVirtualConnWithOnClose(context.Background(), s, nil, nil)
 
 	n, err := v.Write([]byte("test data"))
 	if err != nil {
@@ -113,7 +116,7 @@ func TestVirtualConnWriteNormalFlow(t *testing.T) {
 // Read() blocks forever on <-session.RxChan after Close().
 func TestVirtualConnCloseUnblocksRead(t *testing.T) {
 	s := NewSession("test-close-read")
-	v := NewVirtualConnWithOnClose(s, nil, nil)
+	v := NewVirtualConnWithOnClose(context.Background(), s, nil, nil)
 
 	readDone := make(chan error, 1)
 	go func() {
@@ -141,7 +144,7 @@ func TestVirtualConnCloseUnblocksRead(t *testing.T) {
 // Without the drain in the readWake case, data would be lost on a race.
 func TestVirtualConnCloseDrainsRxChan(t *testing.T) {
 	s := NewSession("test-close-drain")
-	v := NewVirtualConnWithOnClose(s, nil, nil)
+	v := NewVirtualConnWithOnClose(context.Background(), s, nil, nil)
 
 	expected := []byte("data before close")
 	s.RxChan <- expected
@@ -175,7 +178,7 @@ func TestVirtualConnCloseDrainsRxChan(t *testing.T) {
 // would block forever on the second invocation.
 func TestVirtualConnDoubleClose(t *testing.T) {
 	closeCount := 0
-	v := NewVirtualConnWithOnClose(NewSession("test-double-close"), nil, func() {
+	v := NewVirtualConnWithOnClose(context.Background(), NewSession("test-double-close"), nil, func() {
 		closeCount++
 	})
 
@@ -226,7 +229,7 @@ func TestVirtualConnConcurrentDoubleClose(t *testing.T) {
 	var mu sync.Mutex
 	closeCount := 0
 
-	v := NewVirtualConnWithOnClose(NewSession("test-concurrent-close"), nil, func() {
+	v := NewVirtualConnWithOnClose(context.Background(), NewSession("test-concurrent-close"), nil, func() {
 		mu.Lock()
 		closeCount++
 		mu.Unlock()

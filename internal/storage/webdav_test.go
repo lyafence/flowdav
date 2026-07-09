@@ -165,7 +165,7 @@ func TestLoginMkdirForbidden(t *testing.T) {
 			w.WriteHeader(http.StatusForbidden)
 		case "PROPFIND":
 			w.WriteHeader(http.StatusMultiStatus)
-			w.Write([]byte(`<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:response><d:href>/</d:href><d:propstat><d:prop><d:displayname>root</d:displayname></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>`))
+			_, _ = w.Write([]byte(`<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:response><d:href>/</d:href><d:propstat><d:prop><d:displayname>root</d:displayname></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -210,7 +210,9 @@ func TestRandomHeaderTransport(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		req, _ := http.NewRequest("GET", "http://example.com", nil)
 		tr := &randomHeaderTransport{inner: &nullTransport{}}
-		tr.RoundTrip(req)
+		if resp, err := tr.RoundTrip(req); err == nil {
+			resp.Body.Close()
+		}
 		if a := req.Header.Get("Accept"); a != "" {
 			seenAccept++
 		}
@@ -240,7 +242,9 @@ func TestRandomHeaderTransportPreservesExisting(t *testing.T) {
 		req.Header.Set("Cache-Control", "max-age=0")
 
 		tr := &randomHeaderTransport{inner: &nullTransport{}}
-		tr.RoundTrip(req)
+		if resp, err := tr.RoundTrip(req); err == nil {
+			resp.Body.Close()
+		}
 
 		if req.Header.Get("Accept") != "application/xml,text/xml" {
 			t.Fatal("randomHeaderTransport overwrote preset Accept header")
@@ -256,6 +260,6 @@ func TestRandomHeaderTransportPreservesExisting(t *testing.T) {
 
 type nullTransport struct{}
 
-func (t *nullTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (t *nullTransport) RoundTrip(_ *http.Request) (*http.Response, error) {
 	return &http.Response{StatusCode: 200, Body: http.NoBody}, nil
 }

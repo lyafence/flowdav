@@ -43,11 +43,11 @@ jobs:
             gomips: softfloat
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.26.4"
+          go-version: "1.26.5"
 
       - name: Build Binary
         run: |
@@ -74,10 +74,10 @@ jobs:
     name: Build Android APK
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.26.4"
+          go-version: "1.26.5"
           cache: true
 
       - uses: actions/setup-java@v5
@@ -103,7 +103,7 @@ jobs:
           gomobile bind -target=android -androidapi 26 \
             -javapkg com.flowdav.app \
             -o android/app/libs/flowdav.aar \
-            -trimpath -ldflags="-s -w" \
+            -trimpath -ldflags="-s -w -X github.com/lyafence/flowdav/cmd/android.version=${GITHUB_REF_NAME}" \
             ./cmd/android
 
       - name: Build release APK
@@ -148,7 +148,7 @@ jobs:
     name: Build and push Docker image
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4

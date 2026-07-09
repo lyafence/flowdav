@@ -174,7 +174,7 @@ android-aar:
 	ANDROID_HOME=$(ANDROID_SDK_HOME) PATH="$(HOME)/go/bin:$(PATH)" \
 	gomobile bind -target=android -androidapi 26 -javapkg com.flowdav.app \
 		-o android/app/libs/flowdav.aar \
-		-trimpath -ldflags="-s -w" \
+		-trimpath -ldflags="-s -w -X github.com/lyafence/flowdav/cmd/android.version=$(VERSION)" \
 		./cmd/android
 
 # Android APK (AAR + Gradle assemble debug)

@@ -16,11 +16,11 @@ type deleteRecordingBackend struct {
 	mu         sync.Mutex
 }
 
-func (d *deleteRecordingBackend) DownloadByIndex(ctx context.Context, name string, idx uint8) (io.ReadCloser, error) {
+func (d *deleteRecordingBackend) DownloadByIndex(_ context.Context, _ string, _ uint8) (io.ReadCloser, error) {
 	return io.NopCloser(bytes.NewReader(nil)), nil
 }
 
-func (d *deleteRecordingBackend) Delete(ctx context.Context, name string) error {
+func (d *deleteRecordingBackend) Delete(_ context.Context, _ string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.failDelete {
@@ -112,6 +112,49 @@ func TestDeleteErrorPreservesProcessedEntry(t *testing.T) {
 	if !exists {
 		t.Error("processed entry removed despite Delete failure")
 	}
+}
+
+// TestProcessDownloadStopsOnContext verifies that a download worker
+// returns promptly when its context is cancelled, even if the semaphore
+// is saturated.
+func TestProcessDownloadStopsOnContext(t *testing.T) {
+	be := &deleteRecordingBackend{failDelete: false}
+	engine := NewEngine(be, false, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	engine.Start(ctx)
+
+	// Saturate the semaphore.
+	for i := 0; i < cap(engine.sem); i++ {
+		engine.sem <- struct{}{}
+	}
+
+	cancel()
+
+	done := make(chan struct{})
+	go func() {
+		engine.downloadPool.processDownload(ctx, engine.stopCh, &downloadJob{
+			filename:   "ctx-cancelled.bin",
+			backendIdx: 0,
+		})
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Error("processDownload blocked on saturated semaphore despite cancelled context")
+	}
+
+	// Drain semaphore to avoid leaking goroutines in other tests.
+	for i := 0; i < cap(engine.sem); i++ {
+		select {
+		case <-engine.sem:
+		default:
+		}
+	}
+	engine.Stop()
 }
 
 // TestDeleteSuccessRemovesProcessedEntry verifies the happy path:

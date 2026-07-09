@@ -19,6 +19,7 @@ import (
 )
 
 var (
+	version           = "dev"
 	mu                sync.Mutex
 	eng               *transport.Engine
 	cancel            context.CancelFunc
@@ -35,6 +36,12 @@ var (
 	logHead  int
 	logCount int
 )
+
+// Version returns the build version of the gomobile bridge.
+// It is set at build time via -ldflags.
+func Version() string {
+	return version
+}
 
 func logEvent(format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
@@ -76,12 +83,6 @@ func getLogs() string {
 		out = append(out, '\n')
 	}
 	return string(out)
-}
-
-func wipeBytes(b []byte) {
-	for i := range b {
-		b[i] = 0
-	}
 }
 
 type Status struct {
@@ -182,6 +183,9 @@ func StartProxyManual(webdavURL, webdavLogin, webdavToken, encKeyBase64, hmacKey
 		EncKeyDecoded:  encKey,
 		HMacKeyDecoded: hmacKey,
 		LogLevel:       "info",
+	}
+	if err := config.ValidateAppConfig(appCfg); err != nil {
+		return fmt.Errorf("invalid config: %w", err)
 	}
 	return startProxy(appCfg, listenAddr)
 }
@@ -339,8 +343,8 @@ func stopLocked() {
 		cancel = nil
 	}
 	if lastCfg != nil {
-		wipeBytes(lastCfg.EncKeyDecoded)
-		wipeBytes(lastCfg.HMacKeyDecoded)
+		config.WipeBytes(lastCfg.EncKeyDecoded)
+		config.WipeBytes(lastCfg.HMacKeyDecoded)
 		lastCfg.EncKey = ""
 		lastCfg.HMacKey = ""
 		lastCfg = nil

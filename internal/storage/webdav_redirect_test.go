@@ -13,7 +13,7 @@ type redirectBackend struct {
 	redirects int
 }
 
-func (rb *redirectBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (rb *redirectBackend) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 	if rb.loc != "" && rb.redirects < 1 {
 		rb.redirects++
 		w.Header().Set("Location", rb.loc)
@@ -37,7 +37,7 @@ func TestRedirectGuardSameOrigin(t *testing.T) {
 		t.Fatalf("same-origin redirect blocked: %v", err)
 	}
 	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body)
+	_, _ = io.Copy(io.Discard, resp.Body)
 }
 
 func TestRedirectGuardCrossHost(t *testing.T) {
@@ -49,8 +49,9 @@ func TestRedirectGuardCrossHost(t *testing.T) {
 	client := srv.Client()
 	client.Transport = tr
 
-	_, err := client.Get(srv.URL)
+	resp, err := client.Get(srv.URL)
 	if err == nil {
+		resp.Body.Close()
 		t.Fatal("expected error for cross-host redirect")
 	}
 }
@@ -64,8 +65,9 @@ func TestRedirectGuardCrossScheme(t *testing.T) {
 	client := srv.Client()
 	client.Transport = tr
 
-	_, err := client.Get(srv.URL)
+	resp, err := client.Get(srv.URL)
 	if err == nil {
+		resp.Body.Close()
 		t.Fatal("expected error for cross-scheme redirect")
 	}
 }
@@ -79,8 +81,9 @@ func TestRedirectGuardPrivateIP(t *testing.T) {
 	client := srv.Client()
 	client.Transport = tr
 
-	_, err := client.Get(srv.URL)
+	resp, err := client.Get(srv.URL)
 	if err == nil {
+		resp.Body.Close()
 		t.Fatal("expected error for private IP redirect")
 	}
 }

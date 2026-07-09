@@ -104,13 +104,13 @@ func TestMultiBackend(t *testing.T) {
 	mock2 := &mockBackend{}
 	mock3 := &mockBackend{}
 
-	mock1.ListQueryFunc = func(ctx context.Context, prefix string) ([]FileEntry, error) {
+	mock1.ListQueryFunc = func(_ context.Context, _ string) ([]FileEntry, error) {
 		return []FileEntry{{Filename: "file1.txt"}}, nil
 	}
-	mock2.ListQueryFunc = func(ctx context.Context, prefix string) ([]FileEntry, error) {
+	mock2.ListQueryFunc = func(_ context.Context, _ string) ([]FileEntry, error) {
 		return []FileEntry{{Filename: "file2.txt"}}, nil
 	}
-	mock3.ListQueryFunc = func(ctx context.Context, prefix string) ([]FileEntry, error) {
+	mock3.ListQueryFunc = func(_ context.Context, _ string) ([]FileEntry, error) {
 		return []FileEntry{{Filename: "file3.txt"}}, nil
 	}
 
@@ -149,22 +149,22 @@ func TestMultiBackend(t *testing.T) {
 	require.Equal(t, mock2, b4, "backendByIndexLocked(4) should wrap to mock2")
 
 	// Test Login: should call Login on all backends.
-	mock1.LoginFunc = func(ctx context.Context) error { return nil }
-	mock2.LoginFunc = func(ctx context.Context) error { return nil }
-	mock3.LoginFunc = func(ctx context.Context) error { return nil }
+	mock1.LoginFunc = func(_ context.Context) error { return nil }
+	mock2.LoginFunc = func(_ context.Context) error { return nil }
+	mock3.LoginFunc = func(_ context.Context) error { return nil }
 	err := multi.Login(context.Background())
 	require.NoError(t, err, "Login should not error")
 	// We can check that the LoginFunc was called by checking if it was set and then called, but we trust the mock.
 	// Alternatively, we can use the mock's Expectations, but for simplicity we just check no error.
 
 	// Test Upload: should use RoundRobinBackend and call Upload on the selected backend.
-	mock1.UploadFunc = func(ctx context.Context, filename string, data io.Reader) error {
+	mock1.UploadFunc = func(_ context.Context, _ string, _ io.Reader) error {
 		return nil
 	}
-	mock2.UploadFunc = func(ctx context.Context, filename string, data io.Reader) error {
+	mock2.UploadFunc = func(_ context.Context, _ string, _ io.Reader) error {
 		return nil
 	}
-	mock3.UploadFunc = func(ctx context.Context, filename string, data io.Reader) error {
+	mock3.UploadFunc = func(_ context.Context, _ string, _ io.Reader) error {
 		return nil
 	}
 	// We'll reset the round-robin counter by creating a new multi-backend for this test to have a known state.
@@ -176,7 +176,7 @@ func TestMultiBackend(t *testing.T) {
 	// For simplicity, we'll just test that it doesn't error and move on.
 
 	// Test UploadByIndex: should call Upload on the backend at the given index.
-	mock1.UploadFunc = func(ctx context.Context, filename string, data io.Reader) error {
+	mock1.UploadFunc = func(_ context.Context, _ string, _ io.Reader) error {
 		return nil
 	}
 	err = multi.UploadByIndex(context.Background(), "test.txt", nil, 0)
@@ -184,7 +184,7 @@ func TestMultiBackend(t *testing.T) {
 	// We can't check which mock was called without more mock setup, but we can at least test that it doesn't error.
 
 	// Test DownloadByIndex: should call Download on the backend at the given index.
-	mock1.DownloadFunc = func(ctx context.Context, filename string) (io.ReadCloser, error) {
+	mock1.DownloadFunc = func(_ context.Context, _ string) (io.ReadCloser, error) {
 		return nil, nil
 	}
 	_, err = multi.DownloadByIndex(context.Background(), "test.txt", 0)
@@ -206,14 +206,14 @@ func TestMultiBackend(t *testing.T) {
 
 	// Test Download: should try each backend until one succeeds.
 	// We'll set up mock1 to fail, mock2 to succeed, and mock3 to not be called.
-	mock1.DownloadFunc = func(ctx context.Context, filename string) (io.ReadCloser, error) {
+	mock1.DownloadFunc = func(_ context.Context, _ string) (io.ReadCloser, error) {
 		// Since we don't have a predefined ErrNotExist in storage, we'll use a generic error and check that it tries the next.
 		return nil, errors.New("not found")
 	}
-	mock2.DownloadFunc = func(ctx context.Context, filename string) (io.ReadCloser, error) {
+	mock2.DownloadFunc = func(_ context.Context, _ string) (io.ReadCloser, error) {
 		return io.NopCloser(nil), nil // success
 	}
-	mock3.DownloadFunc = func(ctx context.Context, filename string) (io.ReadCloser, error) {
+	mock3.DownloadFunc = func(_ context.Context, _ string) (io.ReadCloser, error) {
 		// This should not be called.
 		t.Error("mock2.DownloadFunc should not be called if mock2 succeeds")
 		return nil, errors.New("should not be called")
@@ -224,9 +224,9 @@ func TestMultiBackend(t *testing.T) {
 	_ = rc.Close()
 
 	// Test Delete: should call Delete on all backends.
-	mock1.DeleteFunc = func(ctx context.Context, filename string) error { return nil }
-	mock2.DeleteFunc = func(ctx context.Context, filename string) error { return nil }
-	mock3.DeleteFunc = func(ctx context.Context, filename string) error { return nil }
+	mock1.DeleteFunc = func(_ context.Context, _ string) error { return nil }
+	mock2.DeleteFunc = func(_ context.Context, _ string) error { return nil }
+	mock3.DeleteFunc = func(_ context.Context, _ string) error { return nil }
 	err = multi.Delete(context.Background(), "test.txt")
 	require.NoError(t, err, "Delete should not error")
 }
@@ -236,10 +236,10 @@ func TestMultiBackend(t *testing.T) {
 func TestMultiBackendDeleteReturnsError(t *testing.T) {
 	mock1 := &mockBackend{}
 	mock2 := &mockBackend{}
-	mock1.DeleteFunc = func(ctx context.Context, filename string) error {
+	mock1.DeleteFunc = func(_ context.Context, _ string) error {
 		return errors.New("delete failed on backend 1")
 	}
-	mock2.DeleteFunc = func(ctx context.Context, filename string) error {
+	mock2.DeleteFunc = func(_ context.Context, _ string) error {
 		return nil
 	}
 
@@ -261,13 +261,13 @@ func TestMultiBackendDeleteAllAdversarial(t *testing.T) {
 	mock1 := &mockBackend{}
 	mock2 := &mockBackend{}
 	mock3 := &mockBackend{}
-	mock1.DeleteFunc = func(ctx context.Context, filename string) error {
+	mock1.DeleteFunc = func(_ context.Context, _ string) error {
 		return errors.New("backend 1 timeout")
 	}
-	mock2.DeleteFunc = func(ctx context.Context, filename string) error {
+	mock2.DeleteFunc = func(_ context.Context, _ string) error {
 		return errors.New("backend 2 timeout")
 	}
-	mock3.DeleteFunc = func(ctx context.Context, filename string) error {
+	mock3.DeleteFunc = func(_ context.Context, _ string) error {
 		return errors.New("backend 3 timeout")
 	}
 
@@ -320,11 +320,11 @@ func TestCircuitBreakerTripsOnFailures(t *testing.T) {
 
 	// Mock1 always fails; mock2 always succeeds
 	failCount := 0
-	mock1.UploadFunc = func(ctx context.Context, filename string, data io.Reader) error {
+	mock1.UploadFunc = func(_ context.Context, _ string, _ io.Reader) error {
 		failCount++
 		return errors.New("upload failed")
 	}
-	mock2.UploadFunc = func(ctx context.Context, filename string, data io.Reader) error {
+	mock2.UploadFunc = func(_ context.Context, _ string, _ io.Reader) error {
 		return nil
 	}
 
