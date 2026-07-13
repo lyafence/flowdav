@@ -251,6 +251,13 @@ func NewWebDAVBackend(login, token, basePath, url, tlsFingerprint string) (*WebD
 		Transport: wrappedTransport,
 	}
 
+	if basePath != "" {
+		basePath = path.Clean(basePath)
+		if basePath == "." || basePath == "/" {
+			basePath = ""
+		}
+	}
+
 	backend := &WebDAVBackend{
 		client:     client,
 		httpClient: httpClient,
@@ -384,9 +391,10 @@ func (w *WebDAVBackend) fullPath(name string) (string, error) {
 }
 
 func (w *WebDAVBackend) Login(_ context.Context) error {
-	// Create basePath + subdirectories
-	dirs := []string{w.basePath}
-	if w.basePath != "" {
+	var dirs []string
+	if w.basePath == "" {
+		dirs = []string{dirReq, dirRes}
+	} else {
 		dirs = []string{w.basePath, path.Join(w.basePath, dirReq), path.Join(w.basePath, dirRes)}
 	}
 	for _, d := range dirs {
@@ -503,7 +511,17 @@ func (w *WebDAVBackend) Download(ctx context.Context, filename string) (io.ReadC
 		return nil, fmt.Errorf("download error: file too large: %d bytes (max %d)", resp.ContentLength, MaxFileSize)
 	}
 
+	if resp.ContentLength > 0 {
+		return &exactReader{io.LimitReader(resp.Body, resp.ContentLength), resp.Body}, nil
+	}
 	return newMaxSizeReader(resp.Body, MaxFileSize), nil
+}
+
+// exactReader reads exactly n bytes from the response body, preventing
+// trailing bytes from being interpreted as crypto frame data.
+type exactReader struct {
+	io.Reader
+	io.Closer
 }
 
 // maxSizeReader wraps an io.ReadCloser and ensures the total bytes read
