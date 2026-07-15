@@ -592,7 +592,7 @@ func randomFilename(dirByte string) (string, error) {
 	if _, err := rand.Read(b[:]); err != nil {
 		return "", fmt.Errorf("crypto/rand read failed: %w", err)
 	}
-	return fmt.Sprintf("%s%s", dirByte, hex.EncodeToString(b[:])), nil
+	return dirByte + hex.EncodeToString(b[:]), nil
 }
 
 func (e *Engine) RemoveSession(id string) {

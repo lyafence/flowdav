@@ -1,3 +1,4 @@
+// Package logger — leveled logging to stderr (debug, info, warn, error).
 package logger
 
 import (

@@ -30,6 +30,8 @@ func (h *backendHealth) isRateLimited() bool {
 	return time.Now().Before(h.rateLimitedUntil)
 }
 
+// MultiBackend wraps multiple Backend instances with round-robin session assignment,
+// circuit breaker (3 failures → 30s cooldown), and separate 60s rate-limit cooldown.
 type MultiBackend struct {
 	backends  []Backend
 	health    []backendHealth
@@ -247,6 +249,7 @@ type BackendStat struct {
 	RateLimitRemainSec int64  `json:"rate_limit_remain_sec,omitempty"`
 }
 
+// Stats returns per-backend health snapshots for the health endpoint.
 func (m *MultiBackend) Stats() []BackendStat {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -277,6 +280,7 @@ func (m *MultiBackend) Stats() []BackendStat {
 	return stats
 }
 
+// RandBackendIndex returns a cryptographically random backend index in [0, n).
 func RandBackendIndex(n int) int {
 	if n <= 0 {
 		return 0

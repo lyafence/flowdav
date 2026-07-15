@@ -1,3 +1,4 @@
+// Package transport — proxy engine: poll/flush loops, sessions, envelopes, crypto, SOCKS5.
 package transport
 
 import (

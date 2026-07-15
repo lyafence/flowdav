@@ -1,3 +1,4 @@
+// Package config — load, validate, encrypt/decrypt configuration files.
 package config
 
 import (
@@ -13,6 +14,7 @@ import (
 	"golang.org/x/term"
 )
 
+// ErrEncryptedConfig is returned when attempting to load an encrypted config without a password.
 var ErrEncryptedConfig = errors.New("config file is encrypted, use -p flag")
 
 // isPathTraversal checks if a path contains path traversal patterns.
@@ -72,7 +74,7 @@ func ValidateBasePath(basePath string, field string) error {
 }
 
 // WebDAVConfig defines the WebDAV storage configuration.
-// Supports single backend or multiple backends for round-robin.
+// Supports single backend (url) or multiple backends for round-robin (backends).
 type WebDAVConfig struct {
 	URL      string         `json:"url,omitempty"`
 	Login    string         `json:"login"`
@@ -169,7 +171,6 @@ type AppConfig struct {
 }
 
 // ValidateAppConfig validates the config fields and decodes encryption keys.
-// Also applies defaults (StorageType defaults to "webdav").
 // Populates cfg.EncKeyDecoded and cfg.HMacKeyDecoded on success.
 // Called by Load and LoadEncrypted — all config validation lives here.
 func ValidateAppConfig(cfg *AppConfig) error {
@@ -333,9 +334,9 @@ func LoadConfig(path, password string, askInteractive bool) (*AppConfig, error) 
 	return cfg, nil
 }
 
-// ResolvePassword scans os.Args for -p before flag.Parse.
-// Returns password value, whether interactive is requested, and cleaned args.
-// Priority: -p VALUE > -p (interactive) > FLOWDAV_PASSWORD env.
+// ResolvePassword scans args for -p before flag.Parse.
+// Returns password value, whether interactive prompt is requested, and cleaned args.
+// Priority: -p VALUE > -p (interactive) > FLOWDAV_PASSWORD env var.
 func ResolvePassword(args []string) (password string, interactive bool, rest []string) {
 	password = os.Getenv("FLOWDAV_PASSWORD")
 	for i := 0; i < len(args); i++ {

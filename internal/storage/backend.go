@@ -1,3 +1,4 @@
+// Package storage — WebDAV backend with multi-backend support and circuit breaker.
 package storage
 
 import (

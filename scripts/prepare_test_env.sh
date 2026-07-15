@@ -62,7 +62,6 @@ gen_config() {
 }
 
 gen_config "flowdav_test.json" '{
-  "storage_type": "webdav",
   "webdav": {
     "url": "http://webdav-single:8080",
     "login": "test",
@@ -81,7 +80,6 @@ gen_config "flowdav_test.json" '{
 }'
 
 gen_config "flowdav_test_multi.json" '{
-  "storage_type": "webdav",
   "webdav": {
     "backends": [
       {

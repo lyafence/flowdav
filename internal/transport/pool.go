@@ -56,6 +56,8 @@ type downloadJob struct {
 	backendIdx uint8
 }
 
+// DownloadWorkerPool manages a fixed pool of goroutines for downloading
+// and decoding multiplexed WebDAV files.
 type DownloadWorkerPool struct {
 	engine  *Engine
 	jobs    chan downloadJob

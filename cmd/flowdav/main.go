@@ -1,3 +1,4 @@
+// Package main — flowdav unified binary (client, server, encrypt, generate).
 package main
 
 import (

@@ -9,7 +9,6 @@ HMAC_KEY=$(head -c 32 /dev/urandom | base64 -w0)
 
 cat > configs/flowdav_test.json <<END
 {
-  "storage_type": "webdav",
   "webdav": {
     "url": "http://${HOST_IP}:8080",
     "login": "test",

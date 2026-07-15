@@ -21,6 +21,7 @@ const (
 	compressMinBytes = 256 // minimum raw payload to bother compressing
 )
 
+// CryptoConfig holds the AES-256-GCM encryption key and HMAC-SHA256 key.
 type CryptoConfig struct {
 	EncKey  []byte
 	HMacKey []byte

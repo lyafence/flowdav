@@ -29,11 +29,13 @@ flowdav-encrypt
 *.tar.gz
 *.exe
 *.log
-.test
+*.test
 
 # Build artifacts
 release/
-coverage.out
+*.out
+*.prof
+*.pprof
 
 # Android
 android/app/libs/flowdav.aar

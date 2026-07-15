@@ -1,3 +1,4 @@
+// Package flowdavmobile — gomobile bridge exporting proxy API to Android (Kotlin/Java).
 package flowdavmobile
 
 import (

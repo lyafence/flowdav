@@ -1,17 +1,18 @@
 # Security Policy
 
-## Reporting a Vulnerability
-
-Please report security vulnerabilities by emailing **spbve1fu6@mozmail.com**.
-
-Do not open public GitHub issues for security vulnerabilities.
-
 ## Supported Versions
 
-| Version | Supported          |
-|---------|--------------------|
+| Version | Supported |
+|---------|-----------|
 | latest  | :white_check_mark: |
 | < latest| :x:                |
+
+## Reporting a Vulnerability
+
+Report vulnerabilities privately via **GitHub Security Advisories**.
+Do **not** open public GitHub Issues for security vulnerabilities.
+
+Response time: within 72 hours for initial acknowledgment.
 
 ## Scope
 
