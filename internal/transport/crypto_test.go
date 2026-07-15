@@ -2,6 +2,7 @@ package transport
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/binary"
 	"io"
 	"testing"
@@ -331,5 +332,80 @@ func TestMarshalBinaryOverflowGuard(t *testing.T) {
 	}
 	if len(data) == 0 {
 		t.Fatal("expected non-empty data")
+	}
+}
+
+// TestEncodeWithCryptoReusableGzipWriter verifies that a reusable gzip.Writer
+// can be passed to the internal encodeWithCrypto function and correctly encode
+// multiple sequential envelopes without corruption.
+func TestEncodeWithCryptoReusableGzipWriter(t *testing.T) {
+	cfg := &CryptoConfig{
+		EncKey:  make([]byte, 32),
+		HMacKey: make([]byte, 32),
+	}
+	gw, err := gzip.NewWriterLevel(io.Discard, gzip.DefaultCompression)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gw.Close()
+
+	for i := 0; i < 3; i++ {
+		env := &Envelope{
+			SessionID: "test-session-reuse-writer",
+			Seq:       uint64(i),
+			Payload:   bytes.Repeat([]byte("A"), 1000),
+		}
+		var buf bytes.Buffer
+		if err := env.encodeWithCrypto(&buf, cfg, gw); err != nil {
+			t.Fatalf("encode %d: %v", i, err)
+		}
+		decoded, err := DecodeEnvelopeWithCrypto(&buf, cfg)
+		if err != nil {
+			t.Fatalf("decode %d: %v", i, err)
+		}
+		if decoded.Seq != env.Seq || !bytes.Equal(decoded.Payload, env.Payload) {
+			t.Fatalf("roundtrip mismatch at seq=%d", i)
+		}
+	}
+}
+
+// TestDecodeWithCryptoReusableGzipReader verifies that a reusable gzip.Reader
+// can be passed to the internal decodeEnvelopeWithCrypto function and correctly
+// decode multiple sequential compressed envelopes without corruption.
+func TestDecodeWithCryptoReusableGzipReader(t *testing.T) {
+	cfg := &CryptoConfig{
+		EncKey:  make([]byte, 32),
+		HMacKey: make([]byte, 32),
+	}
+	var gr *gzip.Reader
+	{
+		var initBuf bytes.Buffer
+		w := gzip.NewWriter(&initBuf)
+		w.Close()
+		gr, _ = gzip.NewReader(&initBuf)
+	}
+	defer gr.Close()
+
+	payloads := [][]byte{
+		bytes.Repeat([]byte("A"), 1000),
+		bytes.Repeat([]byte("B"), 2000),
+		bytes.Repeat([]byte("C"), 500),
+	}
+	for _, payload := range payloads {
+		env := &Envelope{
+			SessionID: "test-reader",
+			Payload:   payload,
+		}
+		var enc bytes.Buffer
+		if err := env.EncodeWithCrypto(&enc, cfg); err != nil {
+			t.Fatal(err)
+		}
+		decoded, err := decodeEnvelopeWithCrypto(&enc, cfg, gr)
+		if err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if !bytes.Equal(decoded.Payload, payload) {
+			t.Fatalf("payload mismatch: got %d bytes, want %d bytes", len(decoded.Payload), len(payload))
+		}
 	}
 }

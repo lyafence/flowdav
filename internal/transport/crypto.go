@@ -58,10 +58,12 @@ func gzipDecompress(data []byte) ([]byte, error) {
 	return b, nil
 }
 
-// EncodeWithCrypto encrypts and writes the envelope to the writer.
+// encodeWithCrypto encrypts and writes the envelope to the writer.
+// If gw is non-nil, it is reused for gzip compression; otherwise a fresh
+// gzip.Writer is allocated for each compressible payload.
 // Payloads ≥256 bytes are gzip-compressed before encryption (flag byte
 // stored alongside to support backward-compatible decode).
-func (e *Envelope) EncodeWithCrypto(w io.Writer, cfg *CryptoConfig) error {
+func (e *Envelope) encodeWithCrypto(w io.Writer, cfg *CryptoConfig, gw *gzip.Writer) error {
 	data, err := e.MarshalBinary()
 	if err != nil {
 		return err
@@ -75,10 +77,29 @@ func (e *Envelope) EncodeWithCrypto(w io.Writer, cfg *CryptoConfig) error {
 	// Compress (if beneficial) and prepend a 1-byte flag
 	var payload []byte
 	if len(data) >= compressMinBytes {
-		compressed, cerr := gzipCompress(data)
-		if cerr == nil && len(compressed) < len(data) {
-			payload = append([]byte{compressFlagGzip}, compressed...)
-			logger.Debug("Crypto: compressed %d → %d bytes", len(data), len(compressed))
+		if gw == nil {
+			compressed, cerr := gzipCompress(data)
+			if cerr != nil {
+				return cerr
+			}
+			if len(compressed) < len(data) {
+				payload = append([]byte{compressFlagGzip}, compressed...)
+				logger.Debug("Crypto: compressed %d → %d bytes", len(data), len(compressed))
+			}
+		} else {
+			var compressedBuf bytes.Buffer
+			gw.Reset(&compressedBuf)
+			if _, err := gw.Write(data); err != nil {
+				return err
+			}
+			if err := gw.Close(); err != nil {
+				return err
+			}
+			if compressedBuf.Len() < len(data) {
+				compressed := compressedBuf.Bytes()
+				payload = append([]byte{compressFlagGzip}, compressed...)
+				logger.Debug("Crypto: compressed %d → %d bytes", len(data), len(compressed))
+			}
 		}
 	}
 	if payload == nil {
@@ -118,14 +139,23 @@ func (e *Envelope) EncodeWithCrypto(w io.Writer, cfg *CryptoConfig) error {
 	return nil
 }
 
+// EncodeWithCrypto encrypts and writes the envelope to the writer.
+// Payloads ≥256 bytes are gzip-compressed before encryption (flag byte
+// stored alongside to support backward-compatible decode).
+func (e *Envelope) EncodeWithCrypto(w io.Writer, cfg *CryptoConfig) error {
+	return e.encodeWithCrypto(w, cfg, nil)
+}
+
 // MaxMessageSize defines the maximum allowed message size to prevent OOM attacks.
 // Set once at startup before any goroutines begin. All other state lives inside
 // structs — no global state. Exception to "no global state" design invariant
 // (see AGENTS.md), justified by OOM prevention.
 var MaxMessageSize = 16 * 1024 * 1024 // 16 MB
 
-// DecodeEnvelopeWithCrypto reads and decrypts an envelope from the reader
-func DecodeEnvelopeWithCrypto(r io.Reader, cfg *CryptoConfig) (*Envelope, error) {
+// decodeEnvelopeWithCrypto reads and decrypts an envelope from the reader.
+// If gr is non-nil, it is reused for gzip decompression; otherwise a fresh
+// gzip.Reader is allocated for each compressed payload.
+func decodeEnvelopeWithCrypto(r io.Reader, cfg *CryptoConfig, gr *gzip.Reader) (*Envelope, error) {
 	if cfg == nil {
 		// No crypto: just unmarshal directly from reader
 		env := &Envelope{}
@@ -197,9 +227,19 @@ func DecodeEnvelopeWithCrypto(r io.Reader, cfg *CryptoConfig) (*Envelope, error)
 	var wire []byte
 	switch plaintext[0] {
 	case compressFlagGzip:
-		wire, err = gzipDecompress(plaintext[1:])
+		if gr == nil {
+			wire, err = gzipDecompress(plaintext[1:])
+		} else {
+			if err := gr.Reset(bytes.NewReader(plaintext[1:])); err != nil {
+				return nil, fmt.Errorf("gzip reset error: %w", err)
+			}
+			wire, err = io.ReadAll(io.LimitReader(gr, int64(MaxMessageSize)+1))
+		}
 		if err != nil {
 			return nil, fmt.Errorf("decompress error: %w", err)
+		}
+		if len(wire) > MaxMessageSize {
+			return nil, fmt.Errorf("decompressed payload exceeds max message size")
 		}
 	case compressFlagNone:
 		wire = plaintext[1:]
@@ -212,4 +252,9 @@ func DecodeEnvelopeWithCrypto(r io.Reader, cfg *CryptoConfig) (*Envelope, error)
 		return nil, err
 	}
 	return env, nil
+}
+
+// DecodeEnvelopeWithCrypto reads and decrypts an envelope from the reader.
+func DecodeEnvelopeWithCrypto(r io.Reader, cfg *CryptoConfig) (*Envelope, error) {
+	return decodeEnvelopeWithCrypto(r, cfg, nil)
 }

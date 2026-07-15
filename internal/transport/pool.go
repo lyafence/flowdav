@@ -1,8 +1,11 @@
 package transport
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"io"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -113,7 +116,7 @@ func (p *DownloadWorkerPool) Submit(job downloadJob, stopCh <-chan struct{}) boo
 func (p *DownloadWorkerPool) processDownload(ctx context.Context, stopCh <-chan struct{}, job *downloadJob) {
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Info("download panic %s: %v", job.filename, r)
+			logger.Info("download panic %s: %v\n%s", job.filename, r, debug.Stack())
 		}
 	}()
 
@@ -127,6 +130,15 @@ func (p *DownloadWorkerPool) processDownload(ctx context.Context, stopCh <-chan 
 		return
 	}
 	defer func() { <-e.sem }()
+
+	var gr *gzip.Reader
+	{
+		var buf bytes.Buffer
+		w := gzip.NewWriter(&buf)
+		w.Close()
+		gr, _ = gzip.NewReader(&buf)
+	}
+	defer gr.Close()
 
 	var rc io.ReadCloser
 	attempts, err := retryStorage(ctx, stopCh, "download "+job.filename, func() error {
@@ -162,7 +174,7 @@ func (p *DownloadWorkerPool) processDownload(ctx context.Context, stopCh <-chan 
 	for {
 		var env Envelope
 		if e.cryptoCfg != nil {
-			decodedEnv, err := DecodeEnvelopeWithCrypto(rc, e.cryptoCfg)
+			decodedEnv, err := decodeEnvelopeWithCrypto(rc, e.cryptoCfg, gr)
 			if err != nil {
 				if err != io.EOF && err != io.ErrUnexpectedEOF {
 					logger.Info("mux crypto decode error %s: %v", job.filename, err)

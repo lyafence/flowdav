@@ -2,10 +2,12 @@ package transport
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -324,6 +326,12 @@ func (e *Engine) flushAll(ctx context.Context) {
 		}
 	}
 
+	var gzipWriter *gzip.Writer
+	if e.cryptoCfg != nil {
+		gzipWriter, _ = gzip.NewWriterLevel(io.Discard, gzip.DefaultCompression)
+		defer gzipWriter.Close()
+	}
+
 	muxes := make(map[muxKey][]Envelope)
 	muxSessions := make(map[muxKey][]*Session)
 	var closedSessionIDs []string
@@ -383,7 +391,7 @@ func (e *Engine) flushAll(ctx context.Context) {
 				default:
 				}
 				before := buf.Len()
-				if err := env.EncodeWithCrypto(&buf, e.cryptoCfg); err != nil {
+				if err := env.encodeWithCrypto(&buf, e.cryptoCfg, gzipWriter); err != nil {
 					logger.Info("mux encode error: %v", err)
 					return
 				}

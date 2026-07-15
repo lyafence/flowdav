@@ -2,19 +2,17 @@ package transport
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/lyafence/flowdav/internal/storage"
 )
 
-type benchBackend struct {
-	mu sync.Mutex
-}
+type benchBackend struct{}
 
 func (b *benchBackend) Login(_ context.Context) error { return nil }
 func (b *benchBackend) Upload(_ context.Context, _ string, _ io.Reader) error {
@@ -110,6 +108,64 @@ func BenchmarkDecodeWithCrypto(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				r := bytes.NewReader(data)
 				_, err := DecodeEnvelopeWithCrypto(r, benchCfg)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkEncodeWithCryptoReusableWriter measures EncodeWithCrypto with a
+// reusable gzip.Writer to show the allocation savings from avoiding a new
+// gzip.Writer (and underlying deflate buffers) per envelope.
+func BenchmarkEncodeWithCryptoReusableWriter(b *testing.B) {
+	sizes := []int{256, 4096, 65536, 1048576, 4194304}
+	for _, size := range sizes {
+		env := makeEnvelope(size)
+		gw, err := gzip.NewWriterLevel(io.Discard, gzip.DefaultCompression)
+		if err != nil {
+			b.Fatal(err)
+		}
+		defer gw.Close()
+		b.Run(fmt.Sprintf("payload=%d", size), func(b *testing.B) {
+			var buf bytes.Buffer
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				buf.Reset()
+				if err := env.encodeWithCrypto(&buf, benchCfg, gw); err != nil {
+					b.Fatal(err)
+				}
+			}
+			b.ReportMetric(float64(buf.Len()), "wire_bytes")
+		})
+	}
+}
+
+// BenchmarkDecodeWithCryptoReusableReader measures DecodeEnvelopeWithCrypto with
+// a reusable gzip.Reader to show the allocation savings from avoiding a new
+// gzip.Reader per compressed envelope.
+func BenchmarkDecodeWithCryptoReusableReader(b *testing.B) {
+	sizes := []int{256, 4096, 65536, 1048576, 4194304}
+	var gr *gzip.Reader
+	{
+		var initBuf bytes.Buffer
+		w := gzip.NewWriter(&initBuf)
+		w.Close()
+		gr, _ = gzip.NewReader(&initBuf)
+	}
+	defer gr.Close()
+	for _, size := range sizes {
+		env := makeEnvelope(size)
+		var buf bytes.Buffer
+		if err := env.EncodeWithCrypto(&buf, benchCfg); err != nil {
+			b.Fatal(err)
+		}
+		data := buf.Bytes()
+		b.Run(fmt.Sprintf("payload=%d", size), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				r := bytes.NewReader(data)
+				_, err := decodeEnvelopeWithCrypto(r, benchCfg, gr)
 				if err != nil {
 					b.Fatal(err)
 				}
