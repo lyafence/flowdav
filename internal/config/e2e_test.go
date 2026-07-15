@@ -36,8 +36,7 @@ func TestEncryptedConfigEndToEnd(t *testing.T) {
 
 	password := "test-master-password-123"
 	cfg := &AppConfig{
-		ListenAddr:  "0.0.0.0:11080",
-		StorageType: "webdav",
+		ListenAddr: "0.0.0.0:11080",
 		WebDAV: &WebDAVConfig{
 			URL:   "http://127.0.0.1:18080",
 			Login: "user",

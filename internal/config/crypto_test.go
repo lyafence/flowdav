@@ -118,7 +118,6 @@ func TestDeriveKeyDifferentSalt(t *testing.T) {
 
 func TestLoadEncryptedSuccess(t *testing.T) {
 	cfg := &AppConfig{
-		StorageType: "webdav",
 		WebDAV: &WebDAVConfig{
 			URL:   "https://webdav.example.com",
 			Login: "user",
@@ -154,7 +153,6 @@ func TestLoadEncryptedSuccess(t *testing.T) {
 
 	loaded, err := LoadEncrypted(f.Name(), "test-password")
 	require.NoError(t, err)
-	require.Equal(t, cfg.StorageType, loaded.StorageType)
 	require.Equal(t, cfg.WebDAV.URL, loaded.WebDAV.URL)
 	require.Equal(t, cfg.WebDAV.Login, loaded.WebDAV.Login)
 	require.NotNil(t, loaded.EncKeyDecoded)

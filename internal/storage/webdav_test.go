@@ -258,6 +258,49 @@ func TestRandomHeaderTransportPreservesExisting(t *testing.T) {
 	}
 }
 
+func TestRedirectGuardBlocksCrossOrigin(t *testing.T) {
+	redirectTo := "http://169.254.169.254/latest/meta-data/"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, redirectTo, http.StatusFound)
+	}))
+	defer srv.Close()
+
+	guard := &redirectGuardTransport{inner: http.DefaultTransport}
+	req, err := http.NewRequestWithContext(context.Background(), "GET", srv.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := guard.RoundTrip(req)
+	if err == nil || !strings.Contains(err.Error(), "cross-origin redirect blocked") {
+		if resp != nil && resp.Body != nil {
+			resp.Body.Close()
+		}
+		t.Fatalf("expected cross-origin redirect to be blocked, got: %v", err)
+	}
+}
+
+func TestRedirectGuardAllowsSameOrigin(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", "http://"+r.Host+"/redirected")
+		w.WriteHeader(http.StatusFound)
+	}))
+	defer srv.Close()
+
+	guard := &redirectGuardTransport{inner: http.DefaultTransport}
+	req, err := http.NewRequestWithContext(context.Background(), "GET", srv.URL+"/original", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := guard.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("same-origin redirect should not be blocked: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusFound {
+		t.Errorf("expected 302, got %d", resp.StatusCode)
+	}
+}
+
 type nullTransport struct{}
 
 func (t *nullTransport) RoundTrip(_ *http.Request) (*http.Response, error) {

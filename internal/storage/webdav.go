@@ -236,8 +236,9 @@ func NewWebDAVBackend(login, token, basePath, url, tlsFingerprint string) (*WebD
 		DisableCompression:    true,
 		ResponseHeaderTimeout: 30 * time.Second,
 		ExpectContinueTimeout: 5 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
 		DialTLSContext:        dialTLS,
-		TLSNextProto:          make(map[string]func(authority string, c *tls.Conn) http.RoundTripper),
+		TLSNextProto:          make(map[string]func(authority string, c *tls.Conn) http.RoundTripper), // uTLS не поддерживает HTTP/2
 	}
 	uaTransport := &userAgentTransport{inner: transport, ua: chromeUA}
 	randomTransport := &randomHeaderTransport{inner: uaTransport}

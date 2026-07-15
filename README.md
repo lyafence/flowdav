@@ -150,7 +150,6 @@ docker run --rm -v ./config.json.enc:/app/configs/config.json.enc \
 
 | Field | Type | Default | Client | Server | Description |
 |-------|------|---------|--------|--------|-------------|
-| `storage_type` | string | `"webdav"` | ✓ | ✓ | Backend type |
 | `webdav` | object | — | ✓ | ✓ | WebDAV connection (see example) |
 | `webdav.base_path` | string | `""` | ✓ | ✓ | WebDAV subdirectory for files |
 | `enc_key` | string | — | ✓ | ✓ | 32-byte AES-256 key, base64 |

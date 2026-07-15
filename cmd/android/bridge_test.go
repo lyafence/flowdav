@@ -38,7 +38,8 @@ func TestDecodeKey(t *testing.T) {
 }
 
 func TestParseConfigJSON(t *testing.T) {
-	validKey := base64.StdEncoding.EncodeToString(make([]byte, 32))
+	encKey := base64.StdEncoding.EncodeToString([]byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+	hmacKey := base64.StdEncoding.EncodeToString([]byte("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"))
 	makeCfg := func(encKey, hmacKey string) []byte {
 		return []byte(`{"enc_key":"` + encKey + `","hmac_key":"` + hmacKey + `","webdav":{"url":"http://example.com"}}`)
 	}
@@ -48,14 +49,14 @@ func TestParseConfigJSON(t *testing.T) {
 		data    []byte
 		wantErr string
 	}{
-		{"valid", makeCfg(validKey, validKey), ""},
-		{"missing webdav", []byte(`{"enc_key":"` + validKey + `","hmac_key":"` + validKey + `"}`), "webdav config is required"},
-		{"missing enc_key", []byte(`{"hmac_key":"` + validKey + `","webdav":{"url":"http://example.com"}}`), "enc_key is required"},
-		{"missing hmac_key", []byte(`{"enc_key":"` + validKey + `","webdav":{"url":"http://example.com"}}`), "hmac_key is required"},
+		{"valid", makeCfg(encKey, hmacKey), ""},
+		{"missing webdav", []byte(`{"enc_key":"` + encKey + `","hmac_key":"` + hmacKey + `"}`), "webdav config is required"},
+		{"missing enc_key", []byte(`{"hmac_key":"` + hmacKey + `","webdav":{"url":"http://example.com"}}`), "enc_key is required"},
+		{"missing hmac_key", []byte(`{"enc_key":"` + encKey + `","webdav":{"url":"http://example.com"}}`), "hmac_key is required"},
 		{"invalid JSON", []byte(`{bad`), "invalid character"},
-		{"bad enc_key", makeCfg("!!!", validKey), "invalid enc_key:"},
-		{"bad hmac_key", makeCfg(validKey, "!!!"), "invalid hmac_key:"},
-		{"short key", makeCfg(base64.StdEncoding.EncodeToString(make([]byte, 16)), validKey), "invalid enc_key: must be 32 bytes"},
+		{"bad enc_key", makeCfg("!!!", hmacKey), "invalid enc_key:"},
+		{"bad hmac_key", makeCfg(encKey, "!!!"), "invalid hmac_key:"},
+		{"short key", makeCfg(base64.StdEncoding.EncodeToString(make([]byte, 16)), hmacKey), "invalid enc_key: must be 32 bytes"},
 	}
 
 	for _, tt := range tests {
@@ -69,7 +70,6 @@ func TestParseConfigJSON(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, cfg)
 			require.NotNil(t, cfg.WebDAV)
-			require.Equal(t, "webdav", cfg.StorageType)
 			require.Len(t, cfg.EncKeyDecoded, 32)
 			require.Len(t, cfg.HMacKeyDecoded, 32)
 		})
@@ -77,10 +77,10 @@ func TestParseConfigJSON(t *testing.T) {
 }
 
 func TestParseConfigJSONDefaults(t *testing.T) {
-	validKey := base64.StdEncoding.EncodeToString(make([]byte, 32))
-	cfg, err := parseConfigJSON([]byte(`{"enc_key":"` + validKey + `","hmac_key":"` + validKey + `","webdav":{"url":"http://example.com"},"max_message_size":65536,"log_level":"debug"}`))
+	encKey := base64.StdEncoding.EncodeToString([]byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+	hmacKey := base64.StdEncoding.EncodeToString([]byte("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"))
+	cfg, err := parseConfigJSON([]byte(`{"enc_key":"` + encKey + `","hmac_key":"` + hmacKey + `","webdav":{"url":"http://example.com"},"max_message_size":65536,"log_level":"debug"}`))
 	require.NoError(t, err)
 	require.Equal(t, 65536, cfg.MaxMessageSize)
 	require.Equal(t, "debug", cfg.LogLevel)
-	require.Equal(t, "webdav", cfg.StorageType)
 }

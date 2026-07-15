@@ -400,7 +400,11 @@ func (e *Engine) flushAll(ctx context.Context) {
 				padFile(&buf, e.PaddingSize, safeUploadSize())
 			}
 
-			filename := randomFilename(uploadPrefix(e.myDir))
+			filename, err := randomFilename(uploadPrefix(e.myDir))
+			if err != nil {
+				logger.Info("random filename error: %v", err)
+				return
+			}
 
 			select {
 			case e.uploadJobs <- uploadJob{
@@ -583,12 +587,12 @@ func (e *Engine) jitterFlushInterval(d time.Duration) time.Duration {
 
 // randomFilename generates an obfuscated filename with a direction prefix
 // to avoid leaking client ID, timing, or session metadata via filenames.
-func randomFilename(dirByte string) string {
+func randomFilename(dirByte string) (string, error) {
 	var b [8]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		panic("crypto/rand read failed: " + err.Error())
+		return "", fmt.Errorf("crypto/rand read failed: %w", err)
 	}
-	return fmt.Sprintf("%s%s", dirByte, hex.EncodeToString(b[:]))
+	return fmt.Sprintf("%s%s", dirByte, hex.EncodeToString(b[:])), nil
 }
 
 func (e *Engine) RemoveSession(id string) {

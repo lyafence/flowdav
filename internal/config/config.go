@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -84,9 +85,6 @@ type WebDAVConfig struct {
 type AppConfig struct {
 	// ListenAddr is the SOCKS5 listening address for the client. E.g., "127.0.0.1:1080"
 	ListenAddr string `json:"listen_addr,omitempty"`
-
-	// StorageType defines the backend. Only "webdav" is supported (default).
-	StorageType string `json:"storage_type,omitempty"`
 
 	// WebDAV contains the WebDAV configuration.
 	// Can contain single backend or multiple backends (auto-detected).
@@ -175,10 +173,6 @@ type AppConfig struct {
 // Populates cfg.EncKeyDecoded and cfg.HMacKeyDecoded on success.
 // Called by Load and LoadEncrypted — all config validation lives here.
 func ValidateAppConfig(cfg *AppConfig) error {
-	// Only WebDAV storage is supported; default to it if not set.
-	if cfg.StorageType == "" {
-		cfg.StorageType = "webdav"
-	}
 	if cfg.WebDAV == nil {
 		return fmt.Errorf("webdav config is required")
 	}
@@ -235,6 +229,10 @@ func ValidateAppConfig(cfg *AppConfig) error {
 	}
 	if len(hmacKey) != 32 {
 		return fmt.Errorf("invalid hmac_key: must be 32 bytes after base64 decoding, got %d", len(hmacKey))
+	}
+
+	if bytes.Equal(key, hmacKey) {
+		return fmt.Errorf("enc_key and hmac_key must be different")
 	}
 
 	// Validate MaxMessageSize (if set)

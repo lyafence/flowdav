@@ -172,7 +172,6 @@ func StartProxyManual(webdavURL, webdavLogin, webdavToken, encKeyBase64, hmacKey
 	}
 
 	appCfg := &config.AppConfig{
-		StorageType: "webdav",
 		WebDAV: &config.WebDAVConfig{
 			URL:   webdavURL,
 			Login: webdavLogin,

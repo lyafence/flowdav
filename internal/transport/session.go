@@ -28,7 +28,10 @@ const (
 )
 
 // MaxRxQueueSize limits out-of-order packet queue to prevent memory exhaustion
-const MaxRxQueueSize = 1000
+const (
+	MaxRxQueueSize  = 1000
+	MaxRxQueueBytes = 256 * 1024 * 1024 // 256MB per session
+)
 
 // Session represents an active proxy connection mapped to files.
 type Session struct {
@@ -38,10 +41,12 @@ type Session struct {
 	txSeq        uint64
 	rxSeq        uint64
 	rxQueue      map[uint64]Envelope
+	rxQueueBytes int // total payload bytes in rxQueue; checked alongside MaxRxQueueSize
 	lastActivity time.Time
 	closed       bool
 	rxClosed     bool // Safely tracks if RxChan was successfully closed
 	rxOnce       sync.Once
+	rxDone       chan struct{} // Closed alongside RxChan; select on this in ProcessRx to prevent send on closed channel
 	TargetAddr   string
 
 	// Backpressure: blocked when txBuf is too large
@@ -90,6 +95,7 @@ func NewSession(id string) *Session {
 		lastActivity: time.Now(),
 		RxChan:       make(chan []byte, 1024),
 		txWait:       make(chan struct{}),
+		rxDone:       make(chan struct{}),
 		IdleTimeout:  10 * time.Second,
 	}
 	return s
@@ -103,6 +109,7 @@ func (s *Session) Close() {
 	s.mu.Unlock()
 	s.rxOnce.Do(func() {
 		close(s.RxChan)
+		close(s.rxDone)
 	})
 	s.wakeupTx()
 }
@@ -216,6 +223,7 @@ func (s *Session) ProcessRx(env *Envelope) {
 				if len(nextEnv.Payload) > 0 {
 					payloadsToSend = append(payloadsToSend, append([]byte{}, nextEnv.Payload...))
 				}
+				s.rxQueueBytes -= len(nextEnv.Payload)
 				delete(s.rxQueue, s.rxSeq)
 				s.rxSeq++
 				if nextEnv.Close {
@@ -230,13 +238,15 @@ func (s *Session) ProcessRx(env *Envelope) {
 		}
 	} else if env.Seq > s.rxSeq {
 		// Check queue size to prevent memory exhaustion from out-of-order packets
-		if len(s.rxQueue) >= MaxRxQueueSize {
-			logger.Warn("Session %s: rxQueue full, dropping packet seq=%d", s.ID, env.Seq)
+		if len(s.rxQueue) >= MaxRxQueueSize || s.rxQueueBytes >= MaxRxQueueBytes {
+			logger.Warn("Session %s: rxQueue full (%d items, %d bytes), dropping packet seq=%d",
+				s.ID, len(s.rxQueue), s.rxQueueBytes, env.Seq)
 			s.mu.Unlock()
 			return
 		}
 		// Deep copy to avoid corruption when the original envelope is reused
 		// Payload is a []byte slice which is a reference type - must copy the underlying array
+		payloadLen := len(env.Payload)
 		s.rxQueue[env.Seq] = Envelope{
 			SessionID:  env.SessionID,
 			Seq:        env.Seq,
@@ -244,6 +254,7 @@ func (s *Session) ProcessRx(env *Envelope) {
 			Payload:    append([]byte{}, env.Payload...), // deep copy of slice
 			Close:      env.Close,
 		}
+		s.rxQueueBytes += payloadLen
 	}
 	s.mu.Unlock()
 
@@ -261,6 +272,8 @@ func (s *Session) ProcessRx(env *Envelope) {
 				default:
 				}
 			}
+		case <-s.rxDone:
+			return
 		case <-timer.C:
 			logger.Warn("Session %s: RxChan blocked for 30s, dropping payload", s.ID)
 		}
@@ -268,6 +281,7 @@ func (s *Session) ProcessRx(env *Envelope) {
 	if closeChannel {
 		s.rxOnce.Do(func() {
 			close(s.RxChan)
+			close(s.rxDone)
 		})
 	}
 }

@@ -45,7 +45,10 @@ func NewSocks5Options(cfg Socks5Config) ([]socks5.Option, error) {
 
 	opts := []socks5.Option{
 		socks5.WithDial(func(ctx context.Context, _, addr string) (net.Conn, error) {
-			sessionID := generateSessionID()
+			sessionID, err := generateSessionID()
+			if err != nil {
+				return nil, fmt.Errorf("session ID generation failed: %w", err)
+			}
 
 			host, port, err := net.SplitHostPort(addr)
 			if err == nil {
@@ -114,12 +117,12 @@ func logMsg(msg string, logFn func(string, ...any), args ...any) {
 	}
 }
 
-func generateSessionID() string {
+func generateSessionID() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		panic("crypto/rand read failed: " + err.Error())
+		return "", fmt.Errorf("crypto/rand read failed: %w", err)
 	}
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(b), nil
 }
 
 type rawResolver struct{}
