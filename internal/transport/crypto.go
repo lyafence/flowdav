@@ -11,6 +11,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"sync"
 
 	"github.com/lyafence/flowdav/internal/logger"
 )
@@ -22,9 +23,34 @@ const (
 )
 
 // CryptoConfig holds the AES-256-GCM encryption key and HMAC-SHA256 key.
+// Must be passed by pointer — contains sync.Once and must not be copied.
 type CryptoConfig struct {
 	EncKey  []byte
 	HMacKey []byte
+
+	aead     cipher.AEAD
+	aeadOnce sync.Once
+	aeadErr  error
+}
+
+func (c *CryptoConfig) getAEAD() (cipher.AEAD, error) {
+	c.aeadOnce.Do(func() {
+		block, err := aes.NewCipher(c.EncKey)
+		if err != nil {
+			c.aeadErr = err
+			return
+		}
+		gcm, err := cipher.NewGCM(block)
+		if err != nil {
+			c.aeadErr = err
+			return
+		}
+		c.aead = gcm
+	})
+	if c.aeadErr != nil {
+		return nil, c.aeadErr
+	}
+	return c.aead, nil
 }
 
 func gzipCompress(data []byte) ([]byte, error) {
@@ -106,11 +132,7 @@ func (e *Envelope) encodeWithCrypto(w io.Writer, cfg *CryptoConfig, gw *gzip.Wri
 		payload = append([]byte{compressFlagNone}, data...)
 	}
 
-	block, err := aes.NewCipher(cfg.EncKey)
-	if err != nil {
-		return err
-	}
-	gcm, err := cipher.NewGCM(block)
+	gcm, err := cfg.getAEAD()
 	if err != nil {
 		return err
 	}
@@ -203,11 +225,7 @@ func decodeEnvelopeWithCrypto(r io.Reader, cfg *CryptoConfig, gr *gzip.Reader) (
 	}
 
 	// Decrypt
-	block, err := aes.NewCipher(cfg.EncKey)
-	if err != nil {
-		return nil, err
-	}
-	gcm, err := cipher.NewGCM(block)
+	gcm, err := cfg.getAEAD()
 	if err != nil {
 		return nil, err
 	}

@@ -184,7 +184,7 @@ func TestFlushAllRespectsStopCh(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		engine.flushAll(ctx)
+		engine.flushAll(ctx, nil)
 		close(done)
 	}()
 
@@ -307,7 +307,7 @@ func TestBackendIdxDataRace(t *testing.T) {
 		close(start)
 		defer wg.Done()
 		for iter := 0; iter < 50; iter++ {
-			engine.flushAll(ctx)
+			engine.flushAll(ctx, nil)
 			for j := range numSessions {
 				engine.sessionMu.RLock()
 				s, exists := engine.sessions[fmt.Sprintf("race-session-%d", j)]
@@ -379,7 +379,7 @@ func TestFlushAllSplitsOversizedMux(t *testing.T) {
 	}
 
 	// Call flushAll directly (this runs in the test goroutine)
-	engine.flushAll(ctx)
+	engine.flushAll(ctx, nil)
 
 	// Wait for upload workers to finish all queued jobs before checking.
 	// Poll be.uploaded with timeout instead of relying on engine.Stop() —
@@ -514,7 +514,7 @@ func TestFlushAllDataIntegrity(t *testing.T) {
 		engine.AddSession(s)
 	}
 
-	engine.flushAll(ctx)
+	engine.flushAll(ctx, nil)
 	time.Sleep(200 * time.Millisecond)
 	engine.Stop()
 
@@ -601,7 +601,7 @@ func TestHoldDelayRange(t *testing.T) {
 	var maxDelay time.Duration
 	for i := 0; i < 30; i++ {
 		start := time.Now()
-		engine.flushAll(ctx)
+		engine.flushAll(ctx, nil)
 		d := time.Since(start)
 		if d > maxDelay {
 			maxDelay = d
@@ -622,7 +622,7 @@ func TestHoldDelayDisabledOnClient(t *testing.T) {
 	defer cancel()
 
 	start := time.Now()
-	engine.flushAll(ctx)
+	engine.flushAll(ctx, nil)
 	elapsed := time.Since(start)
 	if elapsed > time.Millisecond {
 		t.Errorf("client-side engine had non-trivial hold delay: %v", elapsed)

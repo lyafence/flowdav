@@ -31,6 +31,11 @@ const (
 const (
 	MaxRxQueueSize  = 1000
 	MaxRxQueueBytes = 256 * 1024 * 1024 // 256MB per session
+	// DefaultRxChanSize buffers received payloads until the SOCKS5 client reads
+	// them. 64 slots (~256KB at typical 4KB payloads) keeps memory footprint low
+	// on routers while remaining sufficient: the decrypt path (producer) is
+	// typically slower than the network write (consumer) on constrained CPUs.
+	DefaultRxChanSize = 64
 )
 
 // Session represents an active proxy connection mapped to files.
@@ -93,7 +98,7 @@ func NewSession(id string) *Session {
 		ID:           id,
 		rxQueue:      make(map[uint64]Envelope),
 		lastActivity: time.Now(),
-		RxChan:       make(chan []byte, 1024),
+		RxChan:       make(chan []byte, DefaultRxChanSize),
 		txWait:       make(chan struct{}),
 		rxDone:       make(chan struct{}),
 		IdleTimeout:  10 * time.Second,

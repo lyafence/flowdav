@@ -26,6 +26,9 @@ test:
 test-short:
 	go test -short -count=1 ./...
 
+bench:
+	go test -bench=. -benchmem -timeout 180s ./internal/transport/
+
 test-e2e: docker-build
 	bash scripts/test_e2e.sh
 

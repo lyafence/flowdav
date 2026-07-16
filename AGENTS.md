@@ -8,6 +8,7 @@
 | `make check` | Full verification: vet → lint → build → test (with race detector) |
 | `make test` | Unit tests with race detector (`-timeout 120s`) |
 | `make test-short` | Unit tests without race detector |
+| `make bench` | Run benchmarks: `go test -bench=. -benchmem -timeout 180s ./internal/transport/` |
 | `make test-e2e` | E2E tests (requires podman; runs `scripts/test_e2e.sh`) |
 | `make test-e2e-encrypted` | E2E + encrypted configs |
 | `make fuzz` | Run fuzz tests (30s each: transport envelope) |
@@ -85,6 +86,7 @@ Install with `make hooks`.
 
 - Go 1.26.5, stdlib preferred.
 - Tests: `testing` package, table-driven, `-race` enabled.
+- Benchmarks: `bench_test.go` in `internal/transport`. Run with `make bench`.
 - Imports: stdlib → third-party → internal, blank-line separated.
 - Naming: camelCase, no getters, unexported by default.
 - Errors: always checked and wrapped. Log via `internal/logger`.

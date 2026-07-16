@@ -228,6 +228,12 @@ func (e *Engine) Drain(ctx context.Context) error {
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
 
+	var gw *gzip.Writer
+	if e.cryptoCfg != nil {
+		gw, _ = gzip.NewWriterLevel(io.Discard, gzip.DefaultCompression)
+		defer gw.Close()
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -247,7 +253,7 @@ func (e *Engine) Drain(ctx context.Context) error {
 				return nil
 			}
 
-			e.flushAll(ctx)
+			e.flushAll(ctx, gw)
 		}
 	}
 }
@@ -280,15 +286,21 @@ func (e *Engine) flushLoop(ctx context.Context) {
 	timer := time.NewTimer(e.flushTicker)
 	defer timer.Stop()
 
+	var gw *gzip.Writer
+	if e.cryptoCfg != nil {
+		gw, _ = gzip.NewWriterLevel(io.Discard, gzip.DefaultCompression)
+		defer gw.Close()
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-e.stopCh:
-			e.flushAll(ctx)
+			e.flushAll(ctx, gw)
 			return
 		case <-timer.C:
-			e.flushAll(ctx)
+			e.flushAll(ctx, gw)
 			timer.Reset(e.jitterFlushInterval(e.flushTicker))
 		}
 	}
@@ -298,7 +310,7 @@ type muxKey struct {
 	BackendIdx uint8
 }
 
-func (e *Engine) flushAll(ctx context.Context) {
+func (e *Engine) flushAll(ctx context.Context, gzipWriter *gzip.Writer) {
 	e.sessionMu.Lock()
 	sessions := make([]*Session, 0, len(e.sessions))
 	for _, s := range e.sessions {
@@ -324,12 +336,6 @@ func (e *Engine) flushAll(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		}
-	}
-
-	var gzipWriter *gzip.Writer
-	if e.cryptoCfg != nil {
-		gzipWriter, _ = gzip.NewWriterLevel(io.Discard, gzip.DefaultCompression)
-		defer gzipWriter.Close()
 	}
 
 	muxes := make(map[muxKey][]Envelope)

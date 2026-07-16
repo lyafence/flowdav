@@ -10,6 +10,7 @@ make build
 ## Development workflow
 
 ```bash
+make bench      # run benchmarks (performance regression check)
 make check      # full verification: vet → lint → build → test with race detector
 make test-e2e   # E2E tests (requires podman)
 ```
@@ -59,7 +60,7 @@ Requires: Android SDK + NDK + gomobile. Run `make android-init` to set up.
 ## Pull requests
 
 1. Read the relevant package first — understand existing patterns.
-2. Run `make check` after any change — full verification (vet → lint → build → test).
+2. Run `make check` after any change — full verification (vet → lint → build → test). For performance-sensitive changes, also run `make bench`.
 3. If adding features to the SOCKS5/engine path, run `make test-e2e` or `make docker-e2e`.
 4. Open a PR on [GitHub](https://github.com/lyafence/flowdav).
 

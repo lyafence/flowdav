@@ -238,6 +238,46 @@ for i in 1 2 3; do
     fi
 done
 
+# ── Phase 7: Large File Transfer Test ──────────
+echo ""
+echo "--- Phase 7: Large File Transfer Test ---"
+
+TMPDIR=$(mktemp -d)
+trap 'rm -rf "$TMPDIR"' EXIT
+
+# compressible data (tests gzip compression path)
+dd if=/dev/zero bs=1K count=1 of="$TMPDIR/small.bin" 2>/dev/null
+# large random data (tests mux-split: safeUploadSize = 14MB)
+dd if=/dev/urandom bs=1M count=15 of="$TMPDIR/huge.bin" 2>/dev/null
+
+FILES="small huge"
+declare -A EXPECTED
+for f in $FILES; do
+    EXPECTED[$f]=$(sha256sum "$TMPDIR/$f.bin" | awk '{print $1}')
+
+    log_info "Uploading $f.bin to WebDAV..."
+    if ! curl -sf -u test:test -T "$TMPDIR/$f.bin" \
+        "http://127.0.0.1:8080/$f.bin" >/dev/null 2>&1; then
+        log_fail "Upload $f.bin failed"; continue
+    fi
+
+    log_info "Downloading $f.bin through SOCKS5 proxy..."
+    DOWNLOADED="$TMPDIR/got_$f.bin"
+    if ! curl -s --proxy socks5h://127.0.0.1:11080 \
+        -u test:test \
+        "http://webdav-single:8080/$f.bin" --max-time 60 \
+        -o "$DOWNLOADED" 2>&1; then
+        log_fail "Download $f.bin failed"; continue
+    fi
+
+    GOT=$(sha256sum "$DOWNLOADED" | awk '{print $1}')
+    if [ "${EXPECTED[$f]}" = "$GOT" ]; then
+        log_pass "Transfer $f.bin — SHA256 matches"
+    else
+        log_fail "Transfer $f.bin — SHA256 mismatch (expected ${EXPECTED[$f]}, got $GOT)"
+    fi
+done
+
 # ── Cleanup ─────────────────────────────────
 echo ""
 echo "--- Cleanup ---"

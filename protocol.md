@@ -326,7 +326,8 @@ for demultiplexing.
 |----------|---------|---------|-------------|
 | `MaxMessageSize` | 16 MB | 16 MB (configurable at startup) | Maximum payload per envelope (before encryption overhead). |
 | `MaxStringLen` | — | 65535 | Maximum length of SessionID or TargetAddr. |
-| `MaxRxQueueSize` | — | 1000 | Out-of-order packet queue limit per session. |
+| `MaxRxQueueSize` | — | 1000 | Out-of-order packet queue limit per session (count). |
+| `MaxRxQueueBytes` | — | 256 MB | Out-of-order packet queue byte limit per session (capped alongside count). |
 | Retry attempts | — | 3 | Number of storage operation retries before giving up. |
 | Idle timeout | 10 s (configurable) | 30 s recommended | Session idle timeout before forced close. Set via `idle_timeout_ms` in config. |
 | Padding size | Off | — | Tail padding bucket (bytes). Set via `padding_size`. Hides exact payload size from storage observer. |
@@ -353,6 +354,18 @@ Poll and flush intervals use random jitter to break periodic patterns.
 Jitter factor is computed as `min + (rand_byte / 255.0) * (max - min)`,
 using a single random byte from `crypto/rand`.
 
+### Polling backoff
+
+When no new files are found during a poll cycle, the poll interval is doubled
+(exponential backoff) up to the configured maximum (default 60 s). This reduces
+idle WebDAV API calls.
+
+When a file IS found, two things happen:
+
+1. **Reset:** the poll interval resets to `minPollInterval` (default 500 ms).
+2. **Burst:** a fast re-poll at 100 ms (with jitter) catches additional files that
+   may have been uploaded during the previous poll cycle.
+
 ### Activity-based poll reset
 
 When a session enqueues outbound data (user activity), the poll timer
@@ -363,8 +376,10 @@ backoff from delaying the first response when a user starts browsing.
 
 ## References
 
-- [Source: Binary envelope format](internal/transport/envelope.go)
-- [Source: Crypto wire format](internal/transport/crypto.go)
-- [Source: Filename generation](internal/transport/engine.go)
-- [Source: Storage mapping](internal/storage/webdav.go)
-- [Source: Multiplexing logic](internal/transport/engine.go#L258)
+- [Source: Binary envelope format](internal/transport/envelope.go) — `MarshalBinary` / `UnmarshalBinary`
+- [Source: Crypto wire format](internal/transport/crypto.go) — `encodeWithCrypto` / `decodeEnvelopeWithCrypto`
+- [Source: Filename generation](internal/transport/engine.go) — `randomFilename`
+- [Source: Storage mapping](internal/storage/webdav.go) — `dirReq` / `dirRes` constants
+- [Source: Multiplexing logic](internal/transport/engine.go) — `flushAll`
+- [Source: Upload workers](internal/transport/engine.go) — `uploadWorker`
+- [Source: Download workers](internal/transport/pool.go) — `processDownload`
