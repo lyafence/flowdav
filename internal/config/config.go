@@ -192,6 +192,9 @@ func ValidateAppConfig(cfg *AppConfig) error {
 			return fmt.Errorf("webdav.backends requires at least 2 backends, got %d", len(cfg.WebDAV.Backends))
 		}
 		for i, be := range cfg.WebDAV.Backends {
+			if be.URL == "" {
+				return fmt.Errorf("webdav.backends[%d].url is required", i)
+			}
 			if be.BasePath != "" {
 				if err := ValidateBasePath(be.BasePath, fmt.Sprintf("webdav.backends[%d].base_path", i)); err != nil {
 					return err
@@ -353,6 +356,12 @@ func ResolvePassword(args []string) (password string, interactive bool, rest []s
 		}
 		if strings.HasPrefix(args[i], "-p=") {
 			password = strings.TrimPrefix(args[i], "-p=")
+			rest = append(rest, args[:i]...)
+			rest = append(rest, args[i+1:]...)
+			return password, false, rest
+		}
+		if strings.HasPrefix(args[i], "--password=") {
+			password = strings.TrimPrefix(args[i], "--password=")
 			rest = append(rest, args[:i]...)
 			rest = append(rest, args[i+1:]...)
 			return password, false, rest

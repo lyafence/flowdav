@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -125,4 +126,32 @@ func TestValidateBasePathTripleEncodedNull(_ *testing.T) {
 	}
 	// This is the expected vulnerable path — the string "%00" is
 	// not a real null byte and has no practical path traversal risk.
+}
+
+func TestValidateAppConfigBackendsMissingURL(t *testing.T) {
+	encKey := make([]byte, 32)
+	hmacKey := make([]byte, 32)
+	for i := range hmacKey {
+		hmacKey[i] = 1 // different from encKey
+	}
+	cfg := &AppConfig{
+		WebDAV: &WebDAVConfig{
+			Backends: []WebDAVConfig{
+				{URL: "https://webdav1.example.com", Login: "user", Token: "tok"},
+				{URL: "", Login: "user", Token: "tok"}, // missing URL
+			},
+		},
+		EncKey:  base64Encode(encKey),
+		HMacKey: base64Encode(hmacKey),
+	}
+	err := ValidateAppConfig(cfg)
+	if err == nil {
+		t.Fatal("expected error for missing backend URL")
+	}
+}
+
+func base64Encode(b []byte) string {
+	enc := make([]byte, base64.StdEncoding.EncodedLen(len(b)))
+	base64.StdEncoding.Encode(enc, b)
+	return string(enc)
 }

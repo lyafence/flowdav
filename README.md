@@ -168,7 +168,7 @@ docker run --rm -v ./config.json.enc:/app/configs/config.json.enc \
 | `max_message_size` | int | `16777216` | ✓ | ✓ | Max payload (bytes) |
 | `tls_fingerprint` | string | `"chrome"` | ✓ | ✓ | TLS fingerprint profile (`chrome`, `chrome_auto`) |
 | `padding_size` | int | `0` (off) | ✓ | ✓ | Tail padding bucket size (bytes); hides exact payload size from storage observer. Adds overhead; try `4096` or `16384` with public WebDAV providers. |
-| `hold_ms` | int | `0` (off) | ✓ | ✓ | Max server-side random delay before flushing (ms). Adds latency. |
+| `hold_ms` | int | `0` (off) | | ✓ | Max server-side random delay before flushing (ms). Adds latency. |
 | `health_port` | string | `""` | ✓ | ✓ | Health endpoint (`host:port`) |
 
 Client-only fields (`listen_addr`, `socks5_user`, `socks5_pass`, `max_connections`) are absent from server configs. Unset fields use defaults.
@@ -233,6 +233,12 @@ Run `flowdav --version` to print the release version; `flowdav --help` for all m
 ## Similar Projects
 
 - [webdav-tunnel](https://github.com/spkprsnts/webdav-tunnel) — TCP tunnel over WebDAV with self-hosted mode (embedded server) and yamux multiplexing. Uses a different wire protocol and is **not compatible** with flowdav.
+
+## Development
+
+This project was developed with AI assistance. All code is reviewed, tested,
+and maintained by the author. Contributions are welcome regardless of how
+they are produced — AI-assisted or hand-written.
 
 ## License
 
