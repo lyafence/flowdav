@@ -137,9 +137,7 @@ func TestDecodeInvalidHMAC(t *testing.T) {
 	}
 }
 
-// TestVersionByte verifies that the version byte is written at offset 1
-// and validated on decode. Before fix: byte 1 is sidLen high byte, no version.
-// After fix: byte 1 is VersionByte (0x01), and mismatched version is rejected.
+// TestVersionByte verifies version byte at offset 1 validates on decode.
 func TestVersionByte(t *testing.T) {
 	env := &Envelope{
 		SessionID:  "test",
@@ -153,8 +151,7 @@ func TestVersionByte(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Before fix: byte 1 is sidLen high byte (e.g. 0x00 for short IDs)
-	// After fix: byte 1 is VersionByte (0x01)
+	// byte 1 must be VersionByte, not sidLen high byte
 	if data[1] != 0x01 {
 		t.Errorf("expected version byte 0x01 at offset 1, got 0x%02X", data[1])
 	}
@@ -294,9 +291,7 @@ func TestDecodeLargePayload(t *testing.T) {
 	}
 }
 
-// TestDecodeEnvelopeWithCryptoLargeLength rejects a length header that
-// exceeds MaxMessageSize on both 32-bit and 64-bit builds. Before the fix,
-// the int(dataLen) comparison wrapped on 32-bit and allowed an OOM allocation.
+// TestDecodeEnvelopeWithCryptoLargeLength rejects oversized length (uint32 safe).
 func TestDecodeEnvelopeWithCryptoLargeLength(t *testing.T) {
 	cfg := &CryptoConfig{
 		EncKey:  make([]byte, 32),

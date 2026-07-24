@@ -212,15 +212,7 @@ func TestVirtualConnDoubleClose(t *testing.T) {
 	}
 }
 
-// TestVirtualConnConcurrentDoubleClose reproduces the double-close deadlock under
-// heavy concurrent load. Without sync.Once, N-1 out of N goroutines block
-// forever on the second+ call to v.Close() when onClose is a blocking
-// operation (e.g., <-connLimit). This test MUST complete within 2 seconds
-// on the fixed code; on the vulnerable code it deadlocks permanently.
-//
-// PoC: In the unfixed code, 9 of 10 goroutines never return from Close()
-// because onClose (which does <-connLimit) is called 10 times but the
-// channel only has 1 item. The goroutines hang forever → resource leak.
+// Regression: sync.Once — concurrent Close must not deadlock.
 func TestVirtualConnConcurrentDoubleClose(t *testing.T) {
 	const goroutines = 10
 	closeCh := make(chan struct{}, 1) // simulate connLimit: capacity 1
@@ -233,9 +225,7 @@ func TestVirtualConnConcurrentDoubleClose(t *testing.T) {
 		mu.Lock()
 		closeCount++
 		mu.Unlock()
-		// Block until we can receive from closeCh.
-		// In the vulnerable code, this blocks forever after the 1st call
-		// because the channel only has 1 item.
+		// Block until closeCh is drained (sync.Once ensures single call).
 		<-closeCh
 	})
 
@@ -244,7 +234,7 @@ func TestVirtualConnConcurrentDoubleClose(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			v.Close() // may block forever in vulnerable code
+			v.Close()
 		}()
 	}
 
@@ -256,9 +246,7 @@ func TestVirtualConnConcurrentDoubleClose(t *testing.T) {
 
 	select {
 	case <-done:
-		// All goroutines completed. With fix: onClose called once,
-		// the rest are no-ops. closeCh is drained once by the single
-		// real onClose invocation, then all wg.Done() fire.
+		// All goroutines completed — onClose called once via sync.Once.
 	case <-time.After(2 * time.Second):
 		t.Fatalf("concurrent Close deadlock: %d goroutines blocked forever", goroutines-1)
 	}

@@ -124,12 +124,12 @@ fi
 echo "--- Phase 5: Start Services ---"
 # -v removes anonymous volumes (rclone /data writable layer), preventing
 # stale WebDAV files with mismatched encryption keys from polluting a new run.
-$COMPOSE -f "$PROJECT_DIR/docker-compose.yml" down -v 2>/dev/null || true
+$COMPOSE -f "$PROJECT_DIR/compose.yaml" down -v 2>/dev/null || true
 if $ENCRYPTED; then
     export FLOWDAV_PASSWORD=$(grep FLOWDAV_PASSWORD "$PROJECT_DIR/configs/.env" | cut -d= -f2)
-    $COMPOSE -f "$PROJECT_DIR/docker-compose.yml" up -d 2>&1
+    $COMPOSE -f "$PROJECT_DIR/compose.yaml" up -d 2>&1
 else
-    $COMPOSE -f "$PROJECT_DIR/docker-compose.yml" up -d 2>&1
+    $COMPOSE -f "$PROJECT_DIR/compose.yaml" up -d 2>&1
 fi
 
 log_info "Waiting for services to become healthy..."
@@ -282,7 +282,7 @@ done
 echo ""
 echo "--- Cleanup ---"
 log_info "Stopping services..."
-$COMPOSE -f "$PROJECT_DIR/docker-compose.yml" down -v 2>&1 || true
+$COMPOSE -f "$PROJECT_DIR/compose.yaml" down -v 2>&1 || true
 log_info "Cleaning up test configs..."
 rm -f "$PROJECT_DIR"/configs/flowdav_test*.json "$PROJECT_DIR"/configs/.env 2>/dev/null || true
 echo ""

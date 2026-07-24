@@ -20,10 +20,8 @@ import (
 	"github.com/lyafence/flowdav/internal/logger"
 )
 
-// MaxFileSize limits upload/download size to prevent OOM attacks.
-// Set once at startup (by cmd/ entrypoints) before any goroutines begin,
-// matching transport.MaxMessageSize. Exception to "no global state" by
-// the same rationale as transport.MaxMessageSize — OOM prevention.
+// MaxFileSize limits upload/download size (OOM prevention).
+// Set once at startup matching transport.MaxMessageSize.
 var MaxFileSize = 16 * 1024 * 1024
 
 var (
@@ -31,8 +29,7 @@ var (
 	dirRes = "receipts"
 )
 
-// chromeUA mimics a recent Chrome browser User-Agent to blend in with
-// legitimate WebDAV client traffic and avoid WAF/bot detection.
+// chromeUA is the Chrome 133 User-Agent for TLS fingerprint consistency.
 const chromeUA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
 
 // HTTPError wraps an HTTP status code for storage-level error classification.

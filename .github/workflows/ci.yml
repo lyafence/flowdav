@@ -11,7 +11,7 @@ on:
       - 'configs/*.example.json'
       - 'android/**'
       - 'Dockerfile'
-      - 'docker-compose.yml'
+      - 'compose.yaml'
       - 'scripts/**'
       - '.github/workflows/release.yml'
 

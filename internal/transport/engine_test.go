@@ -481,10 +481,7 @@ func TestJitterFlushInterval(t *testing.T) {
 // chunks at least equals the original total (overhead from envelope
 // encoding adds extra bytes).
 //
-// Before the mux-splitting fix: flushAll sends one 15MB file,
-// WebDAV Upload silently truncates to 16MB (which passes), but if total
-// were >16MB the data would be lost. This test proves the fix works by
-// showing that data is preserved across multiple chunked uploads.
+// Regression: mux split must preserve data across chunked uploads.
 func TestFlushAllDataIntegrity(t *testing.T) {
 	be := &dataTrackingBackend{}
 	engine := NewEngine(be, false, nil)

@@ -31,10 +31,7 @@ const (
 const (
 	MaxRxQueueSize  = 1000
 	MaxRxQueueBytes = 256 * 1024 * 1024 // 256MB per session
-	// DefaultRxChanSize buffers received payloads until the SOCKS5 client reads
-	// them. 64 slots (~256KB at typical 4KB payloads) keeps memory footprint low
-	// on routers while remaining sufficient: the decrypt path (producer) is
-	// typically slower than the network write (consumer) on constrained CPUs.
+	// DefaultRxChanSize is the RxChan buffer depth (64 slots, ~256KB at 4KB payloads).
 	DefaultRxChanSize = 64
 )
 
@@ -136,10 +133,7 @@ func (s *Session) EnqueueTxCtx(ctx context.Context, data []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// BACKPRESSURE: Block if txBuf is larger than 2MB
-	// This prevents memory explosion when uploading through the proxy
-	// Also check that the new data won't exceed the limit
-	// Use context to allow interruption during shutdown
+	// Backpressure: block when txBuf exceeds 2MB
 	for (len(s.txBuf) > 2*1024*1024 || len(s.txBuf)+len(data) > 2*1024*1024) && !s.closed {
 		if ctx.Err() != nil {
 			return

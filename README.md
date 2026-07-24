@@ -21,7 +21,7 @@ A lightweight SOCKS5 proxy that uses WebDAV as a transport layer. Route your tra
 
 ```
 [SOCKS5 Client] ←→ [flowdav -c] ←→ [WebDAV Storage] ←→ [flowdav -s] ←→ [Destination]
-                   (encrypt, mux)      (passive store)     (decrypt, demux)
+                   (encrypt, mux)  (passive store)     (decrypt, demux)
 ```
 
 1. SOCKS5 client (browser/app) connects to flowdav client on `127.0.0.1:1080`

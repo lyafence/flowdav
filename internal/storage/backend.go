@@ -24,8 +24,7 @@ type Backend interface {
 	// filename is typically of the format {dir_byte}{16_hex}
 	Upload(ctx context.Context, filename string, data io.Reader) error
 
-	// ListQuery searches the backend for files matching a specific prefix or criteria.
-	// We use this to discover new request or response payloads.
+	// ListQuery searches the backend for files matching a prefix (request/response payloads).
 	ListQuery(ctx context.Context, prefix string) ([]FileEntry, error)
 
 	// Download returns an io.ReadCloser for the file content from the backend.

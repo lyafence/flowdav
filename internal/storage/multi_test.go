@@ -250,13 +250,7 @@ func TestMultiBackendDeleteReturnsError(t *testing.T) {
 	}
 }
 
-// TestMultiBackendDeleteAllAdversarial proves that ALL backends failing
-// produces a non-nil error. On the vulnerable code (before errors.Join fix),
-// Delete always returned nil regardless of failures — callers (engine's
-// pool.go, pollLoop) would silently lose failed deletes, causing file
-// accumulation and potential duplicate data delivery on restart.
-//
-// Reproduces: 3 backends, all fail, old code → nil error, new code → error.
+// Regression: errors.Join — all backends failing must return non-nil.
 func TestMultiBackendDeleteAllAdversarial(t *testing.T) {
 	mock1 := &mockBackend{}
 	mock2 := &mockBackend{}
@@ -284,9 +278,7 @@ func TestMultiBackendDeleteAllAdversarial(t *testing.T) {
 	}
 }
 
-// TestIsAvailableNoSideEffect verifies that isAvailable is a pure query
-// with no side effects. Before fix: isAvailable mutates h.failures = 0,
-// violating command-query separation. After fix: it only reads state.
+// TestIsAvailableNoSideEffect verifies isAvailable is a pure query (no mutation).
 func TestIsAvailableNoSideEffect(t *testing.T) {
 	m := NewMultiBackend([]Backend{&mockBackend{}})
 

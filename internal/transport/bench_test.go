@@ -130,11 +130,7 @@ func BenchmarkDecodeWithCrypto(b *testing.B) {
 // reusable gzip.Writer to show the allocation savings from avoiding a new
 // gzip.Writer (and underlying deflate buffers) per envelope.
 //
-// Calls unexported encodeWithCrypto — the public EncodeWithCrypto doesn't
-// expose a reusable gzip.Writer parameter. This is a micro-benchmark of an
-// internal optimization, not a behavioral test. The exception is documented
-// and intentional (AGENTS.md: "test through public API, not extracted private
-// methods" applies to behavioral tests, not micro-benchmarks of internals).
+// Micro-benchmark with reusable gzip writer (calls internal encodeWithCrypto).
 func BenchmarkEncodeWithCryptoReusableWriter(b *testing.B) {
 	sizes := []int{256, 4096, 65536, 1048576, 4194304}
 	for _, size := range sizes {
@@ -165,9 +161,7 @@ func BenchmarkEncodeWithCryptoReusableWriter(b *testing.B) {
 // a reusable gzip.Reader to show the allocation savings from avoiding a new
 // gzip.Reader per compressed envelope.
 //
-// Calls unexported decodeEnvelopeWithCrypto — the public DecodeEnvelopeWithCrypto
-// doesn't expose a reusable gzip.Reader parameter. See the ReusableWriter variant
-// for the rationale on why this benchmarks an internal path.
+// Micro-benchmark with reusable gzip reader (calls internal decodeEnvelopeWithCrypto).
 func BenchmarkDecodeWithCryptoReusableReader(b *testing.B) {
 	sizes := []int{256, 4096, 65536, 1048576, 4194304}
 	var gr *gzip.Reader
@@ -269,12 +263,7 @@ func BenchmarkFullRoundtrip(b *testing.B) {
 	}
 }
 
-// BenchmarkFlushAll measures flushAll with M sessions, each with N bytes of txBuf.
-//
-// Calls unexported flushAll directly — comparable to a synchronous micro-benchmark
-// of the internal flush pipeline's CPU cost. The public path (flushLoop goroutine)
-// adds scheduling latency that would dominate measurement noise. This is a
-// micro-benchmark of internals, not a behavioral test.
+// BenchmarkFlushAll measures flushAll (bypasses flushLoop scheduling overhead).
 func BenchmarkFlushAll(b *testing.B) {
 	configs := []struct {
 		sessions    int

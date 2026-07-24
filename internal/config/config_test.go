@@ -103,29 +103,14 @@ func TestValidateBasePathRejectsEncodedNullByte(t *testing.T) {
 	}
 }
 
-// TestValidateBasePathTripleEncodedNull documents a KNOWN LIMITATION:
-// triple-encoded null bytes bypass the decoder because the code only does
-// TWO levels of url.QueryUnescape. Input "%252500" decodes to:
-//
-//	level 1: "%2500"   (%25 → %)
-//	level 2: "%00"     (%25 → %)
-//
-// The check strings.ContainsAny("%00", "\x00") is FALSE because "%00"
-// contains only printable characters ('%', '0', '0'), not a real null byte.
-//
-// Practical impact is LOW: the WebDAV server would receive "%00" literally
-// in the path, and modern servers do not interpret percent-encoded null
-// bytes as path traversal vectors. This test exists to document the gap.
+// Known limitation: triple-encoded null bytes bypass double URL decode.
+// %252500 → level 1: %2500 → level 2: %00 (printable, not null byte).
+// Practical risk is low — WebDAV servers don't interpret %00 as traversal.
 func TestValidateBasePathTripleEncodedNull(_ *testing.T) {
-	// Triple encoding bypass — code only does 2 decode levels
 	err := ValidateBasePath("%252500", "test.field")
 	if err != nil {
-		// If this changes in the future, update the decoder.
-		// Currently this is the expected limitation.
 		return
 	}
-	// This is the expected vulnerable path — the string "%00" is
-	// not a real null byte and has no practical path traversal risk.
 }
 
 func TestValidateAppConfigBackendsMissingURL(t *testing.T) {

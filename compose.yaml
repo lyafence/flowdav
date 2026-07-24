@@ -1,0 +1,123 @@
+x-webdav: &webdav
+  image: docker.io/rclone/rclone:latest
+  mem_limit: 64m
+  command: serve webdav /data --addr 0.0.0.0:8080 --user test --pass test
+  restart: unless-stopped
+  healthcheck: &webdav-health
+    test: ["CMD-SHELL", "wget -q --spider http://test:test@localhost:8080/ || exit 1"]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+    start_period: 10s
+  networks:
+    - flow-net
+
+x-flowdav: &flowdav
+  image: localhost/flowdav:latest
+  stop_grace_period: 10s
+  mem_limit: 64m
+  restart: unless-stopped
+  environment:
+    - FLOWDAV_PASSWORD=${FLOWDAV_PASSWORD:-}
+  networks:
+    - flow-net
+
+x-flowdav-health: &flowdav-health
+  test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9190/health"]
+  interval: 10s
+  timeout: 5s
+  retries: 3
+  start_period: 5s
+
+services:
+  webdav-multi-1:
+    <<: *webdav
+    container_name: webdav-multi-1
+    ports:
+      - "8081:8080"
+
+  webdav-multi-2:
+    <<: *webdav
+    container_name: webdav-multi-2
+    ports:
+      - "8082:8080"
+
+  webdav-multi-3:
+    <<: *webdav
+    container_name: webdav-multi-3
+    ports:
+      - "8083:8080"
+
+  # Dedicated WebDAV for single-backend tests (isolated from multi-backend
+  # to prevent cross-contamination — different encryption keys would cause
+  # HMAC failures and file deletion on the other pair).
+  webdav-single:
+    <<: *webdav
+    container_name: webdav-single
+    ports:
+      - "8080:8080"
+
+  flowdav-server:
+    <<: *flowdav
+    container_name: flowdav-server
+    depends_on:
+      webdav-single:
+        condition: service_healthy
+    volumes:
+      - ./configs/flowdav_test.json:/app/configs/flowdav_test.json:Z
+    command: flowdav -s /app/configs/flowdav_test.json
+    healthcheck: *flowdav-health
+
+  flowdav-client:
+    <<: *flowdav
+    container_name: flowdav-client
+    depends_on:
+      webdav-single:
+        condition: service_healthy
+      flowdav-server:
+        condition: service_healthy
+    volumes:
+      - ./configs/flowdav_test.json:/app/configs/flowdav_test.json:Z
+    command: flowdav -c /app/configs/flowdav_test.json
+    ports:
+      - "11080:1080"
+    healthcheck: *flowdav-health
+
+  # Multi-backend WebDAV tests
+  flowdav-server-multi:
+    <<: *flowdav
+    container_name: flowdav-server-multi
+    depends_on:
+      webdav-multi-1:
+        condition: service_healthy
+      webdav-multi-2:
+        condition: service_healthy
+      webdav-multi-3:
+        condition: service_healthy
+    volumes:
+      - ./configs/flowdav_test_multi.json:/app/configs/flowdav_test_multi.json:Z
+    command: flowdav -s /app/configs/flowdav_test_multi.json
+    healthcheck: *flowdav-health
+
+  flowdav-client-multi:
+    <<: *flowdav
+    container_name: flowdav-client-multi
+    depends_on:
+      webdav-multi-1:
+        condition: service_healthy
+      webdav-multi-2:
+        condition: service_healthy
+      webdav-multi-3:
+        condition: service_healthy
+      flowdav-server-multi:
+        condition: service_healthy
+    volumes:
+      - ./configs/flowdav_test_multi.json:/app/configs/flowdav_test_multi.json:Z
+    command: flowdav -c /app/configs/flowdav_test_multi.json
+    ports:
+      - "11081:1080"
+    healthcheck: *flowdav-health
+
+networks:
+  flow-net:
+    driver: bridge

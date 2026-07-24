@@ -168,10 +168,8 @@ func (e *Envelope) EncodeWithCrypto(w io.Writer, cfg *CryptoConfig) error {
 	return e.encodeWithCrypto(w, cfg, nil)
 }
 
-// MaxMessageSize defines the maximum allowed message size to prevent OOM attacks.
-// Set once at startup before any goroutines begin. All other state lives inside
-// structs — no global state. Exception to "no global state" design invariant
-// (see AGENTS.md), justified by OOM prevention.
+// MaxMessageSize is the maximum envelope payload size (OOM prevention).
+// Set once at startup. Read-only afterwards.
 var MaxMessageSize = 16 * 1024 * 1024 // 16 MB
 
 // decodeEnvelopeWithCrypto reads and decrypts an envelope from the reader.
@@ -240,8 +238,7 @@ func decodeEnvelopeWithCrypto(r io.Reader, cfg *CryptoConfig, gr *gzip.Reader) (
 		return nil, err
 	}
 
-	// Check compression flag (backward compat: flag 0x00/0x01 = new
-	// format; anything else = old format without flag byte).
+	// Compression flag: 0x00=none, 0x01=gzip, else legacy (no flag).
 	var wire []byte
 	switch plaintext[0] {
 	case compressFlagGzip:

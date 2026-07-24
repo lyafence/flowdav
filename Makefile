@@ -2,7 +2,7 @@ BIN_DIR    := bin
 RELEASE_DIR := release
 VERSION    := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_FLAGS := -trimpath -ldflags="-s -w -X main.version=$(VERSION)"
-COMPOSE_FILE := docker-compose.yml
+COMPOSE_FILE := compose.yaml
 HOST_IP := $(shell ip route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($$i=="src") print $$(i+1)}' || hostname -I 2>/dev/null | awk '{print $$1}' || echo "localhost")
 
 .PHONY: build openwrt test test-short test-e2e test-e2e-encrypted fuzz vulncheck \
