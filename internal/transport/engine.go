@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/lyafence/flowdav/internal/config"
 	"github.com/lyafence/flowdav/internal/logger"
 	"github.com/lyafence/flowdav/internal/storage"
 )
@@ -254,6 +255,40 @@ func (e *Engine) Drain(ctx context.Context) error {
 
 			e.flushAll(ctx, gw)
 		}
+	}
+}
+
+// ApplyConfigToEngine applies app-level config knobs to an Engine. It centralizes
+// the once-triplicated setup in main.go/bridge.go so every new config field needs
+// a single edit here instead of three.
+func ApplyConfigToEngine(cfg *config.AppConfig, engine *Engine) {
+	if cfg.MaxMessageSize > 0 {
+		MaxMessageSize = cfg.MaxMessageSize
+		storage.MaxFileSize = cfg.MaxMessageSize
+	}
+	if cfg.RefreshRateMs > 0 {
+		engine.SetPollRate(cfg.RefreshRateMs)
+	}
+	if cfg.MinPollMs > 0 {
+		engine.SetMinPollRate(cfg.MinPollMs)
+	}
+	if cfg.MaxPollMs > 0 {
+		engine.SetMaxPollRate(cfg.MaxPollMs)
+	}
+	if cfg.FlushRateMs > 0 {
+		engine.SetFlushRate(cfg.FlushRateMs)
+	}
+	if cfg.MaxSessions > 0 {
+		engine.SetMaxSessions(cfg.MaxSessions)
+	}
+	if cfg.IdleTimeoutMs > 0 {
+		engine.SetSessionIdleTimeout(cfg.IdleTimeoutMs)
+	}
+	if cfg.PaddingSize > 0 {
+		engine.SetPaddingSize(cfg.PaddingSize)
+	}
+	if cfg.HoldMs > 0 {
+		engine.SetHoldMax(cfg.HoldMs)
 	}
 }
 

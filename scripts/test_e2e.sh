@@ -155,22 +155,32 @@ echo ""
 # ── Phase 6: SOCKS5 Proxy Tests ────────────
 echo "--- Phase 6: Proxy Connectivity Tests ---"
 log_info "Waiting for SOCKS5 proxy to accept connections..."
+READY=false
 for i in 1 2 3; do
     if curl -sf --proxy socks5h://127.0.0.1:11080 http://example.com --max-time 2 >/dev/null 2>&1; then
         log_pass "SOCKS5 proxy is ready"
+        READY=true
         break
     fi
     sleep 1
 done
+if [ "$READY" != "true" ]; then
+    log_fail "SOCKS5 proxy is not ready (127.0.0.1:11080)"
+fi
 
 log_info "Waiting for multi-backend SOCKS5 proxy..."
+READY=false
 for i in 1 2 3; do
     if curl -sf --proxy socks5h://127.0.0.1:11081 http://example.com --max-time 2 >/dev/null 2>&1; then
         log_pass "Multi-backend SOCKS5 proxy is ready"
+        READY=true
         break
     fi
     sleep 1
 done
+if [ "$READY" != "true" ]; then
+    log_fail "Multi-backend SOCKS5 proxy is not ready (127.0.0.1:11081)"
+fi
 
 # Helper: safe_curl wraps curl with || true so set -e does not abort
 # the script on transient proxy delays. Test failures are tracked by log_fail.

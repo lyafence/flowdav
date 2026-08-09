@@ -157,6 +157,72 @@ func TestProcessDownloadStopsOnContext(t *testing.T) {
 	engine.Stop()
 }
 
+// envelopeBackend returns a fixed reader for DownloadByIndex so a test can
+// feed pre-encoded envelopes into processDownload.
+type envelopeBackend struct {
+	mockBackend
+	rc io.ReadCloser
+}
+
+func (e *envelopeBackend) DownloadByIndex(_ context.Context, _ string, _ uint8) (io.ReadCloser, error) {
+	return e.rc, nil
+}
+
+// TestProcessDownloadMaxSessions verifies the MaxSessions guard (pool.go):
+// when the session limit is reached, new out-of-order sessions are dropped
+// instead of being created, and no panic occurs.
+func TestProcessDownloadMaxSessions(t *testing.T) {
+	env1, err := (&Envelope{SessionID: "sess-max-1", Seq: 0, TargetAddr: "10.0.0.1:443"}).MarshalBinary()
+	if err != nil {
+		t.Fatalf("marshal env1: %v", err)
+	}
+	env2, err := (&Envelope{SessionID: "sess-max-2", Seq: 0, TargetAddr: "10.0.0.2:443"}).MarshalBinary()
+	if err != nil {
+		t.Fatalf("marshal env2: %v", err)
+	}
+	data := append(append([]byte{}, env1...), env2...)
+
+	be := &envelopeBackend{rc: io.NopCloser(bytes.NewReader(data))}
+	engine := NewEngine(be, false, nil) // myDir = DirRes (server side)
+	engine.SetMaxSessions(1)
+	engine.SetPollRate(50)
+	engine.OnNewSession = func(string, string, *Session) {}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	engine.Start(ctx)
+	time.Sleep(50 * time.Millisecond)
+
+	engine.downloadPool.Submit(downloadJob{filename: "max-sessions.bin", backendIdx: 0}, engine.stopCh)
+
+	// Wait deterministically for the worker to process the job (the select in
+	// pool.go may pick stopCh over the job channel otherwise). Deadline is
+	// mandatory: without it a decode error would hang the test.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		engine.sessionMu.RLock()
+		n := len(engine.sessions)
+		engine.sessionMu.RUnlock()
+		if n >= 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			engine.Stop()
+			t.Fatal("timed out waiting for session creation")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	engine.Stop()
+
+	engine.sessionMu.RLock()
+	n := len(engine.sessions)
+	engine.sessionMu.RUnlock()
+	if n != 1 {
+		t.Errorf("expected exactly 1 session with MaxSessions=1, got %d", n)
+	}
+}
+
 // TestDeleteSuccessRemovesProcessedEntry verifies the happy path:
 // when Delete succeeds, the processed entry IS removed.
 func TestDeleteSuccessRemovesProcessedEntry(t *testing.T) {

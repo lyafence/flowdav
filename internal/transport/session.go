@@ -78,16 +78,17 @@ func (s *Session) ReassignBackend(numBackends int) bool {
 	if numBackends < 2 {
 		return false
 	}
+	// First draw happens before the lock: crypto/rand may block briefly
+	// (getrandom at early boot). Compare and assign stay under one mutex.
+	newIdx := storage.CryptoRandInt(numBackends)
+	s.mu.Lock()
 	current := int(s.BackendIdx)
-	for {
-		newIdx := storage.RandBackendIndex(numBackends)
-		if newIdx != current {
-			s.mu.Lock()
-			s.BackendIdx = uint8(newIdx)
-			s.mu.Unlock()
-			return true
-		}
+	for newIdx == current {
+		newIdx = storage.CryptoRandInt(numBackends)
 	}
+	s.BackendIdx = uint8(newIdx)
+	s.mu.Unlock()
+	return true
 }
 
 func NewSession(id string) *Session {
@@ -243,8 +244,7 @@ func (s *Session) ProcessRx(env *Envelope) {
 			s.mu.Unlock()
 			return
 		}
-		// Deep copy to avoid corruption when the original envelope is reused
-		// Payload is a []byte slice which is a reference type - must copy the underlying array
+		// Deep-copy payload — env.Payload slice is reused after ProcessRx returns.
 		payloadLen := len(env.Payload)
 		s.rxQueue[env.Seq] = Envelope{
 			SessionID:  env.SessionID,

@@ -103,16 +103,6 @@ func TestValidateBasePathRejectsEncodedNullByte(t *testing.T) {
 	}
 }
 
-// Known limitation: triple-encoded null bytes bypass double URL decode.
-// %252500 → level 1: %2500 → level 2: %00 (printable, not null byte).
-// Practical risk is low — WebDAV servers don't interpret %00 as traversal.
-func TestValidateBasePathTripleEncodedNull(_ *testing.T) {
-	err := ValidateBasePath("%252500", "test.field")
-	if err != nil {
-		return
-	}
-}
-
 func TestValidateAppConfigBackendsMissingURL(t *testing.T) {
 	encKey := make([]byte, 32)
 	hmacKey := make([]byte, 32)
@@ -132,6 +122,79 @@ func TestValidateAppConfigBackendsMissingURL(t *testing.T) {
 	err := ValidateAppConfig(cfg)
 	if err == nil {
 		t.Fatal("expected error for missing backend URL")
+	}
+}
+
+func TestValidateAppConfigMaxMessageSizeTooSmall(t *testing.T) {
+	encKey := make([]byte, 32)
+	hmacKey := make([]byte, 32)
+	for i := range hmacKey {
+		hmacKey[i] = 1
+	}
+
+	cfg := &AppConfig{
+		WebDAV: &WebDAVConfig{
+			URL:   "https://webdav.example.com",
+			Login: "user",
+			Token: "token",
+		},
+		EncKey:         base64Encode(encKey),
+		HMacKey:        base64Encode(hmacKey),
+		MaxMessageSize: 1000,
+	}
+	err := ValidateAppConfig(cfg)
+	if err == nil {
+		t.Fatal("expected error for MaxMessageSize below minimum")
+	}
+}
+
+func TestValidateAppConfigMaxMessageSizeTooLarge(t *testing.T) {
+	encKey := make([]byte, 32)
+	hmacKey := make([]byte, 32)
+	for i := range hmacKey {
+		hmacKey[i] = 1
+	}
+
+	cfg := &AppConfig{
+		WebDAV: &WebDAVConfig{
+			URL:   "https://webdav.example.com",
+			Login: "user",
+			Token: "token",
+		},
+		EncKey:         base64Encode(encKey),
+		HMacKey:        base64Encode(hmacKey),
+		MaxMessageSize: MaxMaxMessageSize + 1,
+	}
+	err := ValidateAppConfig(cfg)
+	if err == nil {
+		t.Fatal("expected error for MaxMessageSize above maximum")
+	}
+}
+
+func TestValidateAppConfigInvalidLogLevel(t *testing.T) {
+	encKey := make([]byte, 32)
+	hmacKey := make([]byte, 32)
+	for i := range hmacKey {
+		hmacKey[i] = 1
+	}
+
+	cfg := &AppConfig{
+		WebDAV: &WebDAVConfig{
+			URL:   "https://webdav.example.com",
+			Login: "user",
+			Token: "token",
+		},
+		EncKey:   base64Encode(encKey),
+		HMacKey:  base64Encode(hmacKey),
+		LogLevel: "verbose",
+	}
+	if err := ValidateAppConfig(cfg); err == nil {
+		t.Fatal("expected error for invalid log_level")
+	}
+
+	cfg.LogLevel = "debug"
+	if err := ValidateAppConfig(cfg); err != nil {
+		t.Fatalf("expected valid log_level to pass, got: %v", err)
 	}
 }
 

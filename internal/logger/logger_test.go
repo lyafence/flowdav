@@ -8,13 +8,29 @@ import (
 	"testing"
 )
 
-func TestSetLevel(_ *testing.T) {
-	SetLevel("debug")
+// TestSetLevelInvalidKeepsCurrent verifies that unknown (or empty) levels are
+// ignored instead of silently dropping to the zero value (debug) — the old
+// behavior turned typos and missing log_level into full debug logging.
+func TestSetLevelInvalidKeepsCurrent(t *testing.T) {
 	SetLevel("info")
-	SetLevel("warn")
-	SetLevel("error")
-	// Should not panic with invalid level
-	SetLevel("invalid")
+	if level != "info" {
+		t.Fatalf("expected level info, got %q", level)
+	}
+
+	SetLevel("verobse")
+	if level != "info" {
+		t.Errorf("invalid level must be ignored, got %q", level)
+	}
+
+	SetLevel("")
+	if level != "info" {
+		t.Errorf("empty level must be ignored, got %q", level)
+	}
+
+	SetLevel("ERROR")
+	if level != "error" {
+		t.Errorf("valid level must be applied (case-insensitive), got %q", level)
+	}
 }
 
 func TestLevels(t *testing.T) {

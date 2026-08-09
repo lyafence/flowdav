@@ -54,61 +54,6 @@ func (m *mockBackend) DownloadByIndex(ctx context.Context, name string, _ uint8)
 func (m *mockBackend) UploadAny(ctx context.Context, name string, data io.Reader) (uint8, error) {
 	return 0, m.Upload(ctx, name, data)
 }
-func TestEngineStop(t *testing.T) {
-	backend := &mockBackend{}
-	engine := NewEngine(backend, true, nil)
-	engine.SetPollRate(50)
-	engine.SetFlushRate(50)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	engine.Start(ctx)
-
-	time.Sleep(100 * time.Millisecond)
-
-	engine.Stop()
-	cancel()
-
-	if engine == nil {
-		t.Fatal("engine should not be nil")
-	}
-}
-
-func TestEngineStopMultipleCalls(_ *testing.T) {
-	backend := &mockBackend{}
-	engine := NewEngine(backend, true, nil)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	engine.Start(ctx)
-	time.Sleep(50 * time.Millisecond)
-
-	engine.Stop()
-	engine.Stop()
-	engine.Stop()
-
-	cancel()
-}
-
-func TestEngineStartStopCycle(_ *testing.T) {
-	backend := &mockBackend{}
-	engine := NewEngine(backend, true, nil)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	engine.Start(ctx)
-
-	time.Sleep(50 * time.Millisecond)
-
-	engine.Stop()
-
-	cancel()
-
-	engine2 := NewEngine(backend, true, nil)
-	ctx2, cancel2 := context.WithCancel(context.Background())
-	engine2.Start(ctx2)
-	time.Sleep(50 * time.Millisecond)
-	engine2.Stop()
-	cancel2()
-}
-
 func TestEngineFastShutdownOnStopSignal(t *testing.T) {
 	backend := &mockBackend{}
 	engine := NewEngine(backend, true, nil)
@@ -128,9 +73,7 @@ func TestEngineFastShutdownOnStopSignal(t *testing.T) {
 	}
 }
 
-// TestBackendIdxDataRace verifies that s.BackendIdx is read under s.mu in flushAll.
-// Starts the engine so upload workers consume jobs (preventing uploadJobs buffer deadlock).
-// Re-seeds txBuf after each flushAll so all iterations exercise the read path.
+// AddSessionAfterStop verifies AddSession is rejected after Stop.
 func TestAddSessionAfterStop(t *testing.T) {
 	backend := &mockBackend{}
 	engine := NewEngine(backend, true, nil)

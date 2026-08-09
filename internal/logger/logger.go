@@ -17,7 +17,13 @@ var (
 func SetLevel(l string) {
 	mu.Lock()
 	defer mu.Unlock()
-	level = strings.ToLower(l)
+	normalized := strings.ToLower(l)
+	if _, ok := levels[normalized]; !ok {
+		// Unknown level (including empty): keep the current level.
+		// A missing map entry would otherwise evaluate to 0 (debug).
+		return
+	}
+	level = normalized
 }
 
 func logf(lvl, format string, args ...interface{}) {

@@ -76,7 +76,7 @@ func NewSocks5Options(cfg Socks5Config) ([]socks5.Option, error) {
 			session := NewSession(sessionID)
 			session.TargetAddr = addr
 			if cfg.MultiBackend != nil {
-				session.BackendIdx = uint8(storage.RandBackendIndex(cfg.MultiBackend.NumBackends()))
+				session.BackendIdx = uint8(storage.CryptoRandInt(cfg.MultiBackend.NumBackends()))
 				logMsg("Session %s assigned to backend %d", cfg.LogFn, sessionID, session.BackendIdx)
 			}
 			cfg.Engine.AddSession(session)

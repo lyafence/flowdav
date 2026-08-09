@@ -9,7 +9,7 @@ import (
 
 // Envelope represents a message exchanged between the client and server.
 type Envelope struct {
-	// SessionID is the unique identifier for the connection (UUID).
+	// SessionID is the unique identifier for the connection (32 hex chars).
 	SessionID string `json:"session_id"`
 
 	// Seq is the sequence number for ordering packets.

@@ -225,40 +225,10 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 		EncKey:  appCfg.EncKeyDecoded,
 		HMacKey: appCfg.HMacKeyDecoded,
 	}
-	if appCfg.MaxMessageSize > 0 {
-		transport.MaxMessageSize = appCfg.MaxMessageSize
-		storage.MaxFileSize = appCfg.MaxMessageSize
-	}
-
 	ctx, ctxCancel := context.WithCancel(context.Background())
 	engine := transport.NewEngine(backend, true, cryptoCfg)
-
-	if appCfg.RefreshRateMs > 0 {
-		engine.SetPollRate(appCfg.RefreshRateMs)
-	}
-	if appCfg.MinPollMs > 0 {
-		engine.SetMinPollRate(appCfg.MinPollMs)
-	}
-	if appCfg.MaxPollMs > 0 {
-		engine.SetMaxPollRate(appCfg.MaxPollMs)
-	}
-	if appCfg.FlushRateMs > 0 {
-		engine.SetFlushRate(appCfg.FlushRateMs)
-	}
-	if appCfg.MaxSessions > 0 {
-		engine.SetMaxSessions(appCfg.MaxSessions)
-	}
-	if appCfg.IdleTimeoutMs > 0 {
-		engine.SetSessionIdleTimeout(appCfg.IdleTimeoutMs)
-	}
-	if appCfg.PaddingSize > 0 {
-		engine.SetPaddingSize(appCfg.PaddingSize)
-	}
-	if appCfg.HoldMs > 0 {
-		engine.SetHoldMax(appCfg.HoldMs)
-	}
+	transport.ApplyConfigToEngine(appCfg, engine)
 	engine.Start(ctx)
-
 	engine.OnSessionEnd = func(sessionID string) {
 		logEvent("Session %s ended", sessionID)
 	}
@@ -383,7 +353,7 @@ func GetStatus() *Status {
 //	           (Go error → Java exception thrown by gomobile).
 //	Phase 2 — If phase 1 succeeds but the SOCKS5 goroutine fails shortly
 //	           after, StopAndError reads the deferred error from socksErrCh
-//	           (filled by the SOCKS5 serve goroutine at line 381).
+//	           (filled by the SOCKS5 serve goroutine).
 //
 // Kotlin caller (MainActivity / ProxyManager) uses this sequence:
 //

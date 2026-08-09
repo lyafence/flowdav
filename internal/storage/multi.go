@@ -280,8 +280,10 @@ func (m *MultiBackend) Stats() []BackendStat {
 	return stats
 }
 
-// RandBackendIndex returns a cryptographically random backend index in [0, n).
-func RandBackendIndex(n int) int {
+// CryptoRandInt returns a uniformly distributed int in [0, n) using crypto/rand.
+// Uses 64-bit rejection sampling (mirror of Go's rand/v2 Int63n/IntN) to avoid
+// modulo bias for any n; for n | 2^64 (e.g. 2, 4) no values are ever rejected.
+func CryptoRandInt(n int) int {
 	if n <= 0 {
 		return 0
 	}
@@ -290,5 +292,12 @@ func RandBackendIndex(n int) int {
 		return 0
 	}
 	v := binary.BigEndian.Uint64(b[:])
+	max := ^uint64(0) - (^uint64(0) % uint64(n))
+	for v > max {
+		if _, err := rand.Read(b[:]); err != nil {
+			return 0
+		}
+		v = binary.BigEndian.Uint64(b[:])
+	}
 	return int(v % uint64(n))
 }

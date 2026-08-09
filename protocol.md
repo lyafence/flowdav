@@ -65,11 +65,11 @@ Mapping is handled by `internal/storage/webdav.go`.
 ### Example
 
 ```
-Input:   r3a1f2b8c9d0e5f7a6b3c4d1e2f3a4b
-Storage: invoices/3A1F2B8C9D0E5F7A6B3C4D1E2F3A4B
+Input:   r3a1f2b8c9d0e5f7a
+Storage: invoices/3A1F2B8C9D0E5F7A
 
-Input:   s9b8a7c6d5e4f3a2b1c0d9e8f7a6b5c4
-Storage: receipts/9B8A7C6D5E4F3A2B1C0D9E8F7A6B5C4
+Input:   s9b8a7c6d5e4f3a2b
+Storage: receipts/9B8A7C6D5E4F3A2B
 ```
 
 ---
@@ -127,7 +127,7 @@ concatenated into a single WebDAV file (see [Multiplexing](#multiplexing)).
 4. Read TargetAddr Length (u16 BE), then TargetAddr bytes.
 5. Read Close flag (1 byte).
 6. Read Payload Length (u32 BE), then Payload bytes.
-7. Read BackendIdx (1 byte). If only `0` bytes remain (pread EOF), default to 0.
+7. Read BackendIdx (1 byte). If the stream ends (unexpected EOF), default to 0.
 
 ---
 
@@ -324,12 +324,13 @@ for demultiplexing.
 
 | Constant | Default | Maximum | Description |
 |----------|---------|---------|-------------|
-| `MaxMessageSize` | 16 MB | 16 MB (configurable at startup) | Maximum payload per envelope (before encryption overhead). |
+| `MaxMessageSize` | 16 MB | 1 GB (`MaxMaxMessageSize`) | Maximum payload per envelope (before encryption overhead). |
 | `MaxStringLen` | — | 65535 | Maximum length of SessionID or TargetAddr. |
 | `MaxRxQueueSize` | — | 1000 | Out-of-order packet queue limit per session (count). |
 | `MaxRxQueueBytes` | — | 256 MB | Out-of-order packet queue byte limit per session (capped alongside count). |
 | Retry attempts | — | 3 | Number of storage operation retries before giving up. |
-| Idle timeout | 10 s (configurable) | 30 s recommended | Session idle timeout before forced close. Set via `idle_timeout_ms` in config. |
+| Idle timeout | 10 s (configurable) | — | Session idle timeout before forced close. Set via `idle_timeout_ms` in config. |
+| Tombstone TTL | — | 30 s | Closed-session tombstones prevent re-processing of delayed packets. |
 | Padding size | Off | — | Tail padding bucket (bytes). Set via `padding_size`. Hides exact payload size from storage observer. |
 | Hold max | Off | — | Server-side random delay before flushing (ms). Set via `hold_ms`. Adds latency. |
 

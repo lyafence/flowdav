@@ -2,7 +2,6 @@ package storage
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -83,17 +82,17 @@ func (t *randomHeaderTransport) RoundTrip(req *http.Request) (*http.Response, er
 			"text/html,application/json,application/xml;q=0.9,*/*;q=0.8",
 			"text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
 		}
-		req.Header.Set("Accept", accepts[cryptoRandInt(len(accepts))])
+		req.Header.Set("Accept", accepts[CryptoRandInt(len(accepts))])
 	}
 
 	// Random Accept-Language.
 	if req.Header.Get("Accept-Language") == "" {
 		langs := []string{"en-US,en;q=0.9", "en-GB,en;q=0.8", "en-US,en;q=0.7", "ru-RU,ru;q=0.8,en;q=0.5"}
-		req.Header.Set("Accept-Language", langs[cryptoRandInt(len(langs))])
+		req.Header.Set("Accept-Language", langs[CryptoRandInt(len(langs))])
 	}
 
 	// Vary Cache-Control.
-	if req.Header.Get("Cache-Control") == "" && cryptoRandInt(2) == 0 {
+	if req.Header.Get("Cache-Control") == "" && CryptoRandInt(2) == 0 {
 		req.Header.Set("Cache-Control", "no-cache, no-store, must-revalidate")
 	}
 
@@ -133,36 +132,6 @@ func isCrossOrigin(a, b *url.URL) bool {
 func isCGNAT(ip net.IP) bool {
 	v4 := ip.To4()
 	return v4 != nil && v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127
-}
-
-// cryptoRandInt returns a non-negative random int in [0, n) using crypto/rand.
-// Uses rejection sampling to avoid modulo bias when n does not divide 256.
-// Currently called only with n ∈ {2, 4} where no rejection is needed.
-func cryptoRandInt(n int) int {
-	if n <= 0 {
-		return 0
-	}
-	// When n evenly divides 256, modulo has no bias.
-	if 256%n == 0 {
-		var b [1]byte
-		if _, err := rand.Read(b[:]); err != nil {
-			logger.Info("cryptoRandInt rand read error: %v", err)
-			return 0
-		}
-		return int(b[0]) % n
-	}
-	// Rejection sampling for general case.
-	mask := byte(256 - (256 % n))
-	for {
-		var b [1]byte
-		if _, err := rand.Read(b[:]); err != nil {
-			logger.Info("cryptoRandInt rand read error: %v", err)
-			return 0
-		}
-		if b[0] < mask {
-			return int(b[0]) % n
-		}
-	}
 }
 
 // newUtlsDialer returns a TLS dial function matching the given fingerprint

@@ -145,36 +145,9 @@ func runClient(configPath, password, logLevel string, askInteractive bool) {
 		EncKey:  appCfg.EncKeyDecoded,
 		HMacKey: appCfg.HMacKeyDecoded,
 	}
-	if appCfg.MaxMessageSize > 0 {
-		transport.MaxMessageSize = appCfg.MaxMessageSize
-		storage.MaxFileSize = appCfg.MaxMessageSize
-	}
-
 	engine := transport.NewEngine(backend, true, cryptoCfg)
-	if appCfg.RefreshRateMs > 0 {
-		engine.SetPollRate(appCfg.RefreshRateMs)
-	}
-	if appCfg.MinPollMs > 0 {
-		engine.SetMinPollRate(appCfg.MinPollMs)
-	}
-	if appCfg.MaxPollMs > 0 {
-		engine.SetMaxPollRate(appCfg.MaxPollMs)
-	}
-	if appCfg.FlushRateMs > 0 {
-		engine.SetFlushRate(appCfg.FlushRateMs)
-	}
-	if appCfg.MaxSessions > 0 {
-		engine.SetMaxSessions(appCfg.MaxSessions)
-	}
-	if appCfg.IdleTimeoutMs > 0 {
-		engine.SetSessionIdleTimeout(appCfg.IdleTimeoutMs)
-	}
-	if appCfg.PaddingSize > 0 {
-		engine.SetPaddingSize(appCfg.PaddingSize)
-	}
-	if appCfg.HoldMs > 0 {
-		engine.SetHoldMax(appCfg.HoldMs)
-	}
+	transport.ApplyConfigToEngine(appCfg, engine)
+
 	engine.Start(ctx)
 
 	engine.OnSessionEnd = func(sessionID string) {
@@ -289,40 +262,12 @@ func runServer(configPath, password, logLevel string, askInteractive bool) {
 		log.Fatalf("Failed to init WebDAV storage: %v", err)
 	}
 
-	if appCfg.MaxMessageSize > 0 {
-		transport.MaxMessageSize = appCfg.MaxMessageSize
-		storage.MaxFileSize = appCfg.MaxMessageSize
-	}
-
 	cryptoCfg := &transport.CryptoConfig{
 		EncKey:  appCfg.EncKeyDecoded,
 		HMacKey: appCfg.HMacKeyDecoded,
 	}
 	engine := transport.NewEngine(backend, false, cryptoCfg)
-	if appCfg.RefreshRateMs > 0 {
-		engine.SetPollRate(appCfg.RefreshRateMs)
-	}
-	if appCfg.MinPollMs > 0 {
-		engine.SetMinPollRate(appCfg.MinPollMs)
-	}
-	if appCfg.MaxPollMs > 0 {
-		engine.SetMaxPollRate(appCfg.MaxPollMs)
-	}
-	if appCfg.FlushRateMs > 0 {
-		engine.SetFlushRate(appCfg.FlushRateMs)
-	}
-	if appCfg.MaxSessions > 0 {
-		engine.SetMaxSessions(appCfg.MaxSessions)
-	}
-	if appCfg.IdleTimeoutMs > 0 {
-		engine.SetSessionIdleTimeout(appCfg.IdleTimeoutMs)
-	}
-	if appCfg.PaddingSize > 0 {
-		engine.SetPaddingSize(appCfg.PaddingSize)
-	}
-	if appCfg.HoldMs > 0 {
-		engine.SetHoldMax(appCfg.HoldMs)
-	}
+	transport.ApplyConfigToEngine(appCfg, engine)
 
 	var serverWg sync.WaitGroup
 
@@ -391,13 +336,16 @@ func handleServerConn(ctx context.Context, wg *sync.WaitGroup, sessionID, target
 		logger.Info("Resolve error to %s: %v", targetAddr, err)
 		return
 	}
-	conn, err := net.DialTCP("tcp", nil, tcpAddr)
+	dialer := net.Dialer{Timeout: 10 * time.Second}
+	conn, err := dialer.DialContext(ctx, "tcp", tcpAddr.String())
 	if err != nil {
 		logger.Info("Dial error to %s: %v", targetAddr, err)
 		return
 	}
-	_ = conn.SetKeepAlive(true)
-	_ = conn.SetKeepAlivePeriod(30 * time.Second)
+	if tc, ok := conn.(*net.TCPConn); ok {
+		_ = tc.SetKeepAlive(true)
+		_ = tc.SetKeepAlivePeriod(30 * time.Second)
+	}
 	defer conn.Close()
 
 	done := make(chan struct{})

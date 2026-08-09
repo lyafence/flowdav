@@ -2,7 +2,6 @@ package transport
 
 import (
 	"context"
-	"sync"
 	"testing"
 	"time"
 )
@@ -119,19 +118,6 @@ func TestSessionProcessRxOutOfOrder(t *testing.T) {
 	}
 }
 
-func TestEnqueueTxCtxCancellationBeforeBackpressure(_ *testing.T) {
-	s := NewSession("test-session")
-
-	s.mu.Lock()
-	s.txBuf = make([]byte, 2*1024*1024)
-	s.mu.Unlock()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	s.EnqueueTxCtx(ctx, []byte("x"))
-}
-
 func TestEnqueueTxCtxEarlyContextCheck(t *testing.T) {
 	s := NewSession("test-session")
 
@@ -182,32 +168,96 @@ func TestEnqueueTxCtxCancelDuringBackpressureWait(t *testing.T) {
 	}
 }
 
-func TestEnqueueTxCtxCancellationDuringWait(_ *testing.T) {
-	s := NewSession("test-session")
+// TestEnqueueTxCtxWakeupTxUnblocksWriter verifies the complementary path:
+// a writer blocked on backpressure resumes once the flush loop drains the
+// buffer and calls wakeupTx (the <-waitCh branch), without context cancellation.
+func TestEnqueueTxCtxWakeupTxUnblocksWriter(t *testing.T) {
+	s := NewSession("test-backpressure-wakeup")
 
 	s.mu.Lock()
-	s.txBuf = make([]byte, 2*1024*1024)
+	s.txBuf = make([]byte, 2*1024*1024+1)
 	s.mu.Unlock()
 
-	ctx, cancel := context.WithCancel(context.Background())
-
-	var wg sync.WaitGroup
-	wg.Add(1)
+	done := make(chan struct{})
 	go func() {
-		defer wg.Done()
-		s.EnqueueTxCtx(ctx, []byte("test data"))
+		s.EnqueueTxCtx(context.Background(), []byte("x"))
+		close(done)
 	}()
 
 	time.Sleep(50 * time.Millisecond)
-	cancel()
 
+	// Mimic the flush loop: drain the buffer, then wake blocked writers.
+	s.mu.Lock()
+	s.txBuf = nil
+	s.mu.Unlock()
 	s.wakeupTx()
 
-	wg.Wait()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("EnqueueTxCtx did not return after wakeupTx — goroutine leak")
+	}
+
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		t.Fatal("session must not be closed by wakeupTx")
+	}
+	s.mu.Unlock()
 }
 
-// TestProcessRxTimerReuseNoDeadlock verifies that the reusable timer in ProcessRx
-// does not cause deadlocks on subsequent calls.
+// TestExtractTxBatchClientFirstPacket verifies the client sends its first
+// (empty) flush on a fresh session (txSeq==0 && isClient), even with no
+// payload, so the session creates the file and the handshake completes.
+func TestExtractTxBatchClientFirstPacket(t *testing.T) {
+	s := NewSession("test-first-packet")
+
+	payload, seq, _, ok := s.ExtractTxBatch(true)
+	if !ok {
+		t.Fatal("client ExtractTxBatch should return ok on first call (txSeq==0 && isClient)")
+	}
+	if len(payload) != 0 {
+		t.Errorf("expected empty payload on first packet, got %d bytes", len(payload))
+	}
+	if seq != 0 {
+		t.Errorf("expected seq 0 on first packet, got %d", seq)
+	}
+}
+
+// TestProcessRxDropsWhenQueueFull verifies the OOM guard drops out-of-order
+// packets once the rxQueue hits MaxRxQueueSize instead of growing unbounded.
+func TestProcessRxDropsWhenQueueFull(t *testing.T) {
+	s := NewSession("test-rxqueue-drop")
+
+	// Fill the out-of-order queue to the cap directly (avoids flooding the
+	// 64-slot RxChan with thousands of deliveries).
+	s.mu.Lock()
+	for i := 0; i < MaxRxQueueSize; i++ {
+		seq := uint64(i) + 100000
+		s.rxQueue[seq] = Envelope{SessionID: s.ID, Seq: seq}
+	}
+	s.mu.Unlock()
+
+	// One more out-of-order packet must be dropped, not queued.
+	s.ProcessRx(&Envelope{
+		SessionID: s.ID,
+		Seq:       500000,
+		Payload:   []byte("overflow"),
+	})
+
+	s.mu.Lock()
+	if len(s.rxQueue) != MaxRxQueueSize {
+		s.mu.Unlock()
+		t.Fatalf("rxQueue grew past cap: got %d, want %d", len(s.rxQueue), MaxRxQueueSize)
+	}
+	if _, dup := s.rxQueue[500000]; dup {
+		s.mu.Unlock()
+		t.Fatal("dropped packet was still queued")
+	}
+	s.mu.Unlock()
+}
+
+// SessionIdleTimeout closes session via ExtractTxBatch when idle.
 func TestSessionIdleTimeout(t *testing.T) {
 	s := NewSession("test-idle")
 	s.IdleTimeout = 50 * time.Millisecond

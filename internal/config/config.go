@@ -42,6 +42,10 @@ func isPathTraversal(path string) bool {
 // ValidateBasePath checks a base_path for path traversal and invalid characters.
 // It performs URL-decoding (including double-decoding) to catch encoded traversal
 // sequences like %2e%2e%2f, %252e%252e%252f, etc.
+// Known limitation (shared with storage.fullPath): triple-encoded null bytes
+// bypass the double URL decode below.
+// %252500 → level 1: %2500 → level 2: %00 (printable, not null byte).
+// Practical risk is low — WebDAV servers don't interpret %00 as traversal.
 func ValidateBasePath(basePath string, field string) error {
 	// Reject null bytes and control characters
 	if strings.ContainsAny(basePath, "\x00\x01\x02") {
@@ -139,8 +143,8 @@ type AppConfig struct {
 	MaxSessions int `json:"max_sessions,omitempty"`
 
 	// MaxMessageSize limits the maximum envelope payload size in bytes.
-	// Default 16777216 (16MB). Must be ≥65536 (64KB). Applied to both
-	// transport.MaxMessageSize and storage.MaxFileSize.
+	// Default 16777216 (16MB). Must be ≥65536 (64KB) and ≤ MaxMaxMessageSize.
+	// Applied to both transport.MaxMessageSize and storage.MaxFileSize.
 	MaxMessageSize int `json:"max_message_size,omitempty"`
 
 	// HealthPort enables a lightweight HTTP health server on this port.
@@ -169,6 +173,11 @@ type AppConfig struct {
 	// timing. 0 = disabled.
 	HoldMs int `json:"hold_ms,omitempty"`
 }
+
+// MaxMaxMessageSize caps max_message_size to prevent integer overflow in
+// size arithmetic (safeUploadSize, 32-bit platforms). 1GB is well above any
+// realistic payload and far below the 2GB int32 limit.
+const MaxMaxMessageSize = 1 << 30 // 1GB
 
 // ValidateAppConfig validates the config fields and decodes encryption keys.
 // Populates cfg.EncKeyDecoded and cfg.HMacKeyDecoded on success.
@@ -242,6 +251,18 @@ func ValidateAppConfig(cfg *AppConfig) error {
 	// Validate MaxMessageSize (if set)
 	if cfg.MaxMessageSize > 0 && cfg.MaxMessageSize < 65536 {
 		return fmt.Errorf("max_message_size must be at least 65536 (64KB), got %d", cfg.MaxMessageSize)
+	}
+	if cfg.MaxMessageSize > MaxMaxMessageSize {
+		return fmt.Errorf("max_message_size must be at most %d (1GB), got %d", MaxMaxMessageSize, cfg.MaxMessageSize)
+	}
+
+	// Validate LogLevel (if set)
+	if cfg.LogLevel != "" {
+		switch cfg.LogLevel {
+		case "debug", "info", "warn", "error":
+		default:
+			return fmt.Errorf("invalid log_level: %q (supported: debug, info, warn, error)", cfg.LogLevel)
+		}
 	}
 
 	// Validate TLSFingerprint (if set)

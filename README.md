@@ -244,5 +244,4 @@ they are produced — AI-assisted or hand-written.
 
 MIT — see [LICENSE](./LICENSE) for details.
 
-Flowdav is an independent implementation inspired by the concept of [NullLatency/FlowDriver](https://github.com/NullLatency/FlowDriver).
-The original project does not specify a license; flowdav is released under its own terms.
+Flowdav is an independent implementation built on the transport design of [NullLatency/FlowDriver](https://github.com/NullLatency/FlowDriver) (MIT); flowdav is released under its own terms.

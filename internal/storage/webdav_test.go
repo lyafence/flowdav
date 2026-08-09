@@ -60,6 +60,29 @@ func TestFullPathNoBasePath(t *testing.T) {
 	}
 }
 
+// TestFullPathDirectionMapping verifies that the direction-prefix byte maps
+// filenames into the correct subdirectory and uppercases the hex body.
+func TestFullPathDirectionMapping(t *testing.T) {
+	backend := &WebDAVBackend{basePath: "test"}
+	cases := []struct {
+		name string
+		want string
+	}{
+		{"rabc1234", "test/invoices/ABC1234"},
+		{"sdef5678", "test/receipts/DEF5678"},
+	}
+	for _, tc := range cases {
+		got, err := backend.fullPath(tc.name)
+		if err != nil {
+			t.Errorf("fullPath(%q) error: %v", tc.name, err)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("fullPath(%q) = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
 func TestFullPathDot(t *testing.T) {
 	backend := &WebDAVBackend{}
 	_, err := backend.fullPath(".")
@@ -184,24 +207,6 @@ func TestLoginMkdirForbidden(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "403") {
 		t.Errorf("expected error to mention 403, got: %v", err)
-	}
-}
-
-func TestCryptoRandIntRange(t *testing.T) {
-	for max := 1; max <= 10; max++ {
-		for i := 0; i < 100; i++ {
-			got := cryptoRandInt(max)
-			if got < 0 || got >= max {
-				t.Fatalf("cryptoRandInt(%d) = %d, out of range [0, %d)", max, got, max)
-			}
-		}
-	}
-	// max ≤ 0 returns 0
-	if got := cryptoRandInt(0); got != 0 {
-		t.Errorf("cryptoRandInt(0) = %d, want 0", got)
-	}
-	if got := cryptoRandInt(-1); got != 0 {
-		t.Errorf("cryptoRandInt(-1) = %d, want 0", got)
 	}
 }
 

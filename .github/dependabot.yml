@@ -4,25 +4,37 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    labels:
-      - "dependencies"
-      - "go"
     open-pull-requests-limit: 5
+    groups:
+      gomod:
+        patterns:
+          - "*"
+        update-types:
+          - "patch"
+          - "minor"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
 
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "monthly"
-    labels:
-      - "dependencies"
-      - "docker"
     open-pull-requests-limit: 3
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "monthly"
-    labels:
-      - "dependencies"
-      - "ci"
     open-pull-requests-limit: 3
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"

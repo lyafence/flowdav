@@ -169,18 +169,6 @@ func TestVersionByte(t *testing.T) {
 		t.Errorf("roundtrip SessionID mismatch: got %q, want %q", decoded.SessionID, env.SessionID)
 	}
 
-	// Roundtrip via MarshalBinary/UnmarshalBinary (plaintext)
-	data2, err := env.MarshalBinary()
-	if err != nil {
-		t.Fatalf("MarshalBinary failed: %v", err)
-	}
-	decoded2 := &Envelope{}
-	if _, err := decoded2.UnmarshalBinary(data2); err != nil {
-		t.Fatalf("UnmarshalBinary roundtrip failed: %v", err)
-	}
-	if decoded2.SessionID != env.SessionID {
-		t.Errorf("Encode/Decode roundtrip SessionID mismatch: got %q, want %q", decoded2.SessionID, env.SessionID)
-	}
 }
 
 func TestMarshalUnmarshal(t *testing.T) {
@@ -361,6 +349,40 @@ func TestEncodeWithCryptoReusableGzipWriter(t *testing.T) {
 		if decoded.Seq != env.Seq || !bytes.Equal(decoded.Payload, env.Payload) {
 			t.Fatalf("roundtrip mismatch at seq=%d", i)
 		}
+	}
+}
+
+func TestDecodeEnvelopeTooSmallPayload(t *testing.T) {
+	cfg := &CryptoConfig{
+		EncKey:  make([]byte, 32),
+		HMacKey: make([]byte, 32),
+	}
+
+	buf := make([]byte, 4)
+	binary.BigEndian.PutUint32(buf, 1)
+
+	_, err := DecodeEnvelopeWithCrypto(bytes.NewReader(buf), cfg)
+	if err == nil {
+		t.Fatal("expected error for too-small payload length")
+	}
+	if !bytes.Contains([]byte(err.Error()), []byte("too small")) {
+		t.Fatalf("expected 'too small' error, got: %v", err)
+	}
+}
+
+func TestMarshalBinarySessionIDTooLong(t *testing.T) {
+	env := &Envelope{
+		SessionID:  string(make([]byte, 70000)),
+		Seq:        1,
+		Payload:    []byte("hello"),
+		TargetAddr: "example.com:80",
+	}
+	_, err := env.MarshalBinary()
+	if err == nil {
+		t.Fatal("expected error for oversized session ID")
+	}
+	if !bytes.Contains([]byte(err.Error()), []byte("session ID too long")) {
+		t.Fatalf("expected 'session ID too long' error, got: %v", err)
 	}
 }
 

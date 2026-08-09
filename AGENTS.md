@@ -19,6 +19,8 @@
 | `make android-apk` | Build Android APK (debug) → `bin/flowdav-android.apk` |
 | `make compose-android` | Build Docker images for Android test env |
 | `make android-deploy` | Build APK + start test env + deploy to Android device. **Requires `make compose-android` first.** |
+| `make openwrt` | Build mipsle binary for OpenWrt routers → `bin/flowdav-mipsle` |
+| Additional (dev/CI) | `vet`, `lint`, `docker-build`, `image-to-bin`, `docker-e2e`, `compose-down`, `release`, `android-aar`, `android-init`, `android-keystore` |
 
 > **Container tool:** Makefile targets use `podman` (`docker-build`, `image-to-bin`, `compose-*`). Do not assume `docker`.
 
@@ -29,7 +31,7 @@
 | `cmd/flowdav` | Entrypoints (thin) — unified binary |
 | `cmd/android` | Gomobile bridge (exported to Android) |
 | `internal/config` | Load, validate, encrypt/decrypt configs |
-| `internal/transport` | Engine (poll loop, sessions), Envelope, Crypto, VirtualConn (SOCKS5), Pool |
+| `internal/transport` | Engine (poll loop, sessions), Envelope, Crypto, VirtualConn (SOCKS5), Pool. `ApplyConfigToEngine` imports `config` (leaf, no cycle); shared config-application lives here |
 | `internal/storage` | WebDAV backend + MultiBackend (circuit breaker, round-robin, 429-aware cooldown) |
 | `internal/logger` | Leveled logging |
 

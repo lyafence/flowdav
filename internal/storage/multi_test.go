@@ -149,46 +149,60 @@ func TestMultiBackend(t *testing.T) {
 	require.Equal(t, mock2, b4, "backendByIndexLocked(4) should wrap to mock2")
 
 	// Test Login: should call Login on all backends.
-	mock1.LoginFunc = func(_ context.Context) error { return nil }
-	mock2.LoginFunc = func(_ context.Context) error { return nil }
-	mock3.LoginFunc = func(_ context.Context) error { return nil }
+	var loginCalls1, loginCalls2, loginCalls3 int
+	mock1.LoginFunc = func(_ context.Context) error { loginCalls1++; return nil }
+	mock2.LoginFunc = func(_ context.Context) error { loginCalls2++; return nil }
+	mock3.LoginFunc = func(_ context.Context) error { loginCalls3++; return nil }
 	err := multi.Login(context.Background())
 	require.NoError(t, err, "Login should not error")
-	// We can check that the LoginFunc was called by checking if it was set and then called, but we trust the mock.
-	// Alternatively, we can use the mock's Expectations, but for simplicity we just check no error.
+	require.Equal(t, 1, loginCalls1, "Login must be called on backend 1")
+	require.Equal(t, 1, loginCalls2, "Login must be called on backend 2")
+	require.Equal(t, 1, loginCalls3, "Login must be called on backend 3")
 
 	// Test Upload: should use RoundRobinBackend and call Upload on the selected backend.
-	mock1.UploadFunc = func(_ context.Context, _ string, _ io.Reader) error {
-		return nil
-	}
-	mock2.UploadFunc = func(_ context.Context, _ string, _ io.Reader) error {
-		return nil
-	}
-	mock3.UploadFunc = func(_ context.Context, _ string, _ io.Reader) error {
-		return nil
-	}
-	// We'll reset the round-robin counter by creating a new multi-backend for this test to have a known state.
+	var uploadCalls1, uploadCalls2, uploadCalls3 int
+	mock1.UploadFunc = func(_ context.Context, _ string, _ io.Reader) error { uploadCalls1++; return nil }
+	mock2.UploadFunc = func(_ context.Context, _ string, _ io.Reader) error { uploadCalls2++; return nil }
+	mock3.UploadFunc = func(_ context.Context, _ string, _ io.Reader) error { uploadCalls3++; return nil }
+	// Reset the round-robin counter by creating a new multi-backend for a known state.
 	multi2 := NewMultiBackend([]Backend{mock1, mock2, mock3})
 	err = multi2.Upload(context.Background(), "test.txt", nil)
 	require.NoError(t, err, "Upload should not error")
-	// The first upload should have gone to mock1.
-	// We can't easily check which mock was called without using the mock's Expectations, but we can change the test to use a sequence.
-	// For simplicity, we'll just test that it doesn't error and move on.
+	// The first upload must go to the first available backend (mock1), nowhere else.
+	require.Equal(t, 1, uploadCalls1, "round-robin should pick backend 1 first")
+	require.Zero(t, uploadCalls2, "upload must not go to backend 2")
+	require.Zero(t, uploadCalls3, "upload must not go to backend 3")
 
 	// Test UploadByIndex: should call Upload on the backend at the given index.
-	mock1.UploadFunc = func(_ context.Context, _ string, _ io.Reader) error {
-		return nil
-	}
-	err = multi.UploadByIndex(context.Background(), "test.txt", nil, 0)
-	require.NoError(t, err, "UploadByIndex(0) should not error")
-	// We can't check which mock was called without more mock setup, but we can at least test that it doesn't error.
+	var uploadByIndexCalls1, uploadByIndexCalls2, uploadByIndexCalls3 int
+	mock1.UploadFunc = func(_ context.Context, _ string, _ io.Reader) error { uploadByIndexCalls1++; return nil }
+	mock2.UploadFunc = func(_ context.Context, _ string, _ io.Reader) error { uploadByIndexCalls2++; return nil }
+	mock3.UploadFunc = func(_ context.Context, _ string, _ io.Reader) error { uploadByIndexCalls3++; return nil }
+	err = multi.UploadByIndex(context.Background(), "test.txt", nil, 1)
+	require.NoError(t, err, "UploadByIndex(1) should not error")
+	require.Zero(t, uploadByIndexCalls1, "UploadByIndex(1) must not touch backend 1")
+	require.Equal(t, 1, uploadByIndexCalls2, "UploadByIndex(1) must hit backend 2")
+	require.Zero(t, uploadByIndexCalls3, "UploadByIndex(1) must not touch backend 3")
 
 	// Test DownloadByIndex: should call Download on the backend at the given index.
+	var downloadCalls1, downloadCalls2, downloadCalls3 int
 	mock1.DownloadFunc = func(_ context.Context, _ string) (io.ReadCloser, error) {
-		return nil, nil
+		downloadCalls1++
+		return io.NopCloser(nil), nil
+	}
+	mock2.DownloadFunc = func(_ context.Context, _ string) (io.ReadCloser, error) {
+		downloadCalls2++
+		return io.NopCloser(nil), nil
+	}
+	mock3.DownloadFunc = func(_ context.Context, _ string) (io.ReadCloser, error) {
+		downloadCalls3++
+		return io.NopCloser(nil), nil
 	}
 	_, err = multi.DownloadByIndex(context.Background(), "test.txt", 0)
 	require.NoError(t, err, "DownloadByIndex(0) should not error")
+	require.Equal(t, 1, downloadCalls1, "DownloadByIndex(0) must hit backend 1")
+	require.Zero(t, downloadCalls2, "DownloadByIndex(0) must not touch backend 2")
+	require.Zero(t, downloadCalls3, "DownloadByIndex(0) must not touch backend 3")
 
 	// Test ListQuery: should return files from all backends with correct BackendIdx.
 	files, err := multi.ListQuery(context.Background(), "")
@@ -339,18 +353,18 @@ func TestCircuitBreakerTripsOnFailures(t *testing.T) {
 	require.NotNil(t, b1, "backend 1 should still be available")
 }
 
-func TestRandBackendIndex(t *testing.T) {
-	if idx := RandBackendIndex(0); idx != 0 {
+func TestCryptoRandInt(t *testing.T) {
+	if idx := CryptoRandInt(0); idx != 0 {
 		t.Errorf("expected 0 for n=0, got %d", idx)
 	}
-	if idx := RandBackendIndex(-1); idx != 0 {
+	if idx := CryptoRandInt(-1); idx != 0 {
 		t.Errorf("expected 0 for n=-1, got %d", idx)
 	}
 	for n := 1; n <= 10; n++ {
 		seen := make(map[int]int)
 		const samples = 5000
 		for i := 0; i < samples; i++ {
-			seen[RandBackendIndex(n)]++
+			seen[CryptoRandInt(n)]++
 		}
 		if len(seen) != n {
 			t.Errorf("n=%d: expected %d distinct values, got %d", n, n, len(seen))
