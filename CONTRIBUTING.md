@@ -63,6 +63,7 @@ Requires: Android SDK + NDK + gomobile. Run `make android-init` to set up.
 2. Run `make check` after any change — full verification (vet → lint → build → test). For performance-sensitive changes, also run `make bench`.
 3. If adding features to the SOCKS5/engine path, run `make test-e2e` or `make docker-e2e`.
 4. Open a PR on [GitHub](https://github.com/lyafence/flowdav).
+5. PRs adding features specifically for bypassing network filters or censorship will be rejected. All contributions must align with the project's stated purpose: legitimate privacy protection and proof-of-concept for data transport over WebDAV.
 
 ## Code style
 

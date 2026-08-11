@@ -31,7 +31,9 @@ A lightweight SOCKS5 proxy that uses WebDAV as a transport layer. Route your tra
 5. Server opens real TCP connections to the destination
 6. Response flows back through WebDAV to the client
 
-> **Disclaimer:** This tool is designed for legitimate privacy protection — securing traffic on untrusted public Wi-Fi networks. Users are solely responsible for complying with all applicable laws in their jurisdiction. The authors assume no liability for misuse or unlawful use.
+## Disclaimer
+
+> **Disclaimer:** This project is provided AS IS, without warranty. It is designed for privacy protection on untrusted networks (e.g., public Wi-Fi) and as a proof-of-concept for data transport over WebDAV. Users are solely responsible for complying with applicable laws in their jurisdiction. The authors assume no liability for misuse or unlawful use.
 
 ## Quick Start
 
@@ -206,6 +208,8 @@ Both the client and server support an optional HTTP health endpoint. Set `health
 - **SOCKS5 authentication:** username/password (if specified in config.json)
 - **DNS leak protection:** Raw resolver (no local DNS lookups)
 - **UDP blocked:** Only TCP traffic is supported
+
+> *Security reports are evaluated on engineering and protocol correctness.*
 
 ## Troubleshooting
 
