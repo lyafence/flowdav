@@ -262,12 +262,12 @@ func isLocalURL(rawURL string) bool {
 	// Try to resolve and check if it's a private IP
 	ip := net.ParseIP(host)
 	if ip == nil {
-		// Use timeout-based resolver only - no fallback to prevent SSRF
+		// Default resolver: PreferGo breaks DNS on Android (no resolv.conf,
+		// lookup must go through cgo/netd, see goosPrefersCgo in net/conf.go)
 		ctx, cancel := context.WithTimeout(context.Background(), dnsTimeout)
 		defer cancel()
 
-		resolver := &net.Resolver{PreferGo: true}
-		addrs, err := resolver.LookupHost(ctx, host)
+		addrs, err := net.DefaultResolver.LookupHost(ctx, host)
 		if err != nil {
 			return false
 		}
@@ -292,12 +292,12 @@ func validateNotPrivateURL(rawURL string) error {
 	host := u.Hostname()
 	ip := net.ParseIP(host)
 	if ip == nil {
-		// Use timeout-based resolver only - no fallback to prevent SSRF
+		// Default resolver: PreferGo breaks DNS on Android (no resolv.conf,
+		// lookup must go through cgo/netd, see goosPrefersCgo in net/conf.go)
 		ctx, cancel := context.WithTimeout(context.Background(), dnsTimeout)
 		defer cancel()
 
-		resolver := &net.Resolver{PreferGo: true}
-		addrs, err := resolver.LookupHost(ctx, host)
+		addrs, err := net.DefaultResolver.LookupHost(ctx, host)
 		if err != nil {
 			return fmt.Errorf("cannot resolve host: %s", host)
 		}
