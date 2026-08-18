@@ -17,12 +17,12 @@ val appCode = maxOf(
 
 android {
     namespace = "com.flowdav.app"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.flowdav.app"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 37
         versionCode = appCode
         versionName = appVersion
     }
@@ -62,11 +62,11 @@ android {
 
 dependencies {
     implementation(files("libs/flowdav.aar"))
-    implementation("androidx.appcompat:appcompat:1.7.1")
-    implementation("androidx.core:core-ktx:1.18.0")
+    implementation("androidx.appcompat:appcompat:1.8.0")
+    implementation("androidx.core:core-ktx:1.19.0")
     implementation("com.google.android.material:material:1.14.0")
     implementation("androidx.activity:activity-ktx:1.13.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.10.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
     implementation("androidx.security:security-crypto:1.1.0")
 }

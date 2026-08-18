@@ -2,7 +2,7 @@
 
 A lightweight SOCKS5 proxy that uses WebDAV as a transport layer. Route your traffic through your home internet connection when connected to public Wi-Fi (cafe, hotel, etc.) by using WebDAV storage as an intermediary.
 
-![Go](https://img.shields.io/badge/go-1.26.5-blue)
+![Go](https://img.shields.io/badge/go-1.26.6-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Release](https://img.shields.io/github/v/release/lyafence/flowdav)
 

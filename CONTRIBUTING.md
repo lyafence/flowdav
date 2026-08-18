@@ -67,7 +67,7 @@ Requires: Android SDK + NDK + gomobile. Run `make android-init` to set up.
 
 ## Code style
 
-- Go 1.26.5, stdlib preferred.
+- Go 1.26.6, stdlib preferred.
 - Table-driven tests with `-race` enabled.
 - Imports: stdlib → third-party → internal, blank-line separated.
 - camelCase, no getters, unexported by default.
