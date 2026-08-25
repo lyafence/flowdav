@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"sync"
@@ -161,16 +162,21 @@ func (m *MultiBackend) UploadAny(ctx context.Context, filename string, data io.R
 
 func (m *MultiBackend) ListQuery(ctx context.Context, prefix string) ([]FileEntry, error) {
 	var allFiles []FileEntry
+	var errs []error
 	for i, be := range m.backends {
 		files, err := be.ListQuery(ctx, prefix)
 		if err != nil {
 			logger.Info("MultiBackend: backend[%d] ListQuery error: %v", i, err)
+			errs = append(errs, err)
 			continue
 		}
 		for _, f := range files {
 			f.BackendIdx = uint8(i)
 			allFiles = append(allFiles, f)
 		}
+	}
+	if len(m.backends) > 0 && len(errs) == len(m.backends) {
+		return nil, fmt.Errorf("all %d backends failed to list: %w", len(errs), errors.Join(errs...))
 	}
 	return allFiles, nil
 }

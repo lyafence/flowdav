@@ -1,7 +1,5 @@
 package com.flowdav.app
 
-import android.animation.ArgbEvaluator
-import android.animation.ValueAnimator
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -13,6 +11,7 @@ import android.provider.OpenableColumns
 import android.text.SpannableString
 import android.text.style.ForegroundColorSpan
 import android.transition.TransitionManager
+import android.util.Log
 import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -48,7 +47,6 @@ class MainActivity : AppCompatActivity() {
     private var fileUri: android.net.Uri? = null
     private var isManualMode = false
     private var isEncrypted = true
-    private var pulseAnimator: ValueAnimator? = null
     private var proxyServiceStarted = false
     private var autoScrollLogs = true
 
@@ -71,7 +69,9 @@ class MainActivity : AppCompatActivity() {
                 contentResolver.takePersistableUriPermission(
                     uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
-            } catch (_: Exception) { }
+            } catch (e: Exception) {
+                Log.w(TAG, "takePersistableUriPermission failed for $uri", e)
+            }
             getPrefs().edit().putString(PREF_URI, uri.toString()).apply()
             refreshFileInfo(uri)
         }
@@ -148,7 +148,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        pulseAnimator?.cancel()
         _binding = null
         super.onDestroy()
     }
@@ -285,19 +284,19 @@ class MainActivity : AppCompatActivity() {
     private fun refreshFileInfo(uri: android.net.Uri) {
         lifecycleScope.launch {
             val name = withContext(Dispatchers.IO) { getDisplayName(uri) }
-            val firstByte = withContext(Dispatchers.IO) {
-                try { contentResolver.openInputStream(uri)?.use { it.read() } ?: -1 } catch (e: Exception) { -1 }
+            val firstByte: Int? = withContext(Dispatchers.IO) {
+                try { contentResolver.openInputStream(uri)?.use { it.read() } } catch (_: Exception) { null }
             }
             showFileChip(name)
-            isEncrypted = firstByte != '{'.code
+            if (firstByte == null) {
+                Snackbar.make(b.root, R.string.config_read_failed, Snackbar.LENGTH_LONG).show()
+            }
+            isEncrypted = (firstByte ?: -1) != '{'.code
             updatePasswordVisibility()
         }
     }
 
     private fun render(state: ProxyState) {
-        pulseAnimator?.cancel()
-        pulseAnimator = null
-
         when (state.status) {
             ProxyState.Status.STOPPED -> {
                 val color = getColorFromAttr(com.google.android.material.R.attr.colorOnSurfaceVariant)
@@ -378,21 +377,6 @@ class MainActivity : AppCompatActivity() {
         b.statusText.setTextColor(textColor)
         b.statusText.text = text
         b.statusDot.contentDescription = "${getString(R.string.status_dot_desc)}: $text"
-    }
-
-    private fun startPulse() {
-        val startColor = getColorFromAttr(com.google.android.material.R.attr.colorTertiary)
-        val endColor = (startColor and 0x00FFFFFF) or (0x66000000.toInt())
-        pulseAnimator = ValueAnimator.ofObject(ArgbEvaluator(), startColor, endColor).apply {
-            duration = 800
-            repeatCount = ValueAnimator.INFINITE
-            repeatMode = ValueAnimator.REVERSE
-            addUpdateListener { anim ->
-                val color = anim.animatedValue as Int
-                (b.statusDot.background as? GradientDrawable)?.setColor(color)
-            }
-            start()
-        }
     }
 
     private fun getColorFromAttr(attr: Int): Int =
@@ -521,6 +505,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
+        private const val TAG = "MainActivity"
         private const val PREF_NAME = "flowdav"
         private const val PREF_PASSWORD = "password"
         private const val PREF_URI = "config_uri"

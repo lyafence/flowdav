@@ -417,3 +417,33 @@ func TestMultiBackend429RateLimit(t *testing.T) {
 	multi.mu.Unlock()
 	assert.Equal(t, 1, failures, "non-429 must increment failure count")
 }
+
+func TestListQueryAllBackendsFail(t *testing.T) {
+	be1 := &mockBackend{ListQueryFunc: func(_ context.Context, _ string) ([]FileEntry, error) {
+		return nil, errors.New("connection refused")
+	}}
+	be2 := &mockBackend{ListQueryFunc: func(_ context.Context, _ string) ([]FileEntry, error) {
+		return nil, errors.New("connection refused")
+	}}
+	multi := NewMultiBackend([]Backend{be1, be2})
+
+	files, err := multi.ListQuery(context.Background(), "")
+	require.Error(t, err, "ListQuery must fail when every backend fails")
+	require.Nil(t, files)
+	assert.ErrorContains(t, err, "all 2 backends failed")
+}
+
+func TestListQueryPartialFailureReturnsAvailableFiles(t *testing.T) {
+	be1 := &mockBackend{ListQueryFunc: func(_ context.Context, _ string) ([]FileEntry, error) {
+		return nil, errors.New("backend down")
+	}}
+	be2 := &mockBackend{ListQueryFunc: func(_ context.Context, _ string) ([]FileEntry, error) {
+		return []FileEntry{{Filename: "aa11", ModTime: time.Now()}}, nil
+	}}
+	multi := NewMultiBackend([]Backend{be1, be2})
+
+	files, err := multi.ListQuery(context.Background(), "")
+	require.NoError(t, err, "partial failure is not an error")
+	require.Len(t, files, 1)
+	assert.Equal(t, uint8(1), files[0].BackendIdx)
+}

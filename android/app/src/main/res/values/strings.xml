@@ -45,6 +45,7 @@
 
     <!-- Validation -->
     <string name="select_file_first">Please select a config file first</string>
+    <string name="config_read_failed">Could not read config file — reselect it in storage</string>
     <string name="fill_all_fields">Please fill all fields</string>
     <string name="socks5_partial_error">Both SOCKS5 user and password are required, or leave both empty</string>
     <string name="error_required">This field is required</string>

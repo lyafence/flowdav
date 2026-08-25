@@ -381,7 +381,7 @@ func handleServerConn(ctx context.Context, wg *sync.WaitGroup, sessionID, target
 			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 			n, err := conn.Read(buf)
 			if n > 0 {
-				logger.Info("Session %s: read %d bytes from target", sessionID, n)
+				logger.Debug("Session %s: read %d bytes from target", sessionID, n)
 				session.EnqueueTx(ctx, buf[:n])
 			}
 			if err != nil {
@@ -423,7 +423,7 @@ func handleServerConn(ctx context.Context, wg *sync.WaitGroup, sessionID, target
 					return
 				}
 				if len(data) > 0 {
-					logger.Info("Session %s: got %d bytes from client Rx, writing to target", sessionID, len(data))
+					logger.Debug("Session %s: got %d bytes from client Rx, writing to target", sessionID, len(data))
 					if err := conn.SetWriteDeadline(time.Now().Add(30 * time.Second)); err != nil {
 						logger.Info("Session %s: set write deadline error: %v", sessionID, err)
 					}

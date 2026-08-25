@@ -167,7 +167,7 @@ docker run --rm -v ./config.json.enc:/app/configs/config.json.enc \
 | `flush_rate_ms` | int | `500` | ✓ | ✓ | Flush interval |
 | `max_sessions` | int | `0` (∞) | ✓ | ✓ | Max WebDAV sessions |
 | `idle_timeout_ms` | int | `10000` | ✓ | ✓ | Session idle timeout (ms); 0 = default 10s |
-| `max_message_size` | int | `16777216` | ✓ | ✓ | Max payload (bytes) |
+| `max_message_size` | int | `16777216` | ✓ | ✓ | Max payload (bytes), capped at 1GB |
 | `tls_fingerprint` | string | `"chrome"` | ✓ | ✓ | TLS fingerprint profile (`chrome`, `chrome_auto`) |
 | `padding_size` | int | `0` (off) | ✓ | ✓ | Tail padding bucket size (bytes); hides exact payload size from storage observer. Adds overhead; try `4096` or `16384` with public WebDAV providers. |
 | `hold_ms` | int | `0` (off) | | ✓ | Max server-side random delay before flushing (ms). Adds latency. |

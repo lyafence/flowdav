@@ -8,7 +8,7 @@ on:
       - 'LICENSE'
       - '.gitignore'
       - '.githooks/**'
-      - 'configs/*.example.json'
+      - 'configs/*.json.example'
       - 'android/**'
       - 'Dockerfile'
       - 'compose.yaml'
