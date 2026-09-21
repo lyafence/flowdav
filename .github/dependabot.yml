@@ -17,6 +17,23 @@ updates:
         update-types:
           - "version-update:semver-major"
 
+  - package-ecosystem: "gradle"
+    directory: "/android"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      gradle:
+        patterns:
+          - "*"
+        update-types:
+          - "patch"
+          - "minor"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
@@ -25,8 +42,7 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types:
-          - "version-update:semver-minor"
-          - "version-update:semver-patch"
+          - "version-update:semver-major"
 
   - package-ecosystem: "github-actions"
     directory: "/"

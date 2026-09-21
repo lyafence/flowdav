@@ -1,24 +1,24 @@
 module github.com/lyafence/flowdav
 
-go 1.26.6
+go 1.26.8
 
 require (
 	github.com/refraction-networking/utls v1.8.2
 	github.com/stretchr/testify v1.12.1
 	github.com/studio-b12/gowebdav v0.13.0
 	github.com/things-go/go-socks5 v0.1.3
-	golang.org/x/mobile v0.0.0-20260821190718-4776eadac327
-	golang.org/x/term v0.45.0
+	golang.org/x/mobile v0.0.0-20260908204917-8b95e45f8d3e
+	golang.org/x/term v0.46.0
 )
 
 require (
-	github.com/andybalholm/brotli v1.2.2 // indirect
-	github.com/klauspost/compress v1.19.2 // indirect
+	github.com/andybalholm/brotli v1.2.4 // indirect
+	github.com/klauspost/compress v1.20.0 // indirect
 	github.com/stretchr/objx v0.5.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/crypto v0.55.0 // indirect
-	golang.org/x/mod v0.40.0 // indirect
-	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/tools v0.49.0 // indirect
+	golang.org/x/crypto v0.57.0 // indirect
+	golang.org/x/mod v0.41.0 // indirect
+	golang.org/x/sync v0.23.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/tools v0.50.0 // indirect
 )
