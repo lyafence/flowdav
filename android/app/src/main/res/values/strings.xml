@@ -41,27 +41,37 @@
     <string name="status_stopped">Stopped</string>
     <string name="status_connecting">Connecting…</string>
     <string name="status_running">Running</string>
-    <string name="status_error">Error</string>
 
     <!-- Validation -->
     <string name="select_file_first">Please select a config file first</string>
     <string name="config_read_failed">Could not read config file — reselect it in storage</string>
-    <string name="fill_all_fields">Please fill all fields</string>
     <string name="socks5_partial_error">Both SOCKS5 user and password are required, or leave both empty</string>
     <string name="error_required">This field is required</string>
     <string name="error_invalid_listen">Must be in format IP:port, e.g. 127.0.0.1:1080</string>
+
+    <!-- Startup errors (bridge ErrorCode values + Kotlin-only codes) -->
+    <string name="error_no_password">This config is encrypted — enter the master password</string>
+    <string name="error_decrypt_failed">Decryption failed — wrong password or corrupted config</string>
+    <string name="error_invalid_config">Invalid config file</string>
+    <string name="error_invalid_key">Encryption or HMAC key is invalid (must be base64, 32 bytes)</string>
+    <string name="error_already_running">Proxy is already running</string>
+    <string name="error_storage">Could not initialize the WebDAV storage</string>
+    <string name="error_listen_failed">Could not start the local SOCKS5 listener (address in use?)</string>
+    <string name="error_runtime">The proxy stopped after starting — check the logs</string>
+    <string name="error_manual_fields">Fill in all required fields</string>
+    <string name="error_file_required">Select a config file first</string>
+    <string name="error_config_open">Could not read the selected config file</string>
+    <string name="error_failed_start">Failed to start the proxy</string>
+    <string name="error_unknown">Something went wrong — check the logs</string>
 
     <!-- Notification -->
     <string name="proxy_notification_channel">Proxy Status</string>
     <string name="proxy_running">Proxy running</string>
     <string name="notification_stop">Stop</string>
+    <string name="notification_status_fmt">%1$s · %2$s</string>
 
     <!-- A11y -->
-    <string name="status_dot_desc">Proxy status indicator</string>
-    <string name="mode_file_desc">Config file mode</string>
-    <string name="mode_manual_desc">Manual configuration mode</string>
     <string name="config_chip_desc">Selected config file</string>
-    <string name="advanced_toggle_desc">Toggle advanced settings</string>
     <string name="advanced_header_desc">Advanced settings, tap to expand or collapse</string>
 
     <!-- Section headers -->
@@ -73,8 +83,9 @@
     <string name="arrow_collapsed">▼</string>
     <string name="arrow_expanded">▲</string>
     <string name="logs_copied">Logs copied</string>
-    <string name="version_prefix">v</string>
+    <string name="version_fmt">v%1$s</string>
     <string name="paste_desc">Paste from clipboard</string>
+    <string name="config_display_fallback">config</string>
 
     <!-- Permission rationale -->
     <string name="notif_permission_title">Notification permission needed</string>

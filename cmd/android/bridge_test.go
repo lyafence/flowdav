@@ -2,6 +2,8 @@ package flowdavmobile
 
 import (
 	"encoding/base64"
+	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -83,4 +85,40 @@ func TestParseConfigJSONDefaults(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 65536, cfg.MaxMessageSize)
 	require.Equal(t, "debug", cfg.LogLevel)
+}
+
+// TestErrorCodesStable pins the wire values of the bridge ErrorCode constants.
+// These strings are the contract consumed by Android's ProxyState.ErrorKind
+// (android/app/src/main/java/com/flowdav/app/ProxyState.kt); changing a value
+// here without updating the Kotlin side silently breaks UI error mapping.
+func TestErrorCodesStable(t *testing.T) {
+	want := []string{
+		"encrypted_no_password",
+		"decrypt_failed",
+		"invalid_config",
+		"invalid_key",
+		"already_running",
+		"storage_init",
+		"listen_failed",
+		"runtime",
+		"unknown",
+	}
+	got := []string{
+		string(ErrEncryptedNoPw),
+		string(ErrDecryptFailed),
+		string(ErrInvalidConfig),
+		string(ErrInvalidKey),
+		string(ErrAlreadyRunning),
+		string(ErrStorageInit),
+		string(ErrListenFailed),
+		string(ErrRuntime),
+		string(ErrUnknown),
+	}
+	require.Equal(t, want, got, "keep ProxyState.ErrorKind in sync")
+}
+
+func TestCodeOfClassifies(t *testing.T) {
+	require.Equal(t, ErrStorageInit, codeOf(coded(ErrStorageInit, errors.New("boom"))))
+	require.Equal(t, ErrListenFailed, codeOf(fmt.Errorf("listen: %w", coded(ErrListenFailed, errors.New("boom")))))
+	require.Equal(t, ErrUnknown, codeOf(errors.New("plain error")))
 }

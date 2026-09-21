@@ -28,7 +28,7 @@ var (
 	socksErrCh        chan error
 	currentAddr       string
 	lastCfg           *config.AppConfig
-	lastError         string
+	lastErrCode       ErrorCode
 	pendingSocks5User string
 	pendingSocks5Pass string
 
@@ -90,10 +90,69 @@ type Status struct {
 	Running        bool
 	ActiveSessions int
 	ListenAddr     string
-	Error          string
+	ErrorCode      string
 	ProcessedFiles int    `json:"processed_files"`
 	WebdavURL      string `json:"webdav_url"`
 	Logs           string
+}
+
+// ErrorCode is a stable, machine-readable failure identifier crossing the
+// gomobile bridge. Android maps these to localized user-facing strings; Go
+// messages stay developer-facing and are written only to the log buffer.
+type ErrorCode string
+
+const (
+	ErrEncryptedNoPw  ErrorCode = "encrypted_no_password"
+	ErrDecryptFailed  ErrorCode = "decrypt_failed"
+	ErrInvalidConfig  ErrorCode = "invalid_config"
+	ErrInvalidKey     ErrorCode = "invalid_key"
+	ErrAlreadyRunning ErrorCode = "already_running"
+	ErrStorageInit    ErrorCode = "storage_init"
+	ErrListenFailed   ErrorCode = "listen_failed"
+	ErrRuntime        ErrorCode = "runtime"
+	ErrUnknown        ErrorCode = "unknown"
+)
+
+// StartResult reports the outcome of a StartProxy* call. Success is false on
+// failure; Code is a stable ErrorCode; Message is a developer-facing detail and
+// must never be shown to the user.
+type StartResult struct {
+	Success bool
+	Code    string
+	Message string
+}
+
+func okResult() *StartResult { return &StartResult{Success: true} }
+
+func errResult(code ErrorCode, err error) *StartResult {
+	msg := ""
+	if err != nil {
+		msg = err.Error()
+	}
+	if msg != "" {
+		logger.Error("StartProxy failed [%s]: %s", code, msg)
+	}
+	return &StartResult{Success: false, Code: string(code), Message: msg}
+}
+
+// codedError wraps an error with a stable ErrorCode so callers can classify
+// failures from internal helpers without matching on message text.
+type codedError struct {
+	code ErrorCode
+	err  error
+}
+
+func (e *codedError) Error() string { return e.err.Error() }
+func (e *codedError) Unwrap() error { return e.err }
+
+func coded(code ErrorCode, err error) error { return &codedError{code: code, err: err} }
+
+func codeOf(err error) ErrorCode {
+	var ce *codedError
+	if errors.As(err, &ce) {
+		return ce.code
+	}
+	return ErrUnknown
 }
 
 func decodeKey(keyB64 string, name string) ([]byte, error) {
@@ -122,54 +181,55 @@ func parseConfigJSON(data []byte) (*config.AppConfig, error) {
 }
 
 // StartProxyFromData parses config from raw bytes and starts the proxy.
-func StartProxyFromData(data []byte, password, listenAddr string) error {
+func StartProxyFromData(data []byte, password, listenAddr string) *StartResult {
 	logger.Info("StartProxyFromData: len=%d, encrypted=%t, listen=%q", len(data), len(data) > 0 && data[0] != '{', listenAddr)
 
-	var (
-		appCfg *config.AppConfig
-		err    error
-	)
+	var appCfg *config.AppConfig
 
 	if len(data) > 0 && data[0] == '{' {
-		appCfg, err = parseConfigJSON(data)
+		cfg, err := parseConfigJSON(data)
 		if err != nil {
-			return fmt.Errorf("invalid config: %w", err)
+			return errResult(ErrInvalidConfig, err)
 		}
+		appCfg = cfg
 	}
 
 	if appCfg == nil {
 		if password == "" {
-			return fmt.Errorf("config is encrypted but no password provided")
+			return errResult(ErrEncryptedNoPw, nil)
 		}
 		enc, err := config.UnmarshalEncrypted(data)
 		if err != nil {
-			return fmt.Errorf("invalid encrypted config: %w", err)
+			return errResult(ErrInvalidConfig, err)
 		}
 		plaintext, err := config.DecryptConfig(enc, password)
 		if err != nil {
-			logger.Error("decryption failed")
-			return fmt.Errorf("decryption failed: %w", err)
+			return errResult(ErrDecryptFailed, err)
 		}
-		appCfg, err = parseConfigJSON(plaintext)
+		cfg, err := parseConfigJSON(plaintext)
 		if err != nil {
-			return fmt.Errorf("invalid config: %w", err)
+			return errResult(ErrInvalidConfig, err)
 		}
+		appCfg = cfg
 	}
 
-	return startProxy(appCfg, listenAddr)
+	if err := startProxy(appCfg, listenAddr); err != nil {
+		return errResult(codeOf(err), err)
+	}
+	return okResult()
 }
 
 // StartProxyManual creates a proxy from explicit WebDAV and crypto parameters.
-func StartProxyManual(webdavURL, webdavLogin, webdavToken, encKeyBase64, hmacKeyBase64, listenAddr string) error {
+func StartProxyManual(webdavURL, webdavLogin, webdavToken, encKeyBase64, hmacKeyBase64, listenAddr string) *StartResult {
 	logger.Info("StartProxyManual: url=%q, listen=%q", webdavURL, listenAddr)
 
 	encKey, err := decodeKey(encKeyBase64, "enc_key")
 	if err != nil {
-		return err
+		return errResult(ErrInvalidKey, err)
 	}
 	hmacKey, err := decodeKey(hmacKeyBase64, "hmac_key")
 	if err != nil {
-		return err
+		return errResult(ErrInvalidKey, err)
 	}
 
 	appCfg := &config.AppConfig{
@@ -185,9 +245,12 @@ func StartProxyManual(webdavURL, webdavLogin, webdavToken, encKeyBase64, hmacKey
 		LogLevel:       "info",
 	}
 	if err := config.ValidateAppConfig(appCfg); err != nil {
-		return fmt.Errorf("invalid config: %w", err)
+		return errResult(ErrInvalidConfig, err)
 	}
-	return startProxy(appCfg, listenAddr)
+	if err := startProxy(appCfg, listenAddr); err != nil {
+		return errResult(codeOf(err), err)
+	}
+	return okResult()
 }
 
 // SetSocks5Auth sets SOCKS5 authentication credentials for the next manual proxy.
@@ -203,8 +266,10 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 	mu.Lock()
 	defer mu.Unlock()
 
+	lastErrCode = ""
+
 	if eng != nil {
-		return errors.New("proxy already running")
+		return coded(ErrAlreadyRunning, errors.New("proxy already running"))
 	}
 
 	logger.SetLevel(appCfg.LogLevel)
@@ -218,7 +283,7 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 
 	backend, multiBackend, err := storage.NewBackendFromConfig(appCfg.WebDAV, appCfg.TLSFingerprint)
 	if err != nil {
-		return fmt.Errorf("storage: %w", err)
+		return coded(ErrStorageInit, err)
 	}
 
 	cryptoCfg := &transport.CryptoConfig{
@@ -246,7 +311,7 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 		engine.Stop()
 		ctxCancel()
 		logger.Error("SOCKS5 options: %v", err)
-		return fmt.Errorf("SOCKS5 options: %w", err)
+		return coded(ErrUnknown, err)
 	}
 
 	server := socks5.NewServer(serverOpts...)
@@ -255,7 +320,7 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 		engine.Stop()
 		ctxCancel()
 		logger.Error("listen %s failed: %v", listenAddr, err)
-		return fmt.Errorf("listen %s: %w", listenAddr, err)
+		return coded(ErrListenFailed, err)
 	}
 
 	cancel = ctxCancel
@@ -264,7 +329,6 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 	currentAddr = listenAddr
 	lastCfg = appCfg
 	socksErrCh = make(chan error, 1)
-	lastError = ""
 
 	logEvent("SOCKS5 proxy started on %s", listenAddr)
 
@@ -272,6 +336,11 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 		defer func() {
 			if r := recover(); r != nil {
 				logger.Error("SOCKS5 serve panic: %v", r)
+				mu.Lock()
+				lastErrCode = ErrRuntime
+				stopLocked()
+				mu.Unlock()
+				logEvent("SOCKS5 serve panic: %v", r)
 			}
 		}()
 		if err := server.Serve(listener); err != nil && !errors.Is(err, net.ErrClosed) {
@@ -282,7 +351,7 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 				default:
 				}
 			}
-			lastError = err.Error()
+			lastErrCode = ErrRuntime
 			stopLocked()
 			mu.Unlock()
 			logEvent("SOCKS5 error: %v", err)
@@ -327,14 +396,14 @@ func GetStatus() *Status {
 	mu.Lock()
 	e := eng
 	addr := currentAddr
-	errStr := lastError
+	errCode := lastErrCode
 	wdavURL := ""
 	if lastCfg != nil && lastCfg.WebDAV != nil {
 		wdavURL = lastCfg.WebDAV.URL
 	}
 	mu.Unlock()
 
-	s := &Status{Running: e != nil, ListenAddr: addr, Error: errStr, WebdavURL: wdavURL}
+	s := &Status{Running: e != nil, ListenAddr: addr, ErrorCode: string(errCode), WebdavURL: wdavURL}
 	if e != nil {
 		stats := e.Stats()
 		s.ActiveSessions = stats.ActiveSessions
@@ -344,34 +413,24 @@ func GetStatus() *Status {
 	return s
 }
 
-// StopAndError returns a deferred error that occurred after a successful
-// StartProxy* call.
-//
-// Two-phase error protocol:
-//
-//	Phase 1 — StartProxyFromData / StartProxyManual returns error synchronously
-//	           (Go error → Java exception thrown by gomobile).
-//	Phase 2 — If phase 1 succeeds but the SOCKS5 goroutine fails shortly
-//	           after, StopAndError reads the deferred error from socksErrCh
-//	           (filled by the SOCKS5 serve goroutine).
-//
-// Kotlin caller (MainActivity / ProxyManager) uses this sequence:
-//
-//	try { proxy.StartProxy*(...); if (!GetStatus().running) { err = StopAndError() } }
+// StopAndError returns a deferred error code from after a successful start:
+// phase 1 reports start failures via *StartResult, phase 2 (SOCKS5 goroutine
+// died shortly after a successful start) surfaces ErrRuntime here. Empty means
+// no deferred error.
 func StopAndError() string {
 	mu.Lock()
 	defer mu.Unlock()
 
-	var errMsg string
+	code := ErrorCode("")
 	if socksErrCh != nil {
 		select {
 		case err := <-socksErrCh:
-			errMsg = err.Error()
-			logger.Error("StopAndError: SOCKS error: %s", errMsg)
+			logger.Error("StopAndError: SOCKS error: %v", err)
+			code = ErrRuntime
 		default:
 		}
 	}
 	stopLocked()
-	logEvent("Proxy stopped (error: %s)", errMsg)
-	return errMsg
+	logEvent("Proxy stopped (error: %s)", code)
+	return string(code)
 }

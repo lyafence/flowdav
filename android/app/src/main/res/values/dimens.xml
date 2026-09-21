@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Caps the form column width on medium/expanded window widths; no effect
+         on compact (phones) where the parent is narrower than this value. -->
+    <dimen name="content_max_width">600dp</dimen>
+    <dimen name="arrow_text_size">16sp</dimen>
+    <dimen name="log_line_spacing">2dp</dimen>
+</resources>

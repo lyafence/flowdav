@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:fitsSystemWindows="true">
+    android:orientation="vertical">
 
     <ScrollView
         android:id="@+id/contentScroll"
@@ -12,12 +12,22 @@
         android:layout_height="0dp"
         android:layout_weight="1">
 
-        <LinearLayout
+        <androidx.constraintlayout.widget.ConstraintLayout
             android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+        <LinearLayout
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:gravity="center_horizontal"
             android:orientation="vertical"
-            android:padding="16dp">
+            android:padding="16dp"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintWidth_max="@dimen/content_max_width"
+            app:layout_constraintHorizontal_bias="0.5">
 
             <!-- ===== Status Bar ===== -->
             <LinearLayout
@@ -33,8 +43,7 @@
                     android:layout_height="16dp"
                     android:background="@drawable/status_dot_stopped"
                     android:layout_marginEnd="12dp"
-                    android:contentDescription="@string/status_dot_desc"
-                    android:importantForAccessibility="yes" />
+                    android:importantForAccessibility="no" />
 
                 <com.google.android.material.progressindicator.CircularProgressIndicator
                     android:id="@+id/connectingProgress"
@@ -73,9 +82,8 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:text="@string/mode_file"
-                app:icon="@android:drawable/ic_menu_myplaces"
-                android:checked="true"
-                android:contentDescription="@string/mode_file_desc" />
+                app:icon="@drawable/ic_config_file"
+                android:checked="true" />
 
             <Button
                 android:id="@+id/modeManual"
@@ -84,8 +92,7 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:text="@string/mode_manual"
-                app:icon="@android:drawable/ic_menu_edit"
-                android:contentDescription="@string/mode_manual_desc" />
+                app:icon="@drawable/ic_mode_edit" />
 
         </com.google.android.material.button.MaterialButtonToggleGroup>
 
@@ -117,7 +124,7 @@
                     app:chipStartPadding="12dp"
                     app:chipEndPadding="12dp"
                     app:closeIconTint="?attr/colorOnSurfaceVariant"
-                    android:contentDescription="@string/config_chip_desc" />
+                    android:contentDescription="@string/select_file" />
 
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/passwordLayout"
@@ -132,7 +139,9 @@
                         android:id="@+id/passwordInput"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:inputType="textPassword" />
+                        android:inputType="textPassword"
+                        android:importantForAutofill="no"
+                        android:saveEnabled="false" />
 
                 </com.google.android.material.textfield.TextInputLayout>
 
@@ -171,6 +180,8 @@
                     android:layout_height="wrap_content"
                     android:text="@string/section_webdav"
                     android:textAppearance="?attr/textAppearanceTitleSmall"
+                    android:accessibilityHeading="true"
+                    tools:ignore="UnusedAttribute"
                     android:layout_marginBottom="12dp" />
 
                 <com.google.android.material.textfield.TextInputLayout
@@ -198,7 +209,8 @@
                         android:id="@+id/webdavLoginInput"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:inputType="text" />
+                        android:inputType="text"
+                        android:autofillHints="username" />
 
                 </com.google.android.material.textfield.TextInputLayout>
 
@@ -214,7 +226,9 @@
                         android:id="@+id/webdavTokenInput"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:inputType="textPassword" />
+                        android:inputType="textPassword"
+                        android:autofillHints="password"
+                        android:saveEnabled="false" />
 
                 </com.google.android.material.textfield.TextInputLayout>
 
@@ -223,6 +237,8 @@
                     android:layout_height="wrap_content"
                     android:text="@string/section_encryption_keys"
                     android:textAppearance="?attr/textAppearanceTitleSmall"
+                    android:accessibilityHeading="true"
+                    tools:ignore="UnusedAttribute"
                     android:layout_marginTop="20dp"
                     android:layout_marginBottom="12dp" />
 
@@ -239,7 +255,9 @@
                         android:id="@+id/encKeyInput"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:inputType="text" />
+                        android:inputType="textVisiblePassword|textNoSuggestions"
+                        android:importantForAutofill="no"
+                        android:saveEnabled="false" />
 
                 </com.google.android.material.textfield.TextInputLayout>
 
@@ -257,7 +275,9 @@
                         android:id="@+id/hmacKeyInput"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:inputType="text" />
+                        android:inputType="textVisiblePassword|textNoSuggestions"
+                        android:importantForAutofill="no"
+                        android:saveEnabled="false" />
 
                 </com.google.android.material.textfield.TextInputLayout>
 
@@ -305,8 +325,8 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/arrow_collapsed"
-                        android:textSize="16sp"
-                        android:contentDescription="@string/advanced_toggle_desc" />
+                        android:textSize="@dimen/arrow_text_size"
+                        android:importantForAccessibility="no" />
 
                 </LinearLayout>
 
@@ -337,6 +357,8 @@
                         android:layout_height="wrap_content"
                         android:text="@string/section_socks5_auth"
                         android:textAppearance="?attr/textAppearanceTitleSmall"
+                        android:accessibilityHeading="true"
+                        tools:ignore="UnusedAttribute"
                         android:layout_marginTop="16dp"
                         android:layout_marginBottom="8dp" />
 
@@ -350,7 +372,8 @@
                             android:id="@+id/socks5UserInput"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:inputType="text" />
+                            android:inputType="text"
+                            android:autofillHints="username" />
 
                     </com.google.android.material.textfield.TextInputLayout>
 
@@ -366,7 +389,9 @@
                             android:id="@+id/socks5PassInput"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:inputType="textPassword" />
+                            android:inputType="textPassword"
+                            android:autofillHints="password"
+                            android:saveEnabled="false" />
 
                     </com.google.android.material.textfield.TextInputLayout>
 
@@ -394,6 +419,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
+            android:baselineAligned="false"
             android:gravity="center"
             android:orientation="horizontal"
             android:visibility="gone">
@@ -496,7 +522,7 @@
                     android:id="@+id/copyLogsBtn"
                     android:layout_width="48dp"
                     android:layout_height="48dp"
-                    android:src="@android:drawable/ic_menu_share"
+                    android:src="@drawable/ic_copy"
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:contentDescription="@string/copy_logs"
                     android:scaleType="centerInside"
@@ -511,13 +537,14 @@
                     android:maxLines="15"
                     android:gravity="start"
                     android:fontFamily="monospace"
-                    android:lineSpacingExtra="2dp"
+                    android:lineSpacingExtra="@dimen/log_line_spacing"
                     android:textIsSelectable="true"
                     android:textAppearance="?attr/textAppearanceBodySmall"
                     android:textColor="?attr/colorOnSurfaceVariant" />
         </LinearLayout>
 
-    </LinearLayout>
+            </LinearLayout>
+        </androidx.constraintlayout.widget.ConstraintLayout>
 
 </ScrollView>
 
@@ -528,8 +555,7 @@
         android:layout_height="wrap_content"
         android:gravity="center"
         android:paddingBottom="8dp"
-        android:textAppearance="?attr/textAppearanceBodySmall"
-        android:textColor="?attr/colorOnSurfaceVariant"
-        android:textSize="10sp" />
+        android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+        android:textColor="?attr/colorOnSurfaceVariant" />
 
 </LinearLayout>

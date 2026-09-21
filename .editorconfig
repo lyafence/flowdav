@@ -1,0 +1,6 @@
+root = true
+
+# Kotlin style gate (see `make lint-kotlin`); android_studio matches the project formatter.
+[*.{kt,kts}]
+ktlint_code_style = android_studio
+max_line_length = 140

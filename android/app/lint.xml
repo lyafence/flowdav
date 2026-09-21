@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!-- <adaptive-icon> requires the -v26 resource qualifier; AAPT rejects
+         merging it into mipmap-anydpi even though minSdk is 26. -->
+    <issue id="ObsoleteSdkInt">
+        <ignore path="src/main/res/mipmap-anydpi-v26" />
+    </issue>
+
+    <!-- Cleartext HTTP config exists only for the local Docker test stand
+         (debug variant), never in release. -->
+    <issue id="InsecureBaseConfiguration">
+        <ignore path="src/debug" />
+    </issue>
+
+    <!-- allowBackup=false already disables backup and device transfer;
+         android:fullBackupContent would be dead config. -->
+    <issue id="DataExtractionRules" severity="ignore" />
+</lint>
