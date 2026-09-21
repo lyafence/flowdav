@@ -57,6 +57,11 @@ adb install -r bin/flowdav-android.apk
 
 Requires: Android SDK + NDK + gomobile. Run `make android-init` to set up.
 
+## CI / GitHub Actions
+
+- Actions must be pinned to a full-length commit SHA (`uses: owner/repo@<40-char-sha> # vX.Y.Z`) — enforced repo-wide (`sha_pinning_required`).
+- Prefer first-party `actions/*` and runner-preinstalled tooling. Dependabot updates `uses:` refs, not `run:` tool versions.
+
 ## Pull requests
 
 1. Read the relevant package first — understand existing patterns.

@@ -20,7 +20,7 @@
 | `make compose-android` | Build Docker images for Android test env |
 | `make android-deploy` | Build APK + start test env + deploy to Android device. **Requires `make compose-android` first.** |
 | `make openwrt` | Build mipsle binary for OpenWrt routers → `bin/flowdav-mipsle` |
-| Additional (dev/CI) | `vet`, `lint`, `docker-build`, `image-to-bin`, `docker-e2e`, `compose-down`, `release`, `android-aar`, `android-init`, `android-keystore` |
+| Additional (dev/CI) | `vet`, `lint`, `lint-kotlin`, `docker-build`, `image-to-bin`, `docker-e2e`, `compose-down`, `release`, `clean`, `clean-images`, `android-aar`, `android-init`, `android-keystore`, `ndk-version` |
 
 > **Container tool:** Makefile targets use `podman` (`docker-build`, `image-to-bin`, `compose-*`). Do not assume `docker`.
 
@@ -42,7 +42,7 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 ```
 
 **Binary:** `flowdav` — unified entrypoint with `-c` (client), `-s` (server), `-e` (encrypt), `-g` (generate config) modes.  
-**Android bridge:** `cmd/android/bridge.go` — gomobile bind, exports `StartProxyFromData`/`StartProxyManual`/`StopProxy`/`GetStatus`/`StopAndError`/`SetSocks5Auth` to Kotlin. **Global state intentional** (gomobile exports free functions, not objects). **Config validation delegates** to `config.ValidateAppConfig` — the two paths share the same validation logic. See `parseConfigJSON` in bridge.go. **`GetStatus` violates "no getters" intentionally** — Java/Kotlin interop dictates Java Beans naming.
+**Android bridge:** `cmd/android/bridge.go` — gomobile bind, exports `StartProxyFromData`/`StartProxyManual`/`StopProxy`/`GetStatus`/`StopAndError`/`SetSocks5Auth` to Kotlin. **Global state intentional** (gomobile exports free functions, not objects). **Config validation delegates** to `config.ValidateAppConfig` — the two paths share the same validation logic. See `parseConfigJSON` in bridge.go. **`GetStatus` violates "no getters" intentionally** — Java/Kotlin interop dictates Java Beans naming. **Errors cross the bridge as stable codes**: `StartProxy*` returns `*StartResult{Success, Code, Message}`, `Status.ErrorCode`/`StopAndError` carry codes; Android maps them via `ProxyState.ErrorKind`. The contract is pinned by `TestErrorCodesStable` (Go) and `ErrorKindCodesTest` (Kotlin, parses bridge.go) — keep both sides in sync.
 
 ## Design Invariants
 
@@ -66,8 +66,16 @@ The pre-commit hook (`.githooks/pre-commit`) checks:
 - Bans `math/rand`, `os/exec` in production code (`cmd/`, `internal/`, excludes `_test.go`)
 - Bans `database/sql` in production code (same scope)
 - Bans `sync.Pool` in production code (same scope)
+- `gitleaks` on staged changes (optional; skipped if not installed)
 
 Install with `make hooks`.
+
+## CI / GitHub Actions
+
+- Actions must be pinned to a full-length commit SHA (`uses: owner/repo@<40-char-sha> # vX.Y.Z`) — enforced repo-wide (`sha_pinning_required`), incl. `actions/*`.
+- Prefer first-party `actions/*` and runner-preinstalled tooling over third-party actions.
+- Dependabot updates `uses:` refs, not `run:` tool versions — pin only where it matters.
+- Kotlin style gate: `make lint-kotlin` (ktlint, version pinned in the Makefile; `android_studio` style via `.editorconfig`).
 
 ## Config Quick Reference
 

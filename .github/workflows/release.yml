@@ -6,8 +6,7 @@ on:
       - "v*"
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 jobs:
   build:
@@ -43,9 +42,9 @@ jobs:
             gomips: softfloat
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.26.8'
 
@@ -65,7 +64,7 @@ jobs:
           tar -czf "${FOLDER}.tar.gz" $FOLDER
           cp "${FOLDER}.tar.gz" "flowdav-latest-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz"
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: bin-${{ matrix.goos }}-${{ matrix.goarch }}
           path: flowdav-*.tar.gz
@@ -74,37 +73,41 @@ jobs:
     name: Build Android APK
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.26.8'
           cache: true
 
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
-          java-version: 25
+          java-version: '25'
           cache: gradle
 
-      - name: Setup gomobile
+      - name: Verify pinned NDK and install gomobile
         run: |
-          go install golang.org/x/mobile/cmd/gomobile@latest
-          gomobile init
-
-      - name: Link NDK for gomobile
-        run: ln -sf $ANDROID_NDK_HOME $ANDROID_HOME/ndk-bundle
+          expected="$(make -s ndk-version)"
+          actual="$(basename "$ANDROID_NDK_HOME")"
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::runner NDK $actual != pinned $expected (Makefile ANDROID_NDK_VERSION)"
+            exit 1
+          fi
+          ln -sf "$ANDROID_NDK_HOME" "$ANDROID_HOME/ndk-bundle"
+          go install golang.org/x/mobile/cmd/gomobile
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Decode signing key
-        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > keystore.jks
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: echo "$KEYSTORE_B64" | base64 -d > keystore.jks
 
-      - name: Build AAR
+      - name: Build AAR (gomobile)
+        env:
+          VERSION_REF: ${{ github.ref_name }}
         run: |
-          mkdir -p android/app/libs
-          gomobile bind -target=android -androidapi 26 \
-            -javapkg com.flowdav.app \
-            -o android/app/libs/flowdav.aar \
-            -trimpath -ldflags="-s -w -X github.com/lyafence/flowdav/cmd/android.version=${GITHUB_REF_NAME}" \
-            ./cmd/android
+          gomobile init
+          ANDROID_SDK_HOME="${ANDROID_HOME:-$ANDROID_SDK_ROOT}" make android-aar VERSION="$VERSION_REF"
 
       - name: Build release APK
         run: ./gradlew assembleRelease
@@ -116,10 +119,12 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
 
       - name: Rename APK
-        run: mv app-release.apk flowdav-android-${{ github.ref_name }}.apk
+        env:
+          TAG: ${{ github.ref_name }}
+        run: mv app-release.apk "flowdav-android-$TAG.apk"
         working-directory: android/app/build/outputs/apk/release
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: android-apk
           path: android/app/build/outputs/apk/release/flowdav-android-${{ github.ref_name }}.apk
@@ -128,8 +133,10 @@ jobs:
     name: Release
     needs: [build, build-android]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: artifacts
 
@@ -139,22 +146,27 @@ jobs:
           find artifacts -name "*.tar.gz" -exec cp {} release-assets/ \;
           find artifacts -name "*.apk" -exec cp {} release-assets/ \;
 
-      - uses: softprops/action-gh-release@v3
-        with:
-          files: release-assets/*
-          fail_on_unmatched_files: false
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" release-assets/* --generate-notes
 
   docker:
     name: Build and push Docker image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -162,7 +174,7 @@ jobs:
 
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
@@ -170,7 +182,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
 
       - name: Build and push
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           platforms: linux/amd64,linux/arm64

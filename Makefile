@@ -8,7 +8,7 @@ HOST_IP := $(shell ip route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($$i=
 .PHONY: build openwrt test test-short test-e2e test-e2e-encrypted fuzz vulncheck \
             lint vet tidy encrypt clean docker-build docker-e2e image-to-bin release \
             compose-down clean-images nuke check hooks android-init android-aar android-apk android-keystore \
-            compose-android android-deploy
+            compose-android android-deploy lint-kotlin
 
 # Build binary
 build:
@@ -43,6 +43,21 @@ fuzz:
 # Static analysis
 lint:
 	golangci-lint run ./...
+
+# Kotlin style gate (android_studio code style via .editorconfig).
+# Version is pinned here; CI calls this target so there is one source of truth.
+KTLINT_VERSION ?= 1.8.0
+KTLINT_BIN ?= $(HOME)/.cache/flowdav/ktlint-$(KTLINT_VERSION)
+
+lint-kotlin:
+	@test -x "$(KTLINT_BIN)" || { \
+		mkdir -p "$$(dirname "$(KTLINT_BIN)")"; \
+		echo "Downloading ktlint $(KTLINT_VERSION)..."; \
+		curl -sSL -o "$(KTLINT_BIN)" \
+			"https://github.com/pinterest/ktlint/releases/download/$(KTLINT_VERSION)/ktlint"; \
+		chmod +x "$(KTLINT_BIN)"; \
+	}
+	@"$(KTLINT_BIN)" "android/**/*.kt" "android/**/*.kts"
 
 vet:
 	go vet ./...
@@ -147,10 +162,16 @@ android-deploy: android-apk
 	fi
 
 # Android AAR via gomobile (requires NDK + gomobile)
-#   ANDROID_HOME must be set. Install gomobile: go install golang.org/x/mobile/cmd/gomobile@latest
+#   ANDROID_HOME must be set. Install gomobile: go install golang.org/x/mobile/cmd/gomobile
+#   (version comes from go.mod; Dependabot keeps it current)
 #   Then: gomobile init
 ANDROID_SDK_HOME ?= $(HOME)/.android-sdk
+ANDROID_NDK_VERSION ?= 27.3.13750724
 SDK_TOOLS_URL := https://dl.google.com/android/repository/commandlinetools-linux-14742923_latest.zip
+
+# Single source of truth for the pinned NDK; CI asserts the runner matches it.
+ndk-version:
+	@echo $(ANDROID_NDK_VERSION)
 
 android-init:
 	@echo "=== Installing Android SDK + NDK (Linux) ==="
@@ -160,10 +181,10 @@ android-init:
 		mkdir -p $(ANDROID_SDK_HOME)/cmdline-tools && \
 		mv cmdline-tools $(ANDROID_SDK_HOME)/cmdline-tools/latest && \
 		yes | $(ANDROID_SDK_HOME)/cmdline-tools/latest/bin/sdkmanager --sdk_root=$(ANDROID_SDK_HOME) \
-			"platforms;android-36" "build-tools;36.0.0" "ndk;27.0.12077973" && \
+			"platforms;android-37.0" "build-tools;36.0.0" "ndk;$(ANDROID_NDK_VERSION)" && \
 		rm -f /tmp/cmdline-tools.zip && \
-		ln -sf $(ANDROID_SDK_HOME)/ndk/27.0.12077973 $(ANDROID_SDK_HOME)/ndk-bundle && \
-		go install golang.org/x/mobile/cmd/gomobile@latest && \
+		ln -sf $(ANDROID_SDK_HOME)/ndk/$(ANDROID_NDK_VERSION) $(ANDROID_SDK_HOME)/ndk-bundle && \
+		go install golang.org/x/mobile/cmd/gomobile && \
 		gomobile init && \
 		echo "" && \
 		echo "=== DONE ===" && \
@@ -177,11 +198,11 @@ android-aar:
 	ANDROID_HOME=$(ANDROID_SDK_HOME) PATH="$(HOME)/go/bin:$(PATH)" \
 	gomobile bind -target=android -androidapi 26 -javapkg com.flowdav.app \
 		-o android/app/libs/flowdav.aar \
-		-trimpath -ldflags="-s -w -X github.com/lyafence/flowdav/cmd/android.version=$(VERSION)" \
+		-trimpath -ldflags="-s -w -extldflags=-Wl,-z,max-page-size=16384 -X github.com/lyafence/flowdav/cmd/android.version=$(VERSION)" \
 		./cmd/android
 
 # Android APK (AAR + Gradle assemble debug)
-# Requires: ANDROID_HOME + OpenJDK 17+
+# Requires: ANDROID_HOME + OpenJDK 17+ (CI and release build on JDK 25)
 android-apk: android-aar
 	cd android && ANDROID_HOME=$(ANDROID_SDK_HOME) ./gradlew assembleDebug --no-daemon
 	@mkdir -p $(BIN_DIR)
