@@ -10,9 +10,13 @@ make build
 ## Development workflow
 
 ```bash
-make bench      # run benchmarks (performance regression check)
-make check      # full verification: vet → lint → build → test with race detector
-make test-e2e   # E2E tests (requires podman)
+make check               # full verification: vet → lint → build → test with race detector
+make bench               # benchmarks (performance regression check)
+make test-e2e            # E2E tests (requires podman)
+make test-e2e-encrypted  # E2E with encrypted configs
+make fuzz                # fuzz tests (30s each)
+make vulncheck           # govulncheck vulnerability scan
+make lint-kotlin         # ktlint gate for the Android app
 ```
 
 ## Copy example config (from source checkout)
@@ -23,7 +27,7 @@ cp configs/flowdav.json.example config.json
 
 ## Docker Compose (E2E testing)
 
-Quick full-stack test with three WebDAV backends and multi-client support:
+Quick full-stack test with four WebDAV containers (one single-backend, three for multi-backend) and multi-client support:
 
 ```bash
 ./scripts/prepare_test_env.sh

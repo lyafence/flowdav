@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	neturl "net/url"
 	"sync"
 	"time"
 
@@ -163,7 +164,19 @@ func (m *MultiBackend) UploadAny(ctx context.Context, filename string, data io.R
 func (m *MultiBackend) ListQuery(ctx context.Context, prefix string) ([]FileEntry, error) {
 	var allFiles []FileEntry
 	var errs []error
+	attempted := 0
 	for i, be := range m.backends {
+		m.mu.Lock()
+		ok, expired := m.isAvailable(i)
+		if expired {
+			m.health[i].failures = 0
+		}
+		m.mu.Unlock()
+		if !ok {
+			logger.Info("MultiBackend: backend[%d] unavailable (circuit open), skipping list", i)
+			continue
+		}
+		attempted++
 		files, err := be.ListQuery(ctx, prefix)
 		if err != nil {
 			logger.Info("MultiBackend: backend[%d] ListQuery error: %v", i, err)
@@ -175,14 +188,24 @@ func (m *MultiBackend) ListQuery(ctx context.Context, prefix string) ([]FileEntr
 			allFiles = append(allFiles, f)
 		}
 	}
-	if len(m.backends) > 0 && len(errs) == len(m.backends) {
-		return nil, fmt.Errorf("all %d backends failed to list: %w", len(errs), errors.Join(errs...))
+	if attempted > 0 && len(errs) == attempted {
+		return nil, fmt.Errorf("all %d backends failed to list: %w", attempted, errors.Join(errs...))
 	}
 	return allFiles, nil
 }
 
 func (m *MultiBackend) Download(ctx context.Context, filename string) (io.ReadCloser, error) {
 	for i, be := range m.backends {
+		m.mu.Lock()
+		ok, expired := m.isAvailable(i)
+		if expired {
+			m.health[i].failures = 0
+		}
+		m.mu.Unlock()
+		if !ok {
+			logger.Info("MultiBackend: backend[%d] unavailable (circuit open), skipping download", i)
+			continue
+		}
 		rc, err := be.Download(ctx, filename)
 		if err == nil {
 			return rc, nil
@@ -210,15 +233,16 @@ func (m *MultiBackend) UploadByIndex(ctx context.Context, filename string, data 
 		m.mu.Unlock()
 		return errors.New("no backend available for index")
 	}
+	resolved := int(idx) % len(m.backends)
 	m.mu.Unlock()
 
 	err := be.Upload(ctx, filename, data)
 
 	m.mu.Lock()
 	if err != nil {
-		m.recordFailure(int(idx), err)
+		m.recordFailure(resolved, err)
 	} else {
-		m.recordSuccess(int(idx))
+		m.recordSuccess(resolved)
 	}
 	m.mu.Unlock()
 	return err
@@ -231,15 +255,16 @@ func (m *MultiBackend) DownloadByIndex(ctx context.Context, filename string, idx
 		m.mu.Unlock()
 		return nil, errors.New("no backend available for index")
 	}
+	resolved := int(idx) % len(m.backends)
 	m.mu.Unlock()
 
 	rc, err := be.Download(ctx, filename)
 
 	m.mu.Lock()
 	if err != nil {
-		m.recordFailure(int(idx), err)
+		m.recordFailure(resolved, err)
 	} else {
-		m.recordSuccess(int(idx))
+		m.recordSuccess(resolved)
 	}
 	m.mu.Unlock()
 	return rc, err
@@ -261,9 +286,14 @@ func (m *MultiBackend) Stats() []BackendStat {
 	defer m.mu.Unlock()
 	stats := make([]BackendStat, len(m.backends))
 	for i, be := range m.backends {
-		var url string
+		var backendURL string
 		if wd, ok := be.(*WebDAVBackend); ok {
-			url = wd.rootURL
+			backendURL = wd.rootURL
+			// Redact any userinfo so the unauthenticated /health endpoint
+			// cannot leak WebDAV credentials.
+			if u, err := neturl.Parse(backendURL); err == nil {
+				backendURL = u.Redacted()
+			}
 		}
 		age := int64(0)
 		if !m.health[i].lastFail.IsZero() {
@@ -275,7 +305,7 @@ func (m *MultiBackend) Stats() []BackendStat {
 			rlRemain = int64(time.Until(m.health[i].rateLimitedUntil).Seconds())
 		}
 		stats[i] = BackendStat{
-			URL:                url,
+			URL:                backendURL,
 			Available:          (!isRL && (m.health[i].failures < cbThreshold || time.Since(m.health[i].lastFail) > cbCooldown)),
 			Failures:           m.health[i].failures,
 			LastFailAgeSec:     age,
@@ -287,8 +317,8 @@ func (m *MultiBackend) Stats() []BackendStat {
 }
 
 // CryptoRandInt returns a uniformly distributed int in [0, n) using crypto/rand.
-// Uses 64-bit rejection sampling (mirror of Go's rand/v2 Int63n/IntN) to avoid
-// modulo bias for any n; for n | 2^64 (e.g. 2, 4) no values are ever rejected.
+// Uses 64-bit rejection sampling (Lemire's method) to avoid modulo bias for any
+// n; for n | 2^64 (e.g. 2, 4) no values are ever rejected.
 func CryptoRandInt(n int) int {
 	if n <= 0 {
 		return 0
@@ -298,8 +328,10 @@ func CryptoRandInt(n int) int {
 		return 0
 	}
 	v := binary.BigEndian.Uint64(b[:])
-	max := ^uint64(0) - (^uint64(0) % uint64(n))
-	for v > max {
+	// Reject the low tail (2^64 mod n values) so the accepted range is an
+	// exact multiple of n. -n % n == 2^64 mod n in uint64 arithmetic.
+	limit := -uint64(n) % uint64(n)
+	for v < limit {
 		if _, err := rand.Read(b[:]); err != nil {
 			return 0
 		}

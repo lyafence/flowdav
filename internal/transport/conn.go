@@ -163,7 +163,6 @@ func (v *VirtualConn) Write(b []byte) (n int, err error) {
 		return 0, nil
 	}
 
-	// Check write deadline
 	v.deadlineMu.Lock()
 	wd := v.writeDeadline
 	v.deadlineMu.Unlock()

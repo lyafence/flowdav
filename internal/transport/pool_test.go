@@ -3,11 +3,15 @@ package transport
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/lyafence/flowdav/internal/storage"
 )
 
 type deleteRecordingBackend struct {
@@ -255,4 +259,125 @@ func TestDeleteSuccessRemovesProcessedEntry(t *testing.T) {
 	if exists {
 		t.Error("processed entry NOT removed despite successful Delete")
 	}
+}
+
+// TestRetryStorageStopsOnRateLimit verifies retryStorage returns the 429
+// immediately instead of burning retries inside the 60s cooldown. Retrying
+// masked the 429 from the upload/download fallback logic, so sessions pinned
+// to a rate-limited backend never migrated and data was lost.
+func TestRetryStorageStopsOnRateLimit(t *testing.T) {
+	attempts := 0
+	_, err := retryStorage(context.Background(), make(chan struct{}), "test-429", func() error {
+		attempts++
+		return &storage.HTTPError{Code: http.StatusTooManyRequests, Err: fmt.Errorf("rate limited")}
+	})
+	if attempts != 1 {
+		t.Errorf("rate limit must not be retried, got %d attempts", attempts)
+	}
+	if !storage.IsRateLimited(err) {
+		t.Errorf("retryStorage must return the 429 so callers can trigger fallback, got %v", err)
+	}
+}
+
+// failingUploadBackend fails UploadByIndex with a generic (non-429) error and
+// records fallback invocations via UploadAny.
+type failingUploadBackend struct {
+	mockBackend
+	mu       sync.Mutex
+	fallback int
+}
+
+func (f *failingUploadBackend) UploadByIndex(_ context.Context, _ string, _ io.Reader, _ uint8) error {
+	return errors.New("backend 0 down")
+}
+
+func (f *failingUploadBackend) UploadAny(_ context.Context, _ string, _ io.Reader) (uint8, error) {
+	f.mu.Lock()
+	f.fallback++
+	f.mu.Unlock()
+	return 1, nil
+}
+
+// TestUploadWorkerFallsBackOnNon429Error verifies the payload is re-tried on
+// another backend instead of being dropped when the pinned backend fails with
+// a non-429 error (the txBuf was already consumed at this point).
+func TestUploadWorkerFallsBackOnNon429Error(t *testing.T) {
+	be := &failingUploadBackend{}
+	engine := NewEngine(be, true, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	engine.Start(ctx)
+
+	engine.uploadJobs <- uploadJob{filename: "f.bin", data: []byte("payload"), backendIdx: 0, numBackend: 2}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		be.mu.Lock()
+		n := be.fallback
+		be.mu.Unlock()
+		if n > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			engine.Stop()
+			t.Fatal("UploadAny fallback was not invoked for a non-429 upload error")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	engine.Stop()
+}
+
+// TestPollGCSkipsInFlightFile verifies GC does not delete a file that has a
+// live processed entry (queued/processing), which previously destroyed
+// in-flight payloads under load.
+func TestPollGCSkipsInFlightFile(t *testing.T) {
+	be := &mockBackend{listFiles: []storage.FileEntry{
+		{Filename: "old.bin", ModTime: time.Now().Add(-10 * time.Minute)},
+	}}
+	engine := NewEngine(be, false, nil) // server side: pollLoop is active
+	engine.SetPollRate(50)
+
+	engine.processedMu.Lock()
+	engine.processed["old.bin"] = time.Now()
+	engine.processedMu.Unlock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	engine.Start(ctx)
+	time.Sleep(300 * time.Millisecond)
+	engine.Stop()
+
+	be.mu.Lock()
+	defer be.mu.Unlock()
+	for _, d := range be.deleted {
+		if d == "old.bin" {
+			t.Error("GC deleted a file with a live processed entry (in-flight data loss)")
+		}
+	}
+}
+
+// TestPollGCDeletesStaleUnprocessedFile verifies GC still removes files never
+// picked up (e.g. left behind by a dead peer) so storage stays bounded.
+func TestPollGCDeletesStaleUnprocessedFile(t *testing.T) {
+	be := &mockBackend{listFiles: []storage.FileEntry{
+		{Filename: "dead.bin", ModTime: time.Now().Add(-10 * time.Minute)},
+	}}
+	engine := NewEngine(be, false, nil)
+	engine.SetPollRate(50)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	engine.Start(ctx)
+	time.Sleep(300 * time.Millisecond)
+	engine.Stop()
+
+	be.mu.Lock()
+	defer be.mu.Unlock()
+	for _, d := range be.deleted {
+		if d == "dead.bin" {
+			return
+		}
+	}
+	t.Error("stale unprocessed file (dead peer) must be GC-deleted")
 }

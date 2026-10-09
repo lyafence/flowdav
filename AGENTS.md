@@ -82,6 +82,7 @@ Install with `make hooks`.
 - Flags: `-c config.json` (client), `-s config.json` (server), `-e config.json` (encrypt), `-g config.json` (generate), `-p master_password`, `-l loglevel`, `--version`
 - Fields: `enc_key` / `hmac_key` (32-byte base64), `max_message_size` (default 16MB), `max_sessions` (default 0 = unlimited), `idle_timeout_ms` (default 10000), `webdav.backends` (array), `health_port` (e.g. `"127.0.0.1:9191"`), `log_level` (`debug`, `info`, `warn`, `error`)
 - `padding_size` (bucket size for tail padding; 0 = off), `hold_ms` (max server-side random delay before flush; 0 = off) — optional settings
+- `socks5_user` / `socks5_pass` must be set together; a partial pair is rejected by `ValidateAppConfig` (it would silently select NoAuth)
 - Health: `GET /health` on `health_port` → JSON stats (active sessions, retry counters, tx queue depth, per-backend circuit breaker state)
 
 ## Documentation Audiences

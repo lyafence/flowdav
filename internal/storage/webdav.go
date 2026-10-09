@@ -134,9 +134,43 @@ func isCGNAT(ip net.IP) bool {
 	return v4 != nil && v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127
 }
 
+// isDeniedIP reports whether ip is in a range the SSRF guard refuses:
+// loopback, link-local, private, unspecified, or CGNAT.
+func isDeniedIP(ip net.IP) bool {
+	return ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsPrivate() || ip.IsUnspecified() || isCGNAT(ip)
+}
+
+// isLocalHost reports whether host is a literal loopback host or resolves
+// to a private/loopback address (used to permit self-hosted local WebDAV).
+func isLocalHost(host string) bool {
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		// Default resolver: PreferGo breaks DNS on Android (no resolv.conf,
+		// lookup must go through cgo/netd, see goosPrefersCgo in net/conf.go)
+		ctx, cancel := context.WithTimeout(context.Background(), dnsTimeout)
+		defer cancel()
+		addrs, err := net.DefaultResolver.LookupHost(ctx, host)
+		if err != nil {
+			return false
+		}
+		for _, addr := range addrs {
+			ip = net.ParseIP(addr)
+			if ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified()) {
+				return true
+			}
+		}
+		return false
+	}
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified()
+}
+
 // newUtlsDialer returns a TLS dial function matching the given fingerprint
-// profile. Empty string defaults to Chrome 133.
-func newUtlsDialer(fingerprint string) func(ctx context.Context, network, addr string) (net.Conn, error) {
+// profile. Empty string defaults to Chrome 133. allowPrivate must be true only
+// when the configured WebDAV host was validated as local (self-hosted/LAN).
+func newUtlsDialer(fingerprint string, allowPrivate bool) func(ctx context.Context, network, addr string) (net.Conn, error) {
 	var helloID utls.ClientHelloID
 	switch fingerprint {
 	case "", "chrome":
@@ -155,6 +189,15 @@ func newUtlsDialer(fingerprint string) func(ctx context.Context, network, addr s
 		if err != nil {
 			tcpConn.Close()
 			return nil, err
+		}
+		// DNS-rebinding guard: the host was validated at config time, but the
+		// dial re-resolves it. Re-check the peer we actually connected to so a
+		// name that flipped to a private address cannot reach internal hosts.
+		if !allowPrivate {
+			if tcpAddr, ok := tcpConn.RemoteAddr().(*net.TCPAddr); ok && isDeniedIP(tcpAddr.IP) {
+				tcpConn.Close()
+				return nil, fmt.Errorf("refusing connection to private address %s (SSRF guard)", tcpAddr.IP)
+			}
 		}
 		uConn := utls.UClient(tcpConn, &utls.Config{
 			ServerName: host,
@@ -195,7 +238,7 @@ func NewWebDAVBackend(login, token, basePath, url, tlsFingerprint string) (*WebD
 	}
 
 	rootURL := url
-	dialTLS := newUtlsDialer(tlsFingerprint)
+	dialTLS := newUtlsDialer(tlsFingerprint, isLocal)
 	transport := &http.Transport{
 		MaxIdleConnsPerHost:   64,
 		IdleConnTimeout:       90 * time.Second,
@@ -251,36 +294,7 @@ func isLocalURL(rawURL string) bool {
 	if err != nil {
 		return false
 	}
-
-	host := u.Hostname()
-
-	// Check for localhost patterns
-	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
-		return true
-	}
-
-	// Try to resolve and check if it's a private IP
-	ip := net.ParseIP(host)
-	if ip == nil {
-		// Default resolver: PreferGo breaks DNS on Android (no resolv.conf,
-		// lookup must go through cgo/netd, see goosPrefersCgo in net/conf.go)
-		ctx, cancel := context.WithTimeout(context.Background(), dnsTimeout)
-		defer cancel()
-
-		addrs, err := net.DefaultResolver.LookupHost(ctx, host)
-		if err != nil {
-			return false
-		}
-		for _, addr := range addrs {
-			ip = net.ParseIP(addr)
-			if ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified()) {
-				return true
-			}
-		}
-		return false
-	}
-
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified()
+	return isLocalHost(u.Hostname())
 }
 
 func validateNotPrivateURL(rawURL string) error {
@@ -303,14 +317,14 @@ func validateNotPrivateURL(rawURL string) error {
 		}
 		for _, addr := range addrs {
 			ip = net.ParseIP(addr)
-			if ip != nil && (ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsPrivate() || ip.IsUnspecified() || isCGNAT(ip)) {
+			if ip != nil && isDeniedIP(ip) {
 				return fmt.Errorf("WebDAV URL cannot point to private/loopback IP: %s (resolved from %s)", ip, host)
 			}
 		}
 		return nil
 	}
 
-	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsPrivate() || ip.IsUnspecified() || isCGNAT(ip) {
+	if isDeniedIP(ip) {
 		return fmt.Errorf("WebDAV URL cannot point to private/loopback IP: %s", ip)
 	}
 

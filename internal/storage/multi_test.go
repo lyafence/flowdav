@@ -447,3 +447,82 @@ func TestListQueryPartialFailureReturnsAvailableFiles(t *testing.T) {
 	require.Len(t, files, 1)
 	assert.Equal(t, uint8(1), files[0].BackendIdx)
 }
+
+// TestUploadByIndexRecordsHealthOnResolvedIndex verifies that health is
+// recorded on the backend the index RESOLVES to (idx%n), not the raw wire
+// index, which previously bypassed the circuit breaker for idx >= n.
+func TestUploadByIndexRecordsHealthOnResolvedIndex(t *testing.T) {
+	mock1 := &mockBackend{}
+	mock2 := &mockBackend{}
+	mock1.UploadFunc = func(_ context.Context, _ string, _ io.Reader) error {
+		return errors.New("backend 0 down")
+	}
+	mock2.UploadFunc = func(_ context.Context, _ string, _ io.Reader) error { return nil }
+
+	multi := NewMultiBackend([]Backend{mock1, mock2})
+
+	// idx=2 resolves to backend 0; the failure must be recorded there.
+	err := multi.UploadByIndex(context.Background(), "f.bin", nil, 2)
+	require.Error(t, err)
+
+	multi.mu.Lock()
+	failures := multi.health[0].failures
+	multi.mu.Unlock()
+	assert.Equal(t, 1, failures, "failure must be recorded on the resolved backend, not silently dropped")
+}
+
+// TestListQuerySkipsOpenBreaker verifies read paths respect the circuit
+// breaker instead of hammering a tripped backend on every poll.
+func TestListQuerySkipsOpenBreaker(t *testing.T) {
+	be0 := &mockBackend{ListQueryFunc: func(_ context.Context, _ string) ([]FileEntry, error) {
+		t.Error("tripped backend must not be queried")
+		return nil, nil
+	}}
+	be1 := &mockBackend{ListQueryFunc: func(_ context.Context, _ string) ([]FileEntry, error) {
+		return []FileEntry{{Filename: "aa11", ModTime: time.Now()}}, nil
+	}}
+	multi := NewMultiBackend([]Backend{be0, be1})
+	multi.mu.Lock()
+	multi.health[0].failures = cbThreshold
+	multi.health[0].lastFail = time.Now()
+	multi.mu.Unlock()
+
+	files, err := multi.ListQuery(context.Background(), "")
+	require.NoError(t, err)
+	require.Len(t, files, 1)
+	assert.Equal(t, uint8(1), files[0].BackendIdx, "file must come from the healthy backend")
+}
+
+// TestDownloadSkipsOpenBreaker verifies the cross-backend download fallback
+// skips tripped backends.
+func TestDownloadSkipsOpenBreaker(t *testing.T) {
+	be0 := &mockBackend{DownloadFunc: func(_ context.Context, _ string) (io.ReadCloser, error) {
+		t.Error("tripped backend must not be queried")
+		return nil, errors.New("should not be called")
+	}}
+	be1 := &mockBackend{DownloadFunc: func(_ context.Context, _ string) (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader("ok")), nil
+	}}
+	multi := NewMultiBackend([]Backend{be0, be1})
+	multi.mu.Lock()
+	multi.health[0].failures = cbThreshold
+	multi.health[0].lastFail = time.Now()
+	multi.mu.Unlock()
+
+	rc, err := multi.Download(context.Background(), "f.bin")
+	require.NoError(t, err)
+	require.NotNil(t, rc)
+	_ = rc.Close()
+}
+
+// TestStatsRedactsBackendURL verifies the unauthenticated /health endpoint
+// cannot leak WebDAV credentials embedded in the URL userinfo.
+func TestStatsRedactsBackendURL(t *testing.T) {
+	wd := &WebDAVBackend{rootURL: "https://user:s3cret@webdav.example.com/base"} //nolint:gosec // test fixture, not a real credential
+	multi := NewMultiBackend([]Backend{wd})
+
+	stats := multi.Stats()
+	require.Len(t, stats, 1)
+	assert.NotContains(t, stats[0].URL, "s3cret", "stats must not expose the password")
+	assert.Contains(t, stats[0].URL, "xxxxx", "stats should use url.Redacted()")
+}

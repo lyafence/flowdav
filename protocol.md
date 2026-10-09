@@ -328,7 +328,7 @@ for demultiplexing.
 | `MaxStringLen` | — | 65535 | Maximum length of SessionID or TargetAddr. |
 | `MaxRxQueueSize` | — | 1000 | Out-of-order packet queue limit per session (count). |
 | `MaxRxQueueBytes` | — | 256 MB | Out-of-order packet queue byte limit per session (capped alongside count). |
-| Retry attempts | — | 3 | Number of storage operation retries before giving up. |
+| Retry attempts | — | 3 | Number of storage operation retries before giving up. HTTP 429 is not retried (60 s cooldown); the operation immediately fails over to another backend. |
 | Idle timeout | 10 s (configurable) | — | Session idle timeout before forced close. Set via `idle_timeout_ms` in config. |
 | Tombstone TTL | — | 30 s | Closed-session tombstones prevent re-processing of delayed packets. |
 | Padding size | Off | — | Tail padding bucket (bytes). Set via `padding_size`. Hides exact payload size from storage observer. |

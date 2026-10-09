@@ -35,6 +35,14 @@ func retryStorage(ctx context.Context, stopCh <-chan struct{}, desc string, fn f
 			return attempt + 1, nil
 		}
 
+		// A 429 is a cooldown, not a transient failure: retrying within the
+		// 60s rate-limit window is pointless and would mask the 429 from the
+		// fallback logic in uploadWorker/processDownload (which keys on
+		// IsRateLimited). Return it immediately so the caller can migrate.
+		if storage.IsRateLimited(err) {
+			return attempt + 1, err
+		}
+
 		if attempt < retryAttempts-1 {
 			wait := retryBaseWait << attempt
 			logger.Info("retry %s: attempt %d failed, retrying in %v: %v", desc, attempt+1, wait, err)

@@ -552,20 +552,24 @@ func (e *Engine) pollLoop(ctx context.Context) {
 			currentPollInterval = e.minPollInterval
 
 			for _, entry := range files {
-				// GC: delete files older than 5 minutes
+				// Already queued/processing (or awaiting delete retry): the
+				// download worker owns the file and deletes it on success.
+				// Never GC or re-submit a file with a live processed entry.
+				e.processedMu.Lock()
+				ts, inFlight := e.processed[entry.Filename]
+				e.processedMu.Unlock()
+				if inFlight && time.Since(ts) < 5*time.Minute {
+					continue
+				}
+
+				// GC: delete stale files never picked up (e.g. left behind by
+				// a dead peer) so storage stays bounded.
 				if time.Since(entry.ModTime) > 5*time.Minute {
 					if err := e.backend.Delete(ctx, entry.Filename); err != nil {
 						logger.Info("GC delete error %s: %v", entry.Filename, err)
 					}
 					continue
 				}
-
-				e.processedMu.Lock()
-				if ts, exists := e.processed[entry.Filename]; exists && time.Since(ts) < 5*time.Minute {
-					e.processedMu.Unlock()
-					continue
-				}
-				e.processedMu.Unlock()
 
 				if e.downloadPool.Submit(downloadJob{
 					filename:   entry.Filename,
@@ -725,22 +729,24 @@ func (e *Engine) uploadWorker(ctx context.Context) {
 					e.uploadRetries.Add(int64(attempts - 1))
 				}
 				if err != nil {
-					// If rate-limited, try non-indexed upload (picks different backend)
-					if storage.IsRateLimited(err) {
-						logger.Info("upload 429 %s (backend %d): trying fallback", job.filename, job.backendIdx)
-						newIdx, fallbackErr := e.backend.UploadAny(ctx, job.filename, bytes.NewReader(job.data))
-						if fallbackErr == nil {
-							logger.Info("upload fallback succeeded %s → backend %d", job.filename, newIdx)
+					logger.Info("upload error %s (backend %d): %v — trying fallback backend", job.filename, job.backendIdx, err)
+					// The pinned backend is unhealthy (429 cooldown, open
+					// breaker, 5xx, ...). The payload was already extracted
+					// from the session buffer, so try any other backend
+					// instead of dropping it.
+					newIdx, fallbackErr := e.backend.UploadAny(ctx, job.filename, bytes.NewReader(job.data))
+					if fallbackErr == nil {
+						logger.Info("upload fallback succeeded %s → backend %d", job.filename, newIdx)
+						if storage.IsRateLimited(err) {
 							for _, s := range job.sessions {
 								if s.ReassignBackend(job.numBackend) {
 									logger.Info("session %s migrated to backend %d after 429", s.ID, s.BackendIdx)
 								}
 							}
-							return
 						}
-						logger.Info("upload fallback also failed %s: %v", job.filename, fallbackErr)
+						return
 					}
-					logger.Info("upload error %s (backend %d): %v", job.filename, job.backendIdx, err)
+					logger.Info("upload fallback also failed %s: %v", job.filename, fallbackErr)
 				}
 			}()
 		}

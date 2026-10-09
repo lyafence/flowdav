@@ -203,3 +203,35 @@ func base64Encode(b []byte) string {
 	base64.StdEncoding.Encode(enc, b)
 	return string(enc)
 }
+
+// TestValidateAppConfigRejectsPartialSOCKS5Creds verifies that a config with
+// only one of socks5_user/socks5_pass is rejected: NewSocks5Options would
+// otherwise silently select NoAuth (fail-open).
+func TestValidateAppConfigRejectsPartialSOCKS5Creds(t *testing.T) {
+	encKey := make([]byte, 32)
+	hmacKey := make([]byte, 32)
+	for i := range hmacKey {
+		hmacKey[i] = 1 // different from encKey
+	}
+	base := func(user, pass string) *AppConfig {
+		return &AppConfig{
+			WebDAV:     &WebDAVConfig{URL: "https://webdav.example.com", Login: "user", Token: "tok"},
+			EncKey:     base64Encode(encKey),
+			HMacKey:    base64Encode(hmacKey),
+			SOCKS5User: user,
+			SOCKS5Pass: pass,
+		}
+	}
+	if err := ValidateAppConfig(base("alice", "")); err == nil {
+		t.Error("socks5_user without socks5_pass must be rejected (would silently disable auth)")
+	}
+	if err := ValidateAppConfig(base("", "secret")); err == nil {
+		t.Error("socks5_pass without socks5_user must be rejected (would silently disable auth)")
+	}
+	if err := ValidateAppConfig(base("alice", "secret")); err != nil {
+		t.Errorf("paired SOCKS5 credentials must be accepted, got: %v", err)
+	}
+	if err := ValidateAppConfig(base("", "")); err != nil {
+		t.Errorf("empty SOCKS5 credentials (no auth) must be accepted, got: %v", err)
+	}
+}

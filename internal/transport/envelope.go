@@ -148,12 +148,15 @@ func (e *Envelope) UnmarshalBinary(data []byte) (int, error) {
 	if len(data) < offset+4 {
 		return 0, io.ErrUnexpectedEOF
 	}
-	payloadLen := int(binary.BigEndian.Uint32(data[offset:]))
+	payloadLen32 := binary.BigEndian.Uint32(data[offset:])
 	offset += 4
 
-	if payloadLen > MaxMessageSize {
-		return 0, fmt.Errorf("payload too large: %d bytes (max %d)", payloadLen, MaxMessageSize)
+	// Compare in the uint32 domain before converting to int: on 32-bit
+	// builds int(0x80000000) is negative and would bypass the check.
+	if payloadLen32 > uint32(MaxMessageSize) {
+		return 0, fmt.Errorf("payload too large: %d bytes (max %d)", payloadLen32, MaxMessageSize)
 	}
+	payloadLen := int(payloadLen32)
 	if len(data) < offset+payloadLen {
 		return 0, io.ErrUnexpectedEOF
 	}

@@ -50,18 +50,18 @@ jobs:
 
       - name: Build Binary
         run: |
-          VERSION=${GITHUB_REF_NAME}
+          VERSION="${GITHUB_REF_NAME}"
           FOLDER="flowdav-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}"
-          mkdir -p $FOLDER
+          mkdir -p "$FOLDER"
           SUFFIX=""
           [ "${{ matrix.goos }}" == "windows" ] && SUFFIX=".exe"
-          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} GOMIPS=${{ matrix.gomips }} \
+          CGO_ENABLED=0 GOOS="${{ matrix.goos }}" GOARCH="${{ matrix.goarch }}" GOMIPS="${{ matrix.gomips }}" \
             go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" \
-            -o $FOLDER/flowdav$SUFFIX ./cmd/flowdav
-          cp LICENSE $FOLDER/ 2>/dev/null || true
-          cp configs/*.json.example $FOLDER/ 2>/dev/null || true
-          cp README.md $FOLDER/
-          tar -czf "${FOLDER}.tar.gz" $FOLDER
+            -o "$FOLDER/flowdav$SUFFIX" ./cmd/flowdav
+          cp LICENSE "$FOLDER/" 2>/dev/null || true
+          cp configs/*.json.example "$FOLDER/" 2>/dev/null || true
+          cp README.md "$FOLDER/"
+          tar -czf "${FOLDER}.tar.gz" "$FOLDER"
           cp "${FOLDER}.tar.gz" "flowdav-latest-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

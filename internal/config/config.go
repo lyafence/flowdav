@@ -21,18 +21,15 @@ var ErrEncryptedConfig = errors.New("config file is encrypted, use -p flag")
 // Specifically looks for "../" or "/../" patterns that could escape directories.
 // Does not flag "./" or paths starting with "." followed by letter.
 func isPathTraversal(path string) bool {
-	// Check for "../" pattern anywhere
 	if strings.Contains(path, "../") {
 		return true
 	}
-	// Check if path is exactly ".." or starts with "../"
 	if path == ".." {
 		return true
 	}
 	if strings.HasPrefix(path, "../") {
 		return true
 	}
-	// Check for trailing "/.." at end
 	if strings.HasSuffix(path, "/..") {
 		return true
 	}
@@ -277,6 +274,12 @@ func ValidateAppConfig(cfg *AppConfig) error {
 			!strings.HasPrefix(cfg.HealthPort, "[::1]:") {
 			return fmt.Errorf("health_port must be loopback (127.0.0.1, localhost, or [::1]), got %q", cfg.HealthPort)
 		}
+	}
+
+	// SOCKS5 credentials must be paired: a partial pair would silently
+	// select NoAuth (fail-open) in transport.NewSocks5Options.
+	if (cfg.SOCKS5User == "") != (cfg.SOCKS5Pass == "") {
+		return fmt.Errorf("socks5_user and socks5_pass must be set together")
 	}
 
 	// Store decoded keys for use by transport layer

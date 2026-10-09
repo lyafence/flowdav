@@ -11,7 +11,7 @@ A lightweight SOCKS5 proxy that uses WebDAV as a transport layer. Route your tra
 - **Zero open ports** — server has no listening ports for data; all communication happens through WebDAV storage (optional health endpoint on loopback)
 - **End-to-end encryption** — AES-256-GCM + HMAC-SHA256 on all data, no plaintext on storage
 - **TLS fingerprint masking** — uTLS masquerades as Chrome 133, browser User-Agent on all WebDAV requests
-- **Adaptive polling** — idle backoff up to 60s with jitter, instant reset on activity, zero API calls when no sessions
+- **Adaptive polling** — idle backoff up to 60s with jitter, instant reset on activity; an idle client with no sessions makes zero API calls
 - **Rate-limit protection** — HTTP 429 triggers separate cooldown, sessions auto-migrate to another backend
 - **Multi-account rotation** — random session assignment, round-robin upload fallback across independent backends
 - **DNS leak protection** — raw resolver on the client side, UDP explicitly blocked
@@ -113,7 +113,7 @@ Replace the single backend with a `backends` array for account rotation:
 
 ```bash
 ./flowdav -e config.json              # encrypt
-./flowdav -c config.json.enc -p secret  # run encrypted
+./flowdav -c config.json.enc          # run encrypted (prompts for password)
 FLOWDAV_PASSWORD=secret ./flowdav -c config.json.enc  # or via env
 ```
 
@@ -173,7 +173,7 @@ docker run --rm -v ./config.json.enc:/app/configs/config.json.enc \
 | `hold_ms` | int | `0` (off) | | ✓ | Max server-side random delay before flushing (ms). Adds latency. |
 | `health_port` | string | `""` | ✓ | ✓ | Health endpoint (`host:port`) |
 
-Client-only fields (`listen_addr`, `socks5_user`, `socks5_pass`, `max_connections`) are absent from server configs. Unset fields use defaults.
+Client-only fields (`listen_addr`, `socks5_user`, `socks5_pass`, `max_connections`) are absent from server configs. Unset fields use defaults. `socks5_user` and `socks5_pass` must be set together — a partial pair is rejected, since it would silently disable SOCKS5 authentication.
 
 ## Health Check
 
@@ -230,7 +230,7 @@ SOCKS5 proxy runs on the configured address (default `127.0.0.1:1080`).
 Multi-platform release archives are built automatically by CI on each tag (`v*`).
 Download the latest archive from [GitHub Releases](https://github.com/lyafence/flowdav/releases).
 
-Each archive contains: a single `flowdav` binary (unified: client, server, encrypt), an example config (`flowdav.json.example`), and README.
+Each archive contains: a single `flowdav` binary (unified: client, server, encrypt), an example config (`flowdav.json.example`), README, and LICENSE.
 
 Run `flowdav --version` to print the release version; `flowdav --help` for all modes.
 

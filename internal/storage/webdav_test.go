@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	gowebdav "github.com/studio-b12/gowebdav"
 )
@@ -310,4 +311,84 @@ type nullTransport struct{}
 
 func (t *nullTransport) RoundTrip(_ *http.Request) (*http.Response, error) {
 	return &http.Response{StatusCode: 200, Body: http.NoBody}, nil
+}
+
+// TestIsDeniedIP verifies the SSRF deny-list covers loopback, private,
+// link-local, unspecified and CGNAT ranges, and not public addresses.
+func TestIsDeniedIP(t *testing.T) {
+	cases := []struct {
+		ip     string
+		denied bool
+	}{
+		{"127.0.0.1", true},
+		{"10.0.0.1", true},
+		{"172.16.0.1", true},
+		{"192.168.1.1", true},
+		{"169.254.169.254", true}, // cloud metadata (link-local)
+		{"100.64.0.1", true},      // CGNAT
+		{"100.128.0.1", false},    // just outside CGNAT
+		{"0.0.0.0", true},
+		{"fe80::1", true},
+		{"8.8.8.8", false},
+		{"2606:4700:4700::1111", false},
+	}
+	for _, c := range cases {
+		if got := isDeniedIP(net.ParseIP(c.ip)); got != c.denied {
+			t.Errorf("isDeniedIP(%s) = %v, want %v", c.ip, got, c.denied)
+		}
+	}
+}
+
+// acceptAndClose accepts connections and immediately closes them, so a TLS
+// handshake against it fails quickly without speaking TLS.
+func acceptAndClose(ln net.Listener) {
+	for {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		c.Close()
+	}
+}
+
+// TestDialerRefusesPrivatePeerWhenNotAllowed verifies the DNS-rebinding guard:
+// when the configured host was validated as public (allowPrivate=false), a peer
+// that is actually private must be refused.
+func TestDialerRefusesPrivatePeerWhenNotAllowed(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go acceptAndClose(ln)
+
+	dial := newUtlsDialer("", false)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err = dial(ctx, "tcp", ln.Addr().String())
+	if err == nil || !strings.Contains(err.Error(), "refusing connection to private address") {
+		t.Errorf("dialer must refuse a private peer when allowPrivate=false, got: %v", err)
+	}
+}
+
+// TestDialerAllowsPrivatePeerWhenLocal verifies the guard does not fire for a
+// validated local (self-hosted/LAN) WebDAV: the call proceeds to the TLS
+// handshake and fails there, not with the SSRF refusal.
+func TestDialerAllowsPrivatePeerWhenLocal(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go acceptAndClose(ln)
+
+	dial := newUtlsDialer("", true)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err = dial(ctx, "tcp", ln.Addr().String())
+	if err != nil && strings.Contains(err.Error(), "refusing connection to private address") {
+		t.Errorf("allowPrivate=true must not trigger the SSRF refusal, got: %v", err)
+	}
 }

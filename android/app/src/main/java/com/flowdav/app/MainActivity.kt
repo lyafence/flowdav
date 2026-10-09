@@ -155,7 +155,9 @@ class MainActivity : AppCompatActivity() {
             fileUri?.let { refreshFileInfo(it) }
         }
 
-        binding.passwordInput.setText(PrefsStore.get(this).getString(PREF_PASSWORD, ""))
+        // Never render the master password; it is loaded from encrypted prefs
+        // internally when the field is left empty.
+        binding.passwordInput.setText("")
 
         val versionName = try {
             packageManager.getPackageInfo(packageName, 0).versionName
@@ -295,8 +297,9 @@ class MainActivity : AppCompatActivity() {
         if (hasError) return
 
         val password = if (isEncrypted) {
-            val pw = binding.passwordInput.text?.toString() ?: ""
-            PrefsStore.get(this).edit { putString(PREF_PASSWORD, pw) }
+            val typed = binding.passwordInput.text?.toString() ?: ""
+            val pw = typed.ifEmpty { PrefsStore.get(this).getString(PREF_PASSWORD, "") ?: "" }
+            if (typed.isNotEmpty()) PrefsStore.get(this).edit { putString(PREF_PASSWORD, typed) }
             pw
         } else {
             ""

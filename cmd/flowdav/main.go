@@ -481,15 +481,24 @@ func runEncrypt(configPath, password string) {
 
 	encPath := configPath + ".enc"
 	data := config.MarshalEncrypted(encrypted)
-	if err := os.WriteFile(encPath, data, 0600); err != nil {
+	if err := writeFile0600(encPath, data); err != nil {
 		log.Fatalf("failed to write %s: %v", encPath, err)
 	}
 	fmt.Printf("Encrypted: %s\n", encPath)
 }
 
+// writeFile0600 writes data with 0600 permissions. os.WriteFile only applies
+// the mode when creating the file, so an existing file is tightened explicitly.
+func writeFile0600(path string, data []byte) error {
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0600)
+}
+
 func runGen(configPath string) {
 	data := generateConfig()
-	if err := os.WriteFile(configPath, data, 0600); err != nil {
+	if err := writeFile0600(configPath, data); err != nil {
 		log.Fatalf("failed to write config: %v", err)
 	}
 	fmt.Printf("Generated: %s\n", configPath)
@@ -515,7 +524,7 @@ func runGenAndEncrypt(configPath, password string) {
 
 	encPath := configPath + ".enc"
 	out := config.MarshalEncrypted(encrypted)
-	if err := os.WriteFile(encPath, out, 0600); err != nil {
+	if err := writeFile0600(encPath, out); err != nil {
 		log.Fatalf("failed to write %s: %v", encPath, err)
 	}
 	fmt.Printf("Generated and encrypted: %s\n", encPath)

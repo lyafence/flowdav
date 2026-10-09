@@ -177,7 +177,7 @@ var MaxMessageSize = 16 * 1024 * 1024 // 16 MB
 // gzip.Reader is allocated for each compressed payload.
 func decodeEnvelopeWithCrypto(r io.Reader, cfg *CryptoConfig, gr *gzip.Reader) (*Envelope, error) {
 	if cfg == nil {
-		// No crypto: just unmarshal directly from reader
+		// No crypto: unmarshal directly from the reader
 		env := &Envelope{}
 		if err := env.Decode(r); err != nil {
 			return nil, err
@@ -185,7 +185,6 @@ func decodeEnvelopeWithCrypto(r io.Reader, cfg *CryptoConfig, gr *gzip.Reader) (
 		return env, nil
 	}
 
-	// Read length
 	lenBuf := make([]byte, 4)
 	if _, err := io.ReadFull(r, lenBuf); err != nil {
 		return nil, err
@@ -201,7 +200,6 @@ func decodeEnvelopeWithCrypto(r io.Reader, cfg *CryptoConfig, gr *gzip.Reader) (
 		return nil, fmt.Errorf("message too small: %d bytes (min 32 for HMAC)", dataLen)
 	}
 
-	// Read ciphertext + HMAC
 	totalLen := dataLen + 32 // HMAC-SHA256 is 32 bytes
 	// Check for uint32 overflow
 	if totalLen < dataLen {
