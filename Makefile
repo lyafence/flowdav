@@ -167,7 +167,7 @@ android-deploy: android-apk
 #   Then: gomobile init
 ANDROID_SDK_HOME ?= $(HOME)/.android-sdk
 ANDROID_NDK_VERSION ?= 27.3.13750724
-SDK_TOOLS_URL := https://dl.google.com/android/repository/commandlinetools-linux-14742923_latest.zip
+SDK_TOOLS_URL := https://dl.google.com/android/repository/commandlinetools-linux-16111833_latest.zip
 
 # Single source of truth for the pinned NDK; CI asserts the runner matches it.
 ndk-version:
@@ -181,7 +181,7 @@ android-init:
 		mkdir -p $(ANDROID_SDK_HOME)/cmdline-tools && \
 		mv cmdline-tools $(ANDROID_SDK_HOME)/cmdline-tools/latest && \
 		yes | $(ANDROID_SDK_HOME)/cmdline-tools/latest/bin/sdkmanager --sdk_root=$(ANDROID_SDK_HOME) \
-			"platforms;android-37.0" "build-tools;36.0.0" "ndk;$(ANDROID_NDK_VERSION)" && \
+			"platforms;android-37.2" "build-tools;37.0.0" "ndk;$(ANDROID_NDK_VERSION)" && \
 		rm -f /tmp/cmdline-tools.zip && \
 		ln -sf $(ANDROID_SDK_HOME)/ndk/$(ANDROID_NDK_VERSION) $(ANDROID_SDK_HOME)/ndk-bundle && \
 		go install golang.org/x/mobile/cmd/gomobile && \

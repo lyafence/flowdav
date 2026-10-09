@@ -94,7 +94,7 @@ Install with `make hooks`.
 
 ## Coding Conventions
 
-- Go 1.26.8, stdlib preferred.
+- Go 1.27.2, stdlib preferred.
 - Tests: `testing` package, table-driven, `-race` enabled.
 - Benchmarks: `bench_test.go` in `internal/transport`. Run with `make bench`.
 - Imports: stdlib → third-party → internal, blank-line separated.

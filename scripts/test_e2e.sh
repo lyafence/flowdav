@@ -154,33 +154,26 @@ echo ""
 
 # ── Phase 6: SOCKS5 Proxy Tests ────────────
 echo "--- Phase 6: Proxy Connectivity Tests ---"
-log_info "Waiting for SOCKS5 proxy to accept connections..."
-READY=false
-for i in 1 2 3; do
-    if curl -sf --proxy socks5h://127.0.0.1:11080 http://example.com --max-time 2 >/dev/null 2>&1; then
-        log_pass "SOCKS5 proxy is ready"
-        READY=true
-        break
-    fi
-    sleep 1
-done
-if [ "$READY" != "true" ]; then
-    log_fail "SOCKS5 proxy is not ready (127.0.0.1:11080)"
-fi
 
-log_info "Waiting for multi-backend SOCKS5 proxy..."
-READY=false
-for i in 1 2 3; do
-    if curl -sf --proxy socks5h://127.0.0.1:11081 http://example.com --max-time 2 >/dev/null 2>&1; then
-        log_pass "Multi-backend SOCKS5 proxy is ready"
-        READY=true
-        break
-    fi
-    sleep 1
-done
-if [ "$READY" != "true" ]; then
-    log_fail "Multi-backend SOCKS5 proxy is not ready (127.0.0.1:11081)"
-fi
+# Cold-start readiness. The first SOCKS5 round-trip over the poll-based WebDAV
+# tunnel exceeds the tunnel's poll interval, so a short single-shot probe is
+# flaky. Retry with backoff and a realistic per-attempt timeout.
+wait_for_proxy() {
+    local name="$1" port="$2" attempts="${3:-8}" interval="${4:-2}" max_time="${5:-5}"
+    log_info "Waiting for $name..."
+    for i in $(seq 1 "$attempts"); do
+        if curl -sf --proxy "socks5h://127.0.0.1:$port" http://example.com --max-time "$max_time" >/dev/null 2>&1; then
+            log_pass "$name is ready"
+            return 0
+        fi
+        sleep "$interval"
+    done
+    log_fail "$name is not ready (127.0.0.1:$port after $((attempts * (max_time + interval)))s)"
+    return 1
+}
+
+wait_for_proxy "SOCKS5 proxy" 11080 || true
+wait_for_proxy "Multi-backend SOCKS5 proxy" 11081 || true
 
 # Helper: safe_curl wraps curl with || true so set -e does not abort
 # the script on transient proxy delays. Test failures are tracked by log_fail.
