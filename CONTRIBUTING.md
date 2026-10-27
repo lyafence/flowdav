@@ -58,7 +58,8 @@ In docker-compose, `HEALTHCHECK` is configured for all four services (`flowdav-s
 make android-apk     # → bin/flowdav-android.apk
 adb install -r bin/flowdav-android.apk
 
-# With several connected devices/emulators:
+# Deploy to a running test env (requires the compose stand):
+make compose-android
 ANDROID_SERIAL=emulator-5554 make android-deploy
 ```
 

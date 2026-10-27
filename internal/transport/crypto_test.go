@@ -226,7 +226,9 @@ func TestEncodeWithNilCrypto(t *testing.T) {
 
 	err := env.EncodeWithCrypto(pw, nil)
 	pw.Close()
-	<-done // Wait for reader to finish
+	if readErr := <-done; readErr != nil {
+		t.Fatalf("pipe read: %v", readErr)
+	}
 
 	if err != nil {
 		t.Fatalf("EncodeWithCrypto with nil cfg should work: %v", err)

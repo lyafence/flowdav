@@ -284,7 +284,7 @@ new random value.
 2. The receiver sends a final response and also sets `Close = true`.
 3. The session is removed from the engine.
 4. A tombstone entry prevents re-processing of delayed packets for
-   30 seconds.
+   30 seconds. GC runs every 30s, so entries may persist up to ~60s.
 
 ### 4. Idle timeout
 
@@ -330,7 +330,7 @@ for demultiplexing.
 | `MaxRxQueueBytes` | — | 256 MB | Out-of-order packet queue byte limit per session (capped alongside count). |
 | Retry attempts | — | 3 | Number of storage operation retries before giving up. HTTP 429 is not retried (60 s cooldown); the operation immediately fails over to another backend. |
 | Idle timeout | 10 s (configurable) | — | Session idle timeout before forced close. Set via `idle_timeout_ms` in config. |
-| Tombstone TTL | — | 30 s | Closed-session tombstones prevent re-processing of delayed packets. |
+| Tombstone TTL | — | 30 s (up to ~60 s with GC) | Closed-session tombstones prevent re-processing of delayed packets. |
 | Padding size | Off | — | Tail padding bucket (bytes). Set via `padding_size`. Hides exact payload size from storage observer. |
 | Hold max | Off | — | Server-side random delay before flushing (ms). Set via `hold_ms`. Adds latency. |
 

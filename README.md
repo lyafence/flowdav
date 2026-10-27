@@ -231,7 +231,7 @@ Both the client and server support an optional HTTP health endpoint. Set `health
 
 ## Troubleshooting
 
-- **First request may take a few seconds** — the client polls WebDAV every 500ms; idle backoff can increase latency on cold start. Run **Test connection** to wake the server: the second run is fast.
+- **First request may take longer on a cold start** — the client polls WebDAV every 500ms; idle backoff can add tens of seconds. Retry or run **Test connection** to wake the server: the second run is fast.
 - **HTTPS sites fail but HTTP works** — check DNS resolution from your server machine. The server resolves destination hostnames.
 - **"json: unknown field ..."** — remove the extra/typo key from the config; strict parsing rejects unknown fields for `-c`, `-s`, and `-e`.
 - **"Failed to load config"** — if the file is encrypted, use `-p` flag or `FLOWDAV_PASSWORD` env var. If not, check the JSON syntax.
