@@ -219,14 +219,40 @@ func TestErrEncryptedConfigDetection(t *testing.T) {
 	require.ErrorIs(t, err, ErrEncryptedConfig)
 }
 
-func TestIsJSON(t *testing.T) {
-	require.True(t, isJSON([]byte(`{"a": 1}`)))
-	require.True(t, isJSON([]byte(`[1, 2, 3]`)))
-	require.True(t, isJSON([]byte(`  {"a": 1}`)))
-	require.False(t, isJSON(nil))
-	require.False(t, isJSON([]byte{}))
-	require.True(t, isJSON([]byte("\n{\"a\": 1}")))
-	require.False(t, isJSON([]byte(`hello`)))
+// TestLoadEncryptedConfigWithJSONLikeSalt is a regression test: a random salt
+// can start with '{' (~0.4% chance), and such an encrypted config must still
+// be detected as encrypted, not misreported as a corrupt JSON file.
+func TestLoadEncryptedConfigWithJSONLikeSalt(t *testing.T) {
+	enc := &EncryptedConfig{
+		Salt:       make([]byte, saltLen),
+		Nonce:      make([]byte, nonceLen),
+		Ciphertext: []byte{0xFF, 0xFE, 0xFD},
+	}
+	for i := range enc.Salt {
+		enc.Salt[i] = 0xFF
+	}
+	for i := range enc.Nonce {
+		enc.Nonce[i] = 0xFF
+	}
+	enc.Salt[0] = '{'
+
+	f, err := os.CreateTemp(t.TempDir(), "*.cfg")
+	require.NoError(t, err)
+	_, err = f.Write(MarshalEncrypted(enc))
+	require.NoError(t, err)
+	f.Close()
+
+	_, err = Load(f.Name())
+	require.ErrorIs(t, err, ErrEncryptedConfig)
+}
+
+func TestIsEncryptedConfig(t *testing.T) {
+	require.True(t, IsEncryptedConfig([]byte{0xFF, 0xFE}))
+	require.True(t, IsEncryptedConfig([]byte{'{', 0xFF, 0xBB}))
+	require.False(t, IsEncryptedConfig([]byte(`{"a":1}`)))
+	require.False(t, IsEncryptedConfig([]byte("\xEF\xBB\xBF{\"a\":1}")))
+	require.False(t, IsEncryptedConfig([]byte("\n{\"a\": 1}")))
+	require.False(t, IsEncryptedConfig([]byte("")))
 }
 
 func TestTrimLeftWhitespace(t *testing.T) {
@@ -234,6 +260,7 @@ func TestTrimLeftWhitespace(t *testing.T) {
 	require.Equal(t, []byte("a"), trimLeftWhitespace([]byte("\n\ta")))
 	require.Equal(t, []byte{}, trimLeftWhitespace([]byte("  \n  ")))
 	require.Equal(t, []byte("abc"), trimLeftWhitespace([]byte("abc")))
+	require.Equal(t, []byte("a"), trimLeftWhitespace([]byte("\xEF\xBB\xBFa")))
 }
 
 func TestResolvePasswordExplicitValue(t *testing.T) {

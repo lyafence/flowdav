@@ -1,8 +1,9 @@
 module github.com/lyafence/flowdav
 
-go 1.27.2
+go 1.27.3
 
 require (
+	github.com/mdp/qrterminal/v4 v4.0.0
 	github.com/refraction-networking/utls v1.8.2
 	github.com/stretchr/testify v1.12.1
 	github.com/studio-b12/gowebdav v0.13.0
@@ -21,4 +22,5 @@ require (
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/tools v0.51.0 // indirect
+	rsc.io/qr v0.2.0 // indirect
 )

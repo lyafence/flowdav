@@ -176,7 +176,9 @@ func (v *VirtualConn) Write(b []byte) (n int, err error) {
 	if closed {
 		return 0, io.ErrClosedPipe
 	}
-	v.session.EnqueueTx(v.ctx, b)
+	if err := v.session.EnqueueTxCtx(v.ctx, b); err != nil {
+		return 0, err
+	}
 	return len(b), nil
 }
 

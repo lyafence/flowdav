@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"unicode/utf8"
 
 	"golang.org/x/term"
 )
@@ -296,13 +297,16 @@ func Load(path string) (*AppConfig, error) {
 		return nil, fmt.Errorf("failed to read config file %s: %w", path, err)
 	}
 
-	// Check if this looks like an encrypted config (starts with salt)
-	if len(b) > saltLen+nonceLen && !isJSON(b) {
+	// Encrypted configs are raw salt+nonce+ciphertext (random bytes), which
+	// is practically never valid UTF-8; config JSON always is. This is more
+	// robust than a first-byte check: a random salt can start with '{' and
+	// would otherwise be misreported as corrupt JSON.
+	if len(b) > saltLen+nonceLen && IsEncryptedConfig(b) {
 		return nil, ErrEncryptedConfig
 	}
 
 	var cfg AppConfig
-	if err := json.Unmarshal(b, &cfg); err != nil {
+	if err := json.Unmarshal(trimLeftWhitespace(b), &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config JSON: %w", err)
 	}
 
@@ -399,12 +403,18 @@ func ResolvePassword(args []string) (password string, interactive bool, rest []s
 	return password, false, args
 }
 
-func isJSON(data []byte) bool {
-	data = trimLeftWhitespace(data)
-	return len(data) > 0 && (data[0] == '{' || data[0] == '[')
+// IsEncryptedConfig reports whether data plausibly is an encrypted config
+// (salt+nonce+ciphertext) rather than JSON text. Ciphertext is random bytes
+// and practically never forms valid UTF-8, while config JSON always does.
+func IsEncryptedConfig(data []byte) bool {
+	return !utf8.Valid(data)
 }
 
+// utf8BOM is the UTF-8 byte order mark some editors prepend to JSON files.
+var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
+
 func trimLeftWhitespace(data []byte) []byte {
+	data = bytes.TrimPrefix(data, utf8BOM)
 	for len(data) > 0 && (data[0] == ' ' || data[0] == '\t' || data[0] == '\n' || data[0] == '\r') {
 		data = data[1:]
 	}

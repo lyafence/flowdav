@@ -129,11 +129,15 @@ nuke: compose-down clean-images clean
 	fi
 	@echo "Environment reset complete. Run 'make docker-build && make test-e2e' to rebuild."
 
-# Quick Android test env: single WebDAV + flowdav-server
+# Quick Android test env: single WebDAV + flowdav-server.
+# The Android app IS the client here — do NOT also start the flowdav-client
+# container: it reuses configs/flowdav_test.json (same keys AND same WebDAV
+# dirs) and would race the app for the server's response files, hijacking
+# packets and breaking connectivity (e.g. the in-app "Test connection").
 compose-android: docker-build
 	@bash scripts/gen-test-configs.sh "$(HOST_IP)" && \
 	podman-compose -f $(COMPOSE_FILE) down -v 2>/dev/null || true; \
-	podman-compose -f $(COMPOSE_FILE) up -d webdav-single flowdav-server flowdav-client; \
+	podman-compose -f $(COMPOSE_FILE) up -d webdav-single flowdav-server; \
 	echo ""; \
 	echo "=== Android test environment ==="; \
 	echo "WebDAV:   http://$(HOST_IP):8080 (user: test, pass: test)"; \

@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -91,6 +92,11 @@ func TestParseConfigJSONDefaults(t *testing.T) {
 // These strings are the contract consumed by Android's ProxyState.ErrorKind
 // (android/app/src/main/java/com/flowdav/app/ProxyState.kt); changing a value
 // here without updating the Kotlin side silently breaks UI error mapping.
+func TestIsEncryptedConfig(t *testing.T) {
+	require.False(t, IsEncryptedConfig([]byte(`{"webdav":{}}`)), "plain JSON reported as encrypted")
+	require.True(t, IsEncryptedConfig([]byte{0xff, 0xfe, 0x00}), "invalid UTF-8 not reported as encrypted")
+}
+
 func TestErrorCodesStable(t *testing.T) {
 	want := []string{
 		"encrypted_no_password",
@@ -115,6 +121,79 @@ func TestErrorCodesStable(t *testing.T) {
 		string(ErrUnknown),
 	}
 	require.Equal(t, want, got, "keep ProxyState.ErrorKind in sync")
+}
+
+// TestStorageTestCodesStable pins the storage self-test wire values; the
+// Kotlin side consumes them by literal. Renaming breaks the UI mapping.
+func TestStorageTestCodesStable(t *testing.T) {
+	want := []string{
+		"ok",
+		"not_running",
+		"storage_unreachable",
+		"storage_auth",
+	}
+	got := []string{
+		storageTestOK,
+		storageTestNotRun,
+		storageTestUnreach,
+		storageTestAuth,
+	}
+	require.Equal(t, want, got)
+}
+
+func TestRedactURL(t *testing.T) {
+	require.Equal(t, "https://redacted@dav.example.com/x", redactURL("https://user:tok3n@dav.example.com/x"))
+	require.Equal(t, "https://dav.example.com/x", redactURL("https://dav.example.com/x"))
+	require.Equal(t, "://bad", redactURL("://bad"))
+}
+
+// TestGetLogsKeepsNewestLines is a regression test: when the log exceeds the
+// UI budget, the OLDEST lines must be dropped — the newest ones are what the
+// user needs to diagnose a failure.
+func TestGetLogsKeepsNewestLines(t *testing.T) {
+	resetLogs := func() {
+		logMu.Lock()
+		logBuf = [50]string{}
+		logHead, logCount = 0, 0
+		logMu.Unlock()
+	}
+	resetLogs()
+	t.Cleanup(resetLogs)
+
+	for i := 0; i < 50; i++ {
+		logEvent("line-%02d %s", i, strings.Repeat("x", 40))
+	}
+	logs := getLogs()
+	require.Contains(t, logs, "line-49", "newest log line must be present")
+	require.NotContains(t, logs, "line-00", "oldest log line must be dropped")
+	require.LessOrEqual(t, len(logs), maxLogBytes+8)
+}
+
+// TestSetSocks5AuthRejectsPartialPair verifies a partial credential pair is
+// never stored: it would otherwise silently select NoAuth (fail-open) at the
+// next start, and stale credentials must not leak into unrelated starts.
+func TestSetSocks5AuthRejectsPartialPair(t *testing.T) {
+	clear := func() {
+		mu.Lock()
+		pendingSocks5User, pendingSocks5Pass = "", ""
+		mu.Unlock()
+	}
+	clear()
+	t.Cleanup(clear)
+
+	SetSocks5Auth("user", "")
+	mu.Lock()
+	u, p := pendingSocks5User, pendingSocks5Pass
+	mu.Unlock()
+	require.Empty(t, u, "partial pair must not be stored")
+	require.Empty(t, p)
+
+	SetSocks5Auth("user", "pass")
+	mu.Lock()
+	u, p = pendingSocks5User, pendingSocks5Pass
+	mu.Unlock()
+	require.Equal(t, "user", u)
+	require.Equal(t, "pass", p)
 }
 
 func TestCodeOfClassifies(t *testing.T) {

@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Caps the form column width on medium/expanded window widths; no effect
-         on compact (phones) where the parent is narrower than this value. -->
-    <dimen name="content_max_width">600dp</dimen>
-    <dimen name="arrow_text_size">16sp</dimen>
+    <dimen name="screen_padding">16dp</dimen>
+    <dimen name="card_padding">16dp</dimen>
+    <dimen name="icon_button_size">48dp</dimen>
+    <dimen name="icon_button_padding">12dp</dimen>
+    <dimen name="section_gap">16dp</dimen>
+    <dimen name="item_gap">8dp</dimen>
     <dimen name="log_line_spacing">2dp</dimen>
 </resources>

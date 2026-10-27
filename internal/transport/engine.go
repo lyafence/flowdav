@@ -698,59 +698,134 @@ func (e *Engine) gcLoop(ctx context.Context) {
 	}
 }
 
+// stopDrainBudget bounds how long shutdown may spend draining already-queued
+// upload jobs before dropping them.
+const stopDrainBudget = 5 * time.Second
+
 // uploadWorker is a fixed goroutine that processes upload jobs from flushAll.
+//
+// Worker lifetime is bound to stopCh rather than ctx: during shutdown the
+// engine context is canceled before Drain runs (see runClient/runServer), and
+// workers must stay alive to upload the jobs Drain produces. On stop, already
+// queued jobs are drained before exit so extracted payloads are not dropped.
 func (e *Engine) uploadWorker(ctx context.Context) {
 	for {
 		select {
-		case <-ctx.Done():
-			return
 		case <-e.stopCh:
+			e.drainUploadJobs(ctx)
 			return
 		case job, ok := <-e.uploadJobs:
 			if !ok {
 				return
 			}
-			func() {
-				defer func() {
-					if r := recover(); r != nil {
-						logger.Info("upload panic %s: %v", job.filename, r)
-					}
-				}()
-				attempts, err := retryStorage(ctx, e.stopCh, "upload "+job.filename, func() error {
-					return e.backend.UploadByIndex(ctx, job.filename, bytes.NewReader(job.data), job.backendIdx)
-				})
-				if err == nil {
-					select {
-					case e.pollActivityCh <- struct{}{}:
-					default:
-					}
-				}
-				if attempts > 1 {
-					e.uploadRetries.Add(int64(attempts - 1))
-				}
-				if err != nil {
-					logger.Info("upload error %s (backend %d): %v — trying fallback backend", job.filename, job.backendIdx, err)
-					// The pinned backend is unhealthy (429 cooldown, open
-					// breaker, 5xx, ...). The payload was already extracted
-					// from the session buffer, so try any other backend
-					// instead of dropping it.
-					newIdx, fallbackErr := e.backend.UploadAny(ctx, job.filename, bytes.NewReader(job.data))
-					if fallbackErr == nil {
-						logger.Info("upload fallback succeeded %s → backend %d", job.filename, newIdx)
-						if storage.IsRateLimited(err) {
-							for _, s := range job.sessions {
-								if s.ReassignBackend(job.numBackend) {
-									logger.Info("session %s migrated to backend %d after 429", s.ID, s.BackendIdx)
-								}
-							}
-						}
-						return
-					}
-					logger.Info("upload fallback also failed %s: %v", job.filename, fallbackErr)
-				}
-			}()
+			e.processUploadJob(ctx, job)
 		}
 	}
+}
+
+// drainUploadJobs processes upload jobs that are already queued at shutdown
+// time. It runs on a context detached from the engine context (which may
+// already be canceled) and bounded by stopDrainBudget.
+func (e *Engine) drainUploadJobs(ctx context.Context) {
+	dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), stopDrainBudget)
+	defer cancel()
+	for {
+		select {
+		case job, ok := <-e.uploadJobs:
+			if !ok {
+				return
+			}
+			e.processUploadJob(dctx, job)
+		default:
+			return
+		}
+	}
+}
+
+// processUploadJob uploads a single job, falling back to any healthy backend
+// when the pinned one fails. The payload was already extracted from the
+// session buffer, so dropping it is the last resort.
+func (e *Engine) processUploadJob(ctx context.Context, job uploadJob) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Info("upload panic %s: %v", job.filename, r)
+		}
+	}()
+	attempts, err := retryStorage(ctx, e.stopCh, "upload "+job.filename, func() error {
+		return e.backend.UploadByIndex(ctx, job.filename, bytes.NewReader(job.data), job.backendIdx)
+	})
+	if err == nil {
+		select {
+		case e.pollActivityCh <- struct{}{}:
+		default:
+		}
+	}
+	if attempts > 1 {
+		e.uploadRetries.Add(int64(attempts - 1))
+	}
+	if err != nil {
+		logger.Info("upload error %s (backend %d): %v — trying fallback backend", job.filename, job.backendIdx, err)
+		// The pinned backend is unhealthy (429 cooldown, open breaker,
+		// 5xx, ...). The payload was already extracted from the session
+		// buffer, so try any other backend instead of dropping it.
+		newIdx, fallbackErr := e.backend.UploadAny(ctx, job.filename, bytes.NewReader(job.data))
+		if fallbackErr == nil {
+			logger.Info("upload fallback succeeded %s → backend %d", job.filename, newIdx)
+			if storage.IsRateLimited(err) {
+				for _, s := range job.sessions {
+					if s.ReassignBackend(job.numBackend) {
+						// Log the target, not the racy session field.
+						logger.Info("session %s migrated to backend %d after 429", s.ID, job.numBackend)
+					}
+				}
+			}
+			return
+		}
+		logger.Info("upload fallback also failed %s: %v", job.filename, fallbackErr)
+	}
+}
+
+// StorageRoundTrip verifies the storage path end to end — upload, readback, and
+// delete — using a random probe file placed outside the request/response
+// directories so neither peer treats it as a session. It backs the app's
+// connection self-test: unlike a proxied request, it does not depend on the
+// peer's polling cadence, so it is a fast, deterministic check of the
+// client↔WebDAV leg (URL, credentials, TLS, permissions).
+func (e *Engine) StorageRoundTrip(ctx context.Context) error {
+	var raw [8]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return fmt.Errorf("probe rand: %w", err)
+	}
+	suffix := hex.EncodeToString(raw[:])
+	// Leading '_' keeps the name out of the r/s session directories; nothing
+	// else in name or payload is fingerprintable by a storage observer.
+	name := "_" + suffix
+	payload := raw[:]
+
+	idx, err := e.backend.UploadAny(ctx, name, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("probe upload: %w", err)
+	}
+	defer func() {
+		if derr := e.backend.Delete(context.WithoutCancel(ctx), name); derr != nil {
+			logger.Info("StorageRoundTrip: probe cleanup %s: %v", name, derr)
+		}
+	}()
+
+	rc, err := e.backend.DownloadByIndex(ctx, name, idx)
+	if err != nil {
+		return fmt.Errorf("probe download: %w", err)
+	}
+	defer rc.Close()
+
+	got, err := io.ReadAll(io.LimitReader(rc, int64(len(payload))+1))
+	if err != nil {
+		return fmt.Errorf("probe readback: %w", err)
+	}
+	if !bytes.Equal(got, payload) {
+		return fmt.Errorf("probe readback mismatch: got %d bytes, want %d", len(got), len(payload))
+	}
+	return nil
 }
 
 type EngineStats struct {

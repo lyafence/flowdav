@@ -71,6 +71,10 @@ android {
     lint {
         warningsAsErrors = true
         abortOnError = true
+        // Version-availability checks duplicate Dependabot and fail CI the
+        // moment a newer Gradle/AGP is released; they are not code-quality
+        // issues (AGENTS.md: tool versions are Dependabot's concern).
+        disable += "AndroidGradlePluginVersion"
     }
 
     buildFeatures {
@@ -94,12 +98,15 @@ java {
 dependencies {
     implementation(files("libs/flowdav.aar"))
     implementation("androidx.appcompat:appcompat:1.8.0")
-    implementation("androidx.constraintlayout:constraintlayout:2.2.2")
     implementation("androidx.core:core-ktx:1.19.1")
     implementation("com.google.android.material:material:1.14.0")
     implementation("androidx.activity:activity-ktx:1.13.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
     implementation("androidx.security:security-crypto:1.1.0")
+    // Offline QR scanning without Play Services (privacy-first: no Google deps).
+    // Latest release is 4.3.0 (Oct 2021) but the library is stable and
+    // self-contained; the alternative (ML Kit) requires Play Services.
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     testImplementation("junit:junit:4.13.2")
 }

@@ -42,7 +42,7 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 ```
 
 **Binary:** `flowdav` — unified entrypoint with `-c` (client), `-s` (server), `-e` (encrypt), `-g` (generate config) modes.  
-**Android bridge:** `cmd/android/bridge.go` — gomobile bind, exports `StartProxyFromData`/`StartProxyManual`/`StopProxy`/`GetStatus`/`StopAndError`/`SetSocks5Auth` to Kotlin. **Global state intentional** (gomobile exports free functions, not objects). **Config validation delegates** to `config.ValidateAppConfig` — the two paths share the same validation logic. See `parseConfigJSON` in bridge.go. **`GetStatus` violates "no getters" intentionally** — Java/Kotlin interop dictates Java Beans naming. **Errors cross the bridge as stable codes**: `StartProxy*` returns `*StartResult{Success, Code, Message}`, `Status.ErrorCode`/`StopAndError` carry codes; Android maps them via `ProxyState.ErrorKind`. The contract is pinned by `TestErrorCodesStable` (Go) and `ErrorKindCodesTest` (Kotlin, parses bridge.go) — keep both sides in sync.
+**Android bridge:** `cmd/android/bridge.go` — gomobile bind, exports `StartProxyFromData`/`StartProxyManual`/`StopProxy`/`GetStatus`/`StopAndError`/`SetSocks5Auth`/`IsEncryptedConfig`/`TestStorage`/`ProbeTimeoutMs to Kotlin. **Global state intentional** (gomobile exports free functions, not objects). **Config validation delegates** to `config.ValidateAppConfig` — the two paths share the same validation logic. See `parseConfigJSON` in bridge.go. **`GetStatus` violates "no getters" intentionally** — Java/Kotlin interop dictates Java Beans naming. **Errors cross the bridge as stable codes**: `StartProxy*` returns `*StartResult{Success, Code, Message}`, `Status.ErrorCode`/`StopAndError` carry codes; Android maps them via `ProxyState.ErrorKind`. The contract is pinned by `TestErrorCodesStable` (Go) and `ErrorKindCodesTest` (Kotlin, parses bridge.go) — keep both sides in sync.
 
 ## Design Invariants
 
@@ -52,6 +52,7 @@ SOCKS5 ←→ client ←→ WebDAV ←→ server ←→ destination
 - Random filenames `{dir_byte}{16_hex}` — no metadata leaks. Mapped to `{subdir}/{uppercase_hex}` on storage (direction byte → subdirectory: `r`→`invoices`, `s`→`receipts`).
 - DNS leak protection: raw resolver, UDP explicitly blocked.
 - Multi-WebDAV: random session assignment, round-robin upload fallback.
+- **One keypair = one client** (deliberate single-client scope — not a bug). `Envelope` carries no client identity, and in `internal/transport/pool.go` `processDownload` a client **deletes every response file it downloads**, even one whose `SessionID` it does not know (only the server — `DirRes` — auto-creates sessions on unknown IDs; `internal/transport/engine.go` pollLoop skips polling when the client has zero sessions). Two clients sharing `enc_key`/`hmac_key` + `base_path` therefore steal and destroy each other's packets. Multi-device = one client/server pair per device, each with a distinct keypair and `base_path`. Kept intentional — do not add client routing without a design pass.
 - **429-aware circuit breaker**: rate-limit (429) uses separate 60s cooldown without incrementing failure count. Session auto-migrates to another backend on 429. Download falls back to non-indexed search across all backends.
 - **TLS fingerprint masking**: uTLS `HelloChrome_133` by default (configurable via `tls_fingerprint`). User-Agent matches (`Chrome/133.0.0.0`).
 - No global state (exceptions: `transport.MaxMessageSize` / `storage.MaxFileSize` — package-level vars set at startup, justified by OOM prevention per `internal/transport/crypto.go` `MaxMessageSize` var; `internal/logger` — package-level `level` var for leveled logging is standard and excluded by convention; `cmd/android/bridge.go` — gomobile requires free functions, not objects, so global state is unavoidable and documented as intentional).
@@ -79,7 +80,7 @@ Install with `make hooks`.
 
 ## Config Quick Reference
 
-- Flags: `-c config.json` (client), `-s config.json` (server), `-e config.json` (encrypt), `-g config.json` (generate), `-p master_password`, `-l loglevel`, `--version`
+- Flags: `-c config.json` (client), `-s config.json` (server), `-e config.json` (encrypt), `-g config.json` (generate), `-p master_password`, `-l loglevel`, `--version`, `--qr` (QR of encrypted config with `-e`), `--remove-source` (delete plaintext after `-e`)
 - Fields: `enc_key` / `hmac_key` (32-byte base64), `max_message_size` (default 16MB), `max_sessions` (default 0 = unlimited), `idle_timeout_ms` (default 10000), `webdav.backends` (array), `health_port` (e.g. `"127.0.0.1:9191"`), `log_level` (`debug`, `info`, `warn`, `error`)
 - `padding_size` (bucket size for tail padding; 0 = off), `hold_ms` (max server-side random delay before flush; 0 = off) — optional settings
 - `socks5_user` / `socks5_pass` must be set together; a partial pair is rejected by `ValidateAppConfig` (it would silently select NoAuth)
@@ -95,7 +96,7 @@ Install with `make hooks`.
 
 ## Coding Conventions
 
-- Go 1.27.2, stdlib preferred.
+- Go 1.27.3, stdlib preferred.
 - Tests: `testing` package, table-driven, `-race` enabled.
 - Benchmarks: `bench_test.go` in `internal/transport`. Run with `make bench`.
 - Imports: stdlib → third-party → internal, blank-line separated.

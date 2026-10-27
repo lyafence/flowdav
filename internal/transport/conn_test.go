@@ -212,6 +212,38 @@ func TestVirtualConnDoubleClose(t *testing.T) {
 	}
 }
 
+// TestVirtualConnWriteBackpressureCanceledContext is a regression test:
+// Write must report failure when the context is canceled while the session
+// buffer is over the backpressure limit. Reporting success after a silent
+// drop would make the SOCKS5/TLS peer believe the bytes were delivered.
+func TestVirtualConnWriteBackpressureCanceledContext(t *testing.T) {
+	s := NewSession("write-backpressure-cancel")
+	s.mu.Lock()
+	s.txBuf = make([]byte, 2*1024*1024+1)
+	s.mu.Unlock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	v := NewVirtualConnWithOnClose(ctx, s, nil, nil)
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := v.Write([]byte("x"))
+		done <- err
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("Write reported success after canceled backpressure wait — silent data loss")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Write blocked despite canceled context")
+	}
+}
+
 // Regression: sync.Once — concurrent Close must not deadlock.
 func TestVirtualConnConcurrentDoubleClose(t *testing.T) {
 	const goroutines = 10

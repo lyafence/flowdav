@@ -138,6 +138,114 @@ func TestFlushAllRespectsStopCh(t *testing.T) {
 	}
 }
 
+// gatedUploadBackend wraps mockBackend and blocks Upload until the gate
+// opens, modeling a slow storage backend. Like the production WebDAV
+// backend, Upload ignores the context.
+type gatedUploadBackend struct {
+	mockBackend
+	gate chan struct{}
+}
+
+func (g *gatedUploadBackend) Upload(_ context.Context, name string, r io.Reader) error {
+	<-g.gate
+	return g.mockBackend.Upload(context.Background(), name, r)
+}
+
+func (g *gatedUploadBackend) UploadByIndex(ctx context.Context, name string, r io.Reader, _ uint8) error {
+	return g.Upload(ctx, name, r)
+}
+
+func (g *gatedUploadBackend) UploadAny(ctx context.Context, name string, r io.Reader) (uint8, error) {
+	return 0, g.Upload(ctx, name, r)
+}
+
+// saturateUploadWorkerPool queues more jobs than the pool can hold in flight
+// (8 workers blocked on the gate + remaining jobs queued), then returns the
+// total number of jobs queued.
+func saturateUploadWorkerPool(t *testing.T, engine *Engine) (total int) {
+	t.Helper()
+	const totalJobs = 20
+	for i := 0; i < totalJobs; i++ {
+		select {
+		case engine.uploadJobs <- uploadJob{filename: fmt.Sprintf("drain-%d", i)}:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("filling uploadJobs stalled at job %d", i)
+		}
+	}
+	// Let workers pick up the first batch (they block on the gate).
+	time.Sleep(100 * time.Millisecond)
+	return totalJobs
+}
+
+func waitForUploads(t *testing.T, backend *gatedUploadBackend, want int, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		backend.mu.Lock()
+		n := len(backend.uploaded)
+		backend.mu.Unlock()
+		if n >= want {
+			return
+		}
+		if time.Now().After(deadline) {
+			backend.mu.Lock()
+			uploaded := append([]string(nil), backend.uploaded...)
+			backend.mu.Unlock()
+			t.Fatalf("uploaded %d/%d jobs — queued data lost (got %v)", n, want, uploaded)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// TestUploadWorkerDrainsQueueOnStop is a regression test: jobs already queued
+// when the engine stops must be uploaded instead of dropped. Data loss here
+// breaks the graceful-shutdown contract (Drain before Stop).
+func TestUploadWorkerDrainsQueueOnStop(t *testing.T) {
+	backend := &gatedUploadBackend{gate: make(chan struct{})}
+	engine := NewEngine(backend, true, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	engine.Start(ctx)
+
+	total := saturateUploadWorkerPool(t, engine)
+
+	stopped := make(chan struct{})
+	go func() {
+		engine.Stop()
+		close(stopped)
+	}()
+
+	// Release the backend: in-flight uploads finish, the shutdown drain must
+	// pick up the queued remainder.
+	close(backend.gate)
+
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("engine.Stop blocked — shutdown drain did not terminate")
+	}
+	waitForUploads(t, backend, total, time.Second)
+}
+
+// TestUploadWorkerDrainsQueueOnCancel pins the same guarantee for context
+// cancellation: runClient/runServer cancel the engine context before Drain,
+// so workers must survive ctx cancellation (their lifetime is bound to
+// stopCh) and keep uploading queued jobs.
+func TestUploadWorkerDrainsQueueOnCancel(t *testing.T) {
+	backend := &gatedUploadBackend{gate: make(chan struct{})}
+	engine := NewEngine(backend, true, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	engine.Start(ctx)
+	t.Cleanup(engine.Stop)
+
+	total := saturateUploadWorkerPool(t, engine)
+
+	cancel()
+	close(backend.gate)
+
+	waitForUploads(t, backend, total, 5*time.Second)
+}
+
 // TestEngineDrain flushes pending session data to the backend.
 func TestEngineDrain(t *testing.T) {
 	backend := &mockBackend{}

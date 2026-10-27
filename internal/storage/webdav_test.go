@@ -1,7 +1,9 @@
 package storage
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +13,84 @@ import (
 
 	gowebdav "github.com/studio-b12/gowebdav"
 )
+
+// TestUploadAuthHTTPErrorClassified pins the Android storage self-test
+// contract: 401/403 must surface as *HTTPError so that bridge.TestStorage
+// reports storage_auth instead of falling back to storage_unreachable, and
+// 429 stays classified for the MultiBackend circuit breaker. Other statuses
+// (e.g. 500) must remain generic errors.
+func TestUploadAuthHTTPErrorClassified(t *testing.T) {
+	codes := []struct {
+		status int
+		class  bool
+	}{
+		{http.StatusUnauthorized, true},
+		{http.StatusForbidden, true},
+		{http.StatusTooManyRequests, true},
+		{http.StatusInternalServerError, false},
+	}
+
+	for _, tc := range codes {
+		t.Run(http.StatusText(tc.status), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tc.status)
+			}))
+			defer srv.Close()
+
+			backend := &WebDAVBackend{
+				client:   gowebdav.NewClient(srv.URL, "test", "test"),
+				basePath: "myapp",
+			}
+
+			err := backend.Upload(context.Background(), "test-file", bytes.NewReader([]byte("payload")))
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			var he *HTTPError
+			if !errors.As(err, &he) {
+				if !tc.class {
+					return // generic error, as expected
+				}
+				t.Fatalf("HTTP %d lost classification: %v", tc.status, err)
+			}
+			if !tc.class {
+				t.Fatalf("HTTP %d must NOT be classified as HTTPError, got %d", tc.status, he.Code)
+			}
+			if he.Code != tc.status {
+				t.Fatalf("classified wrong code: got %d, want %d", he.Code, tc.status)
+			}
+		})
+	}
+}
+
+// TestDownloadAuthHTTPErrorClassified mirrors the Upload classification for
+// the direct HTTP path used by Download.
+func TestDownloadAuthHTTPErrorClassified(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	backend := &WebDAVBackend{
+		httpClient: srv.Client(),
+		rootURL:    srv.URL,
+		login:      "test",
+		token:      "test",
+		basePath:   "myapp",
+	}
+
+	_, err := backend.Download(context.Background(), "test-file")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	var he *HTTPError
+	if !errors.As(err, &he) {
+		t.Fatalf("401 lost classification: %v", err)
+	}
+	if he.Code != http.StatusUnauthorized {
+		t.Fatalf("classified wrong code: got %d, want 401", he.Code)
+	}
+}
 
 func TestFullPathTraversal(t *testing.T) {
 	backend := &WebDAVBackend{basePath: "test"}

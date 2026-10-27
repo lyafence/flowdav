@@ -9,7 +9,9 @@
     <!-- File mode -->
     <string name="select_file">Select config file</string>
     <string name="master_password">Master password</string>
-    <string name="password_hint">Leave empty for plaintext</string>
+    <string name="password_hint">Leave empty to use the saved password</string>
+    <string name="password_required">Required to decrypt this config</string>
+    <string name="password_wrong_hint">Check the master password</string>
 
     <!-- Manual mode -->
     <string name="webdav_url">WebDAV URL</string>
@@ -22,6 +24,7 @@
 
     <!-- Advanced -->
     <string name="advanced">Advanced</string>
+    <string name="advanced_summary_fmt">Listen address: %1$s</string>
     <string name="listen_addr">Listen address</string>
 
     <!-- Actions -->
@@ -29,17 +32,26 @@
     <string name="stop_proxy">Stop Proxy</string>
 
     <!-- Dashboard -->
-    <string name="address_label">Address</string>
-    <string name="sessions_label">Sessions</string>
+    <string name="address_label">SOCKS5 address</string>
+    <string name="address_hint">Use this in apps that support SOCKS5</string>
+    <string name="active_connections_label">Active connections</string>
+    <string name="idle_label">Idle</string>
     <string name="uptime_label">Uptime</string>
+    <string name="stats_idle_fmt">Idle · up %1$s</string>
+    <string name="stats_active_fmt">%1$s active · up %2$s</string>
+    <string name="backend_fmt">WebDAV: %1$s</string>
 
     <!-- Logs -->
-    <string name="logs_label">Logs</string>
+    <string name="logs_label">Diagnostics</string>
+    <string name="diagnostics_empty">No activity yet</string>
     <string name="copy_logs">Copy logs</string>
+    <string name="copy_address">Copy address</string>
 
     <!-- Status -->
     <string name="status_stopped">Stopped</string>
+    <string name="status_error">Error</string>
     <string name="status_connecting">Connecting…</string>
+    <string name="status_detail_connecting">Starting the local proxy and connecting to WebDAV.</string>
     <string name="status_running">Running</string>
 
     <!-- Validation -->
@@ -48,6 +60,7 @@
     <string name="socks5_partial_error">Both SOCKS5 user and password are required, or leave both empty</string>
     <string name="error_required">This field is required</string>
     <string name="error_invalid_listen">Must be in format IP:port, e.g. 127.0.0.1:1080</string>
+    <string name="error_non_loopback_no_auth">Non-loopback listen address requires SOCKS5 username and password.</string>
 
     <!-- Startup errors (bridge ErrorCode values + Kotlin-only codes) -->
     <string name="error_no_password">This config is encrypted — enter the master password</string>
@@ -67,12 +80,11 @@
     <!-- Notification -->
     <string name="proxy_notification_channel">Proxy Status</string>
     <string name="proxy_running">Proxy running</string>
+    <string name="notification_running_fmt">Running on %1$s</string>
     <string name="notification_stop">Stop</string>
-    <string name="notification_status_fmt">%1$s · %2$s</string>
 
     <!-- A11y -->
     <string name="config_chip_desc">Selected config file</string>
-    <string name="advanced_header_desc">Advanced settings, tap to expand or collapse</string>
 
     <!-- Section headers -->
     <string name="section_webdav">WebDAV</string>
@@ -80,15 +92,100 @@
     <string name="section_socks5_auth">SOCKS5 Authentication</string>
 
     <!-- Misc -->
-    <string name="arrow_collapsed">▼</string>
-    <string name="arrow_expanded">▲</string>
-    <string name="logs_copied">Logs copied</string>
-    <string name="version_fmt">v%1$s</string>
+    <string name="logs_copied">Diagnostics copied</string>
+    <string name="about_version_fmt">v%1$s</string>
     <string name="paste_desc">Paste from clipboard</string>
-    <string name="config_display_fallback">config</string>
+    <string name="config_display_fallback">Imported config</string>
 
     <!-- Permission rationale -->
     <string name="notif_permission_title">Notification permission needed</string>
     <string name="notif_permission_rationale">flowdav runs as a foreground service while the proxy is active. Android requires notification permission to show the persistent service notification. Without it, the proxy may be killed by the system.</string>
     <string name="notif_permission_denied">Notification permission denied. The proxy may not stay running in the background.</string>
+
+    <!-- QR import -->
+    <string name="scan_qr">Scan QR code</string>
+    <string name="qr_prompt">Scan the flowdav config QR code</string>
+    <string name="qr_import_failed">Could not import the scanned QR code</string>
+    <string name="camera_denied">Camera permission is required to scan QR codes</string>
+
+    <!-- Clipboard / share import -->
+    <string name="clipboard_config_found">flowdav config found in clipboard</string>
+    <string name="import_action">Import</string>
+    <string name="import_confirm_title">Import config?</string>
+    <string name="import_confirm_body">From %1$s.\n\n%2$s\n\nOnly import configs you trust — flowdav traffic goes through this WebDAV server.</string>
+    <string name="import_confirm_host">WebDAV: %1$s</string>
+    <string name="import_confirm_encrypted">Encrypted config — the server can\'t be verified until you enter the master password.</string>
+    <string name="import_confirm_unverified">The config could not be verified — only import it if you trust the source.</string>
+    <string name="import_source_link">a link</string>
+    <string name="import_source_shared">another app</string>
+    <string name="import_source_qr">a QR code</string>
+    <string name="import_source_clipboard">the clipboard</string>
+    <string name="config_imported">Config imported</string>
+
+    <!-- Password management -->
+    <string name="forget_password">Forget saved password</string>
+    <string name="password_forgotten">Saved password cleared</string>
+
+    <!-- Battery optimization -->
+    <string name="battery_title">Keep the proxy alive</string>
+    <string name="battery_message">Android may stop the proxy in the background to save battery. Allow flowdav to run without battery optimizations so the tunnel keeps working.</string>
+    <string name="battery_allow">Allow</string>
+    <string name="battery_skip">Skip</string>
+
+    <!-- Autostart -->
+    <string name="boot_autostart">Start on boot</string>
+
+    <!-- Dashboard actions -->
+    <string name="address_copied">Address copied</string>
+    <string name="test_connection">Verify connection</string>
+    <string name="test_connection_running">Testing…</string>
+    <string name="connection">Tunnel health</string>
+    <string name="connection_not_tested">Not verified</string>
+    <string name="test_hint_not_verified">Run a check to confirm the tunnel.</string>
+    <string name="how_to_use">How to use</string>
+    <string name="advanced_state_expanded">Expanded</string>
+    <string name="advanced_state_collapsed">Collapsed</string>
+
+    <!-- How-to sheet -->
+    <string name="howto_title">How to use flowdav</string>
+    <string name="howto_intro">flowdav needs a config from your server — scan the QR or import the file, then start.</string>
+    <string name="howto_in_app">In an app that supports SOCKS5, set:</string>
+    <string name="howto_auth">Authentication is on — use the SOCKS5 username and password you set.</string>
+    <string name="howto_scope">Only that app is tunneled; everything else goes direct.</string>
+    <string name="howto_http_only">Android\'s system proxy is HTTP-only — the app needs its own SOCKS5 setting.</string>
+    <string name="howto_close">Close</string>
+
+    <!-- Start CTA hints -->
+    <string name="hint_select_config">Select a config to start</string>
+    <string name="hint_enter_password">Enter the master password</string>
+    <string name="hint_fill_fields">Fill in the required fields</string>
+    <string name="hint_ready">Ready to start</string>
+    <string name="hint_check_password">Check the master password and try again</string>
+    <string name="hint_replace_config">Replace the config file</string>
+    <string name="hint_check_webdav">Check WebDAV access and try again</string>
+    <string name="hint_check_listen">Change the listen address and try again</string>
+    <string name="hint_retry">Check Diagnostics or retry</string>
+    <string name="retry">Retry</string>
+
+    <!-- Connection self-test verdicts (mapped from ConnectionTest.Kind) -->
+    <string name="ct_state_connected">Connected</string>
+    <string name="ct_state_ready">Proxy ready</string>
+    <string name="ct_state_not_running">Proxy not running</string>
+    <string name="ct_detail_not_running">Proxy stopped — start it again</string>
+    <string name="ct_state_storage_error">Storage error</string>
+    <string name="ct_storage_not_running">proxy not running</string>
+    <string name="ct_storage_auth">authentication failed</string>
+    <string name="ct_storage_unreachable">unreachable</string>
+    <string name="ct_storage_error_fmt">%1$s</string>
+    <string name="ct_detail_exit_fmt">Exit IP %1$s · checked %2$s</string>
+    <string name="ct_checked_just_now">just now</string>
+    <string name="ct_checked_min_ago">%1$d min ago</string>
+    <string name="ct_checked_hour_ago">%1$d h ago</string>
+    <string name="ct_detail_warming">Server is warming up — test again in a minute</string>
+    <string name="ct_detail_silent">Server is not responding yet — test again in a minute</string>
+    <string name="ct_detail_server_error">Server test failed — try again</string>
+    <string name="ct_addr_invalid">Could not parse the proxy address</string>
+
+    <!-- Imports from outside the app (links, shares) -->
+    <string name="import_payload_invalid">Could not read the imported data</string>
 </resources>

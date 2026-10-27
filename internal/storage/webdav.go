@@ -45,6 +45,24 @@ func (e *HTTPError) Unwrap() error {
 	return e.Err
 }
 
+// httpErrClass classifies 429 (circuit breaker) and 401/403 (Android storage
+// self-test) gowebdav errors as HTTPError; other errors return ok=false.
+func httpErrClass(err error) (int, bool) {
+	if err == nil {
+		return 0, false
+	}
+	for _, code := range []int{
+		http.StatusTooManyRequests,
+		http.StatusUnauthorized,
+		http.StatusForbidden,
+	} {
+		if gowebdav.IsErrCode(err, code) {
+			return code, true
+		}
+	}
+	return 0, false
+}
+
 // IsRateLimited checks if an error is a 429 Too Many Requests.
 func IsRateLimited(err error) bool {
 	var httpErr *HTTPError
@@ -429,6 +447,9 @@ func (w *WebDAVBackend) ListQuery(_ context.Context, prefix string) ([]FileEntry
 }
 
 func (w *WebDAVBackend) Upload(ctx context.Context, filename string, data io.Reader) error {
+	// ctx is ignored by design: the drain budget bounds queued pushes, and the
+	// HTTP call itself is bounded by the client request timeout. The Backend
+	// contract still requires the parameter for ctx-aware backends.
 	_ = ctx
 	full, err := w.fullPath(filename)
 	if err != nil {
@@ -447,8 +468,8 @@ func (w *WebDAVBackend) Upload(ctx context.Context, filename string, data io.Rea
 
 	err = w.client.Write(full, content, 0644)
 	if err != nil {
-		if gowebdav.IsErrCode(err, http.StatusTooManyRequests) {
-			return &HTTPError{Code: http.StatusTooManyRequests, Err: err}
+		if code, ok := httpErrClass(err); ok {
+			return &HTTPError{Code: code, Err: err}
 		}
 		return fmt.Errorf("upload error: %w", err)
 	}
@@ -479,9 +500,10 @@ func (w *WebDAVBackend) Download(ctx context.Context, filename string) (io.ReadC
 	if err != nil {
 		return nil, fmt.Errorf("download error: %w", err)
 	}
-	if resp.StatusCode == http.StatusTooManyRequests {
+	if code := resp.StatusCode; code == http.StatusTooManyRequests ||
+		code == http.StatusUnauthorized || code == http.StatusForbidden {
 		resp.Body.Close()
-		return nil, &HTTPError{Code: http.StatusTooManyRequests, Err: fmt.Errorf("HTTP %d", resp.StatusCode)}
+		return nil, &HTTPError{Code: code, Err: fmt.Errorf("HTTP %d", code)}
 	}
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()

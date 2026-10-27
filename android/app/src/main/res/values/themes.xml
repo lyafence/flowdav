@@ -2,14 +2,16 @@
 <resources>
     <style name="Theme.Flowdav" parent="Theme.Material3.DayNight.NoActionBar" />
 
-    <style name="ShapeAppearanceOverlay.Card" parent="">
-        <item name="cornerFamily">rounded</item>
-        <item name="cornerSize">12dp</item>
+    <style name="Widget.Flowdav.IconButton" parent="">
+        <item name="android:layout_width">@dimen/icon_button_size</item>
+        <item name="android:layout_height">@dimen/icon_button_size</item>
+        <item name="android:background">?attr/selectableItemBackgroundBorderless</item>
+        <item name="android:padding">@dimen/icon_button_padding</item>
+        <item name="android:scaleType">centerInside</item>
+        <item name="android:tint">?attr/colorOnSurfaceVariant</item>
     </style>
 
-    <style name="ShapeAppearanceOverlay.Button" parent="">
-        <item name="cornerFamily">rounded</item>
-        <item name="cornerSize">16dp</item>
+    <style name="TextAppearance.Flowdav.SectionHeader" parent="TextAppearance.Material3.LabelLarge">
+        <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
     </style>
-
 </resources>

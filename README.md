@@ -2,7 +2,7 @@
 
 A lightweight SOCKS5 proxy that uses WebDAV as a transport layer. Route your traffic through your home internet connection when connected to public Wi-Fi (cafe, hotel, etc.) by using WebDAV storage as an intermediary.
 
-![Go](https://img.shields.io/badge/go-1.27.2-blue)
+![Go](https://img.shields.io/badge/go-1.27.3-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Release](https://img.shields.io/github/v/release/lyafence/flowdav)
 
@@ -16,6 +16,8 @@ A lightweight SOCKS5 proxy that uses WebDAV as a transport layer. Route your tra
 - **Multi-account rotation** — random session assignment, round-robin upload fallback across independent backends
 - **DNS leak protection** — raw resolver on the client side, UDP explicitly blocked
 - **Config encryption** — PBKDF2 + AES-256-GCM, secrets never stored in plaintext
+- **QR config import** — `-e --qr` prints a scannable code; the Android app imports it in one tap (no secrets in plaintext, only the encrypted config)
+- **Connection test** — the Android app can verify the tunnel end to end. Its final (informational) stage probes a shuffled list of public IP-echo services *through the tunnel* and shows the server's exit IP; the deterministic verdict comes from the storage round-trip
 
 ## How It Works
 
@@ -30,6 +32,8 @@ A lightweight SOCKS5 proxy that uses WebDAV as a transport layer. Route your tra
 4. Server polls WebDAV, downloads and decrypts envelopes
 5. Server opens real TCP connections to the destination
 6. Response flows back through WebDAV to the client
+
+> **One keypair serves exactly one client.** Client and server must share the same `enc_key`/`hmac_key`, but only **one** client may be active per keypair + WebDAV `base_path`. A second client with the same keys would race the first for the server's response files and consume/destroy them (the client deletes every response it downloads, including packets for sessions it does not own). To protect several devices, run a separate client/server pair per device — each with its own keypair and an isolated `base_path`.
 
 ## Disclaimer
 
@@ -115,7 +119,13 @@ Replace the single backend with a `backends` array for account rotation:
 ./flowdav -e config.json              # encrypt
 ./flowdav -c config.json.enc          # run encrypted (prompts for password)
 FLOWDAV_PASSWORD=secret ./flowdav -c config.json.enc  # or via env
+
+./flowdav --qr -e config.json             # encrypt + print a QR code for the Android app
+./flowdav --remove-source -e config.json  # delete the plaintext after encrypting
+./flowdav -g -e --qr -p secret config.json  # generate, encrypt and show the QR in one go
 ```
+
+Scanning the QR with the Android app imports the encrypted config directly; the password is requested when you start the proxy.
 
 ## Docker
 
@@ -213,17 +223,26 @@ Both the client and server support an optional HTTP health endpoint. Set `health
 
 ## Troubleshooting
 
-- **First request may take a few seconds** — the client polls WebDAV every 500ms; idle backoff can increase latency on cold start.
+- **First request may take a few seconds** — the client polls WebDAV every 500ms; idle backoff can increase latency on cold start. Run **Test connection** to wake the server: the second run is fast.
 - **HTTPS sites fail but HTTP works** — check DNS resolution from your server machine. The server resolves destination hostnames.
 - **"Failed to load config"** — if the file is encrypted, use `-p` flag or `FLOWDAV_PASSWORD` env var. If not, check the JSON syntax.
 - **Connection resets during active browsing** — enable debug logging with `-l debug` to see session-level errors.
+- **Android: proxy stops in the background** — allow the app to ignore battery optimizations (prompted on first start) and enable "Start on boot" in the Advanced section.
 
 ## Android
 
 Download `flowdav-android.apk` from [GitHub Releases](https://github.com/lyafence/flowdav/releases).
 
-The app accepts an encrypted config file (`.json.enc`) via file picker, or manual WebDAV and encryption key fields.
-SOCKS5 proxy runs on the configured address (default `127.0.0.1:1080`).
+The app accepts a config in three ways: scan a QR code (`./flowdav --qr -e config.json`), import from clipboard or another app's Share menu, or pick a file (`.json` / `.json.enc`) — manual WebDAV and key fields are also available.
+
+Highlights:
+
+- **Quick Settings tile** — start/stop the proxy with one tap from the notification shade.
+- **Keep-alive** — foreground service with bounded automatic reconnect, plus optional battery-optimization exemption and **Start on boot** (Advanced section).
+- **Test connection** — one tap quickly verifies the local proxy and a WebDAV storage round-trip, then proves the full path through the tunnel (client → WebDAV → server → internet) and shows the server's exit IP. The end-to-end check may take up to the probe timeout; on a cold tunnel the server may be in idle backoff, so a second tap usually completes it.
+- **How to use** — tap the ⓘ next to the status to get the setup steps; then copy the proxy address from the dashboard (tap it) and paste it into an app that supports SOCKS5.
+
+When a config is encrypted, the master password is stored (Keystore-encrypted) only after a successful start; **Forget saved password** clears it.
 
 ## Release Archives
 

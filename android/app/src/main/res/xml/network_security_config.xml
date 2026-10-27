@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Covers the Android network stack only; the Go stack (gomobile/WebDAV) is
+     governed by transport-layer checks (HTTPS required for non-local URLs). -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false" />
 </network-security-config>

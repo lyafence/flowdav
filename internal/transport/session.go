@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"io"
 	"sync"
 	"time"
 
@@ -73,22 +74,31 @@ type Session struct {
 }
 
 // ReassignBackend picks a new random backend index different from the
-// current one. Returns false if <2 backends.
+// current one. Returns false if there are fewer than 2 backends or a
+// distinct index could not be drawn within a bounded number of attempts
+// (crypto/rand failure) — never loops forever.
 func (s *Session) ReassignBackend(numBackends int) bool {
 	if numBackends < 2 {
 		return false
 	}
-	// First draw happens before the lock: crypto/rand may block briefly
-	// (getrandom at early boot). Compare and assign stay under one mutex.
-	newIdx := storage.CryptoRandInt(numBackends)
 	s.mu.Lock()
 	current := int(s.BackendIdx)
-	for newIdx == current {
-		newIdx = storage.CryptoRandInt(numBackends)
-	}
-	s.BackendIdx = uint8(newIdx)
 	s.mu.Unlock()
-	return true
+
+	// Draws happen outside the lock: crypto/rand may block briefly
+	// (getrandom at early boot).
+	for attempt := 0; attempt < 8; attempt++ {
+		newIdx := storage.CryptoRandInt(numBackends)
+		if newIdx == current {
+			continue
+		}
+		s.mu.Lock()
+		s.BackendIdx = uint8(newIdx)
+		s.mu.Unlock()
+		return true
+	}
+	logger.Warn("Session %s: could not draw a new backend index, keeping %d", s.ID, current)
+	return false
 }
 
 func NewSession(id string) *Session {
@@ -123,38 +133,46 @@ func (s *Session) TxBufLen() int {
 	return len(s.txBuf)
 }
 
+// EnqueueTx is a best-effort wrapper around EnqueueTxCtx for callers that
+// cannot act on the error (session-creation pings, benchmarks, tests).
 func (s *Session) EnqueueTx(ctx context.Context, data []byte) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	s.EnqueueTxCtx(ctx, data)
+	_ = s.EnqueueTxCtx(ctx, data)
 }
 
-func (s *Session) EnqueueTxCtx(ctx context.Context, data []byte) {
+// EnqueueTxCtx appends data to the session transmit buffer, blocking while
+// the buffer is over the backpressure limit. It returns context.Canceled when
+// ctx is canceled while waiting and io.ErrClosedPipe when the session is
+// closed — callers forwarding real traffic must propagate the error, because
+// reporting success after a silent drop makes the peer believe the bytes
+// were delivered.
+func (s *Session) EnqueueTxCtx(ctx context.Context, data []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	// Backpressure: block when txBuf exceeds 2MB
 	for (len(s.txBuf) > 2*1024*1024 || len(s.txBuf)+len(data) > 2*1024*1024) && !s.closed {
-		if ctx.Err() != nil {
-			return
+		if err := ctx.Err(); err != nil {
+			return err
 		}
 		waitCh := s.txWait
 		s.mu.Unlock()
 		select {
 		case <-ctx.Done():
 			s.mu.Lock()
-			return
+			return ctx.Err()
 		case <-waitCh:
 		}
 		s.mu.Lock()
-		if ctx.Err() != nil {
-			return
+		if err := ctx.Err(); err != nil {
+			return err
 		}
 	}
 
 	if s.closed {
-		return
+		return io.ErrClosedPipe
 	}
 
 	s.txBuf = append(s.txBuf, data...)
@@ -162,11 +180,29 @@ func (s *Session) EnqueueTxCtx(ctx context.Context, data []byte) {
 	if s.notifyActivity != nil {
 		s.notifyActivity()
 	}
+	return nil
 }
 
-// ExtractTxBatch atomically reads and clears the tx buffer under lock.
-// Returns the buffered data, sequence number, close flag, and whether
-// there is anything to send.
+// maxPayloadChunk bounds a single envelope payload so its encoded form fits
+// within safeUploadSize(), including the envelope header, session ID, target
+// address and crypto wrapper (nonce, GCM tag, HMAC, length prefix).
+func (s *Session) maxPayloadChunk() int {
+	margin := 1024 + len(s.ID) + len(s.TargetAddr)
+	m := safeUploadSize() - margin
+	if m < 1024 {
+		m = 1024
+	}
+	return m
+}
+
+// ExtractTxBatch atomically reads and clears (up to one chunk of) the tx
+// buffer under lock. Returns the buffered data, sequence number, close flag,
+// and whether there is anything to send.
+//
+// Payloads larger than maxPayloadChunk() are split across multiple envelopes
+// (multiple sequence numbers) to keep every upload within safeUploadSize();
+// Close is only set on the final chunk so the receiver does not tear down the
+// session while payload chunks are still pending.
 func (s *Session) ExtractTxBatch(isClient bool) (payload []byte, seq uint64, closed bool, ok bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -180,11 +216,17 @@ func (s *Session) ExtractTxBatch(isClient bool) (payload []byte, seq uint64, clo
 		return nil, 0, false, false
 	}
 
-	payload = s.txBuf
-	s.txBuf = nil
+	maxChunk := s.maxPayloadChunk()
+	if len(s.txBuf) > maxChunk {
+		payload = s.txBuf[:maxChunk]
+		s.txBuf = s.txBuf[maxChunk:]
+	} else {
+		payload = s.txBuf
+		s.txBuf = nil
+	}
 	seq = s.txSeq
 	s.txSeq++
-	closed = s.closed
+	closed = s.closed && len(s.txBuf) == 0
 	return payload, seq, closed, true
 }
 

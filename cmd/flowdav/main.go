@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -16,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mdp/qrterminal/v4"
 	"github.com/things-go/go-socks5"
 	"golang.org/x/term"
 
@@ -32,7 +34,7 @@ func main() {
 	os.Args = append([]string{os.Args[0]}, cleanArgs...)
 
 	var clientPath, serverPath string
-	var genMode, encryptMode bool
+	var genMode, encryptMode, removeSource, qrMode bool
 	var showVersion bool
 	var logLevel string
 
@@ -44,6 +46,8 @@ func main() {
 	flag.BoolVar(&genMode, "gen", false, "")
 	flag.BoolVar(&encryptMode, "e", false, "Encrypt config file")
 	flag.BoolVar(&encryptMode, "encrypt", false, "")
+	flag.BoolVar(&removeSource, "remove-source", false, "Delete the plaintext config after -e encryption")
+	flag.BoolVar(&qrMode, "qr", false, "Print a QR code of the encrypted config (with -e)")
 	flag.BoolVar(&showVersion, "v", false, "Show version")
 	flag.BoolVar(&showVersion, "version", false, "")
 	flag.StringVar(&logLevel, "l", "", "Log level (debug|info|warn|error)")
@@ -57,7 +61,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  -g, --gen   <path>      Generate config interactively\n")
 		fmt.Fprintf(os.Stderr, "  -g -e <path>            Generate + encrypt\n\n")
 		fmt.Fprintf(os.Stderr, "Flags:\n")
-		fmt.Fprintf(os.Stderr, "  -p, --password [value]  Master password (omit for prompt)\n")
+		fmt.Fprintf(os.Stderr, "  -p, --password [value]  Master password (omit for prompt;\n")
+		fmt.Fprintf(os.Stderr, "                          use --password=<value> if it starts with '-')\n")
+		fmt.Fprintf(os.Stderr, "      --remove-source     Delete the plaintext config after -e encryption\n")
+		fmt.Fprintf(os.Stderr, "      --qr               Print a QR code of the encrypted config (-e)\n")
 		fmt.Fprintf(os.Stderr, "  -l, --log <level>       Log level (debug|info|warn|error)\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version           Show version\n")
 	}
@@ -95,7 +102,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "error: -g -e requires a config path")
 			os.Exit(1)
 		}
-		runGenAndEncrypt(path, password)
+		runGenAndEncrypt(path, password, qrMode)
 		return
 	}
 
@@ -110,7 +117,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "error: -e requires a config path")
 			os.Exit(1)
 		}
-		runEncrypt(path, password)
+		runEncrypt(path, password, removeSource, qrMode)
 	case genMode:
 		path := flag.Arg(0)
 		if path == "" {
@@ -382,7 +389,15 @@ func handleServerConn(ctx context.Context, wg *sync.WaitGroup, sessionID, target
 			n, err := conn.Read(buf)
 			if n > 0 {
 				logger.Debug("Session %s: read %d bytes from target", sessionID, n)
-				session.EnqueueTx(ctx, buf[:n])
+				if enqErr := session.EnqueueTxCtx(ctx, buf[:n]); enqErr != nil {
+					// Data from the target could not be queued (session
+					// closed or shutdown): stop reading instead of
+					// silently discarding — the peer is gone anyway.
+					logger.Info("Session %s: enqueue failed: %v", sessionID, enqErr)
+					errCh <- enqErr
+					closeConn()
+					return
+				}
 			}
 			if err != nil {
 				select {
@@ -447,7 +462,7 @@ func handleServerConn(ctx context.Context, wg *sync.WaitGroup, sessionID, target
 	closeConn()
 }
 
-func runEncrypt(configPath, password string) {
+func runEncrypt(configPath, password string, removeSource, qrMode bool) {
 	if password == "" {
 		fmt.Print("Master password: ")
 		pass, err := term.ReadPassword(int(os.Stdin.Fd()))
@@ -485,6 +500,34 @@ func runEncrypt(configPath, password string) {
 		log.Fatalf("failed to write %s: %v", encPath, err)
 	}
 	fmt.Printf("Encrypted: %s\n", encPath)
+	if removeSource {
+		if err := os.Remove(configPath); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to remove plaintext %s: %v\n", configPath, err)
+		} else {
+			fmt.Printf("Removed plaintext: %s\n", configPath)
+		}
+	}
+	if qrMode {
+		printImportQR(data)
+	}
+}
+
+// importQRURI encodes an encrypted config as a flowdav:// import URI for the
+// Android app (base64url without padding, matching android.util.Base64.URL_SAFE).
+func importQRURI(encrypted []byte) string {
+	return "flowdav://import?data=" + base64.RawURLEncoding.EncodeToString(encrypted)
+}
+
+// printImportQR renders the import URI as a terminal QR code (half blocks).
+func printImportQR(encrypted []byte) {
+	fmt.Println()
+	fmt.Println("Scan this QR code with the flowdav Android app to import the encrypted config:")
+	qrterminal.GenerateWithConfig(importQRURI(encrypted), qrterminal.Config{
+		HalfBlocks: true,
+		Level:      qrterminal.L,
+		Writer:     os.Stdout,
+	})
+	fmt.Println()
 }
 
 // writeFile0600 writes data with 0600 permissions. os.WriteFile only applies
@@ -504,7 +547,7 @@ func runGen(configPath string) {
 	fmt.Printf("Generated: %s\n", configPath)
 }
 
-func runGenAndEncrypt(configPath, password string) {
+func runGenAndEncrypt(configPath, password string, qrMode bool) {
 	if password == "" {
 		fmt.Print("Master password: ")
 		pass, err := term.ReadPassword(int(os.Stdin.Fd()))
@@ -528,4 +571,7 @@ func runGenAndEncrypt(configPath, password string) {
 		log.Fatalf("failed to write %s: %v", encPath, err)
 	}
 	fmt.Printf("Generated and encrypted: %s\n", encPath)
+	if qrMode {
+		printImportQR(out)
+	}
 }

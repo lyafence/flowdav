@@ -8,6 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -44,6 +47,13 @@ func Version() string {
 	return version
 }
 
+// IsEncryptedConfig reports whether data is an encrypted config rather than
+// JSON text. Delegates to config.IsEncryptedConfig so the Android UI and the
+// engine share one rule.
+func IsEncryptedConfig(data []byte) bool {
+	return config.IsEncryptedConfig(data)
+}
+
 func logEvent(format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
 	logger.Info("%s", msg)
@@ -58,6 +68,20 @@ func logEvent(format string, args ...interface{}) {
 	}
 	logMu.Unlock()
 }
+
+// redactURL strips any userinfo (login/token) from raw before it reaches
+// user-visible logs. Non-URL values are returned unchanged.
+func redactURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.User == nil {
+		return raw
+	}
+	u.User = url.User("redacted")
+	return u.String()
+}
+
+// maxLogBytes caps the log payload returned to the app UI.
+const maxLogBytes = 1500
 
 func getLogs() string {
 	logMu.Lock()
@@ -75,13 +99,16 @@ func getLogs() string {
 		if idx < 0 {
 			idx += len(buf)
 		}
-		line := buf[idx]
-		if len(out)+len(line)+1 > 1500 {
-			out = append(out, "..."...)
-			break
-		}
-		out = append(out, line...)
+		out = append(out, buf[idx]...)
 		out = append(out, '\n')
+	}
+	if len(out) > maxLogBytes {
+		// Budget exceeded: keep the newest lines (truncate the old side).
+		tail := out[len(out)-maxLogBytes:]
+		if nl := strings.IndexByte(string(tail), '\n'); nl >= 0 && nl+1 < len(tail) {
+			tail = tail[nl+1:]
+		}
+		return "...\n" + string(tail)
 	}
 	return string(out)
 }
@@ -182,11 +209,11 @@ func parseConfigJSON(data []byte) (*config.AppConfig, error) {
 
 // StartProxyFromData parses config from raw bytes and starts the proxy.
 func StartProxyFromData(data []byte, password, listenAddr string) *StartResult {
-	logger.Info("StartProxyFromData: len=%d, encrypted=%t, listen=%q", len(data), len(data) > 0 && data[0] != '{', listenAddr)
+	logger.Info("StartProxyFromData: len=%d, encrypted=%t, listen=%q", len(data), config.IsEncryptedConfig(data), listenAddr)
 
 	var appCfg *config.AppConfig
 
-	if len(data) > 0 && data[0] == '{' {
+	if !config.IsEncryptedConfig(data) {
 		cfg, err := parseConfigJSON(data)
 		if err != nil {
 			return errResult(ErrInvalidConfig, err)
@@ -221,7 +248,7 @@ func StartProxyFromData(data []byte, password, listenAddr string) *StartResult {
 
 // StartProxyManual creates a proxy from explicit WebDAV and crypto parameters.
 func StartProxyManual(webdavURL, webdavLogin, webdavToken, encKeyBase64, hmacKeyBase64, listenAddr string) *StartResult {
-	logger.Info("StartProxyManual: url=%q, listen=%q", webdavURL, listenAddr)
+	logger.Info("StartProxyManual: url=%q, listen=%q", redactURL(webdavURL), listenAddr)
 
 	encKey, err := decodeKey(encKeyBase64, "enc_key")
 	if err != nil {
@@ -253,13 +280,85 @@ func StartProxyManual(webdavURL, webdavLogin, webdavToken, encKeyBase64, hmacKey
 	return okResult()
 }
 
-// SetSocks5Auth sets SOCKS5 authentication credentials for the next manual proxy.
-// Must be called before or immediately after StartProxyManual.
+// SetSocks5Auth sets SOCKS5 authentication credentials for the next proxy
+// start. Must be called before StartProxyManual/StartProxyFromData. A partial
+// pair (only one of user/pass) is rejected — otherwise the proxy could
+// silently fall back to NoAuth. Pending credentials are cleared on stop.
 func SetSocks5Auth(user, pass string) {
 	mu.Lock()
+	defer mu.Unlock()
+	if (user == "") != (pass == "") {
+		logger.Error("SetSocks5Auth: partial SOCKS5 credential pair rejected")
+		pendingSocks5User = ""
+		pendingSocks5Pass = ""
+		return
+	}
 	pendingSocks5User = user
 	pendingSocks5Pass = pass
+}
+
+// StorageTestResult reports the outcome of the storage round-trip self-test.
+// Code is a stable, machine-readable value; Message is developer-facing and
+// must never be shown to the user.
+type StorageTestResult struct {
+	Success bool
+	Code    string
+	Message string
+}
+
+const (
+	storageTestOK      = "ok"
+	storageTestNotRun  = "not_running"
+	storageTestUnreach = "storage_unreachable"
+	storageTestAuth    = "storage_auth"
+)
+
+// TestStorage runs a WebDAV upload/readback/delete round-trip through the
+// running proxy's storage backend. It verifies URL, credentials, TLS and
+// permissions without involving the remote flowdav server, so the outcome is
+// independent of poll tuning (max_poll_ms and friends).
+func TestStorage() *StorageTestResult {
+	mu.Lock()
+	engine := eng
 	mu.Unlock()
+	if engine == nil {
+		return &StorageTestResult{Success: false, Code: storageTestNotRun, Message: "proxy is not running"}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	if err := engine.StorageRoundTrip(ctx); err != nil {
+		code := storageTestUnreach
+		var he *storage.HTTPError
+		if errors.As(err, &he) && (he.Code == http.StatusUnauthorized || he.Code == http.StatusForbidden) {
+			code = storageTestAuth
+		}
+		logger.Error("Storage self-test failed [%s]: %v", code, err)
+		return &StorageTestResult{Success: false, Code: code, Message: err.Error()}
+	}
+	return &StorageTestResult{Success: true, Code: storageTestOK}
+}
+
+// ProbeTimeoutMs bounds the whole end-to-end probe. A cold server may only
+// poll after its idle backoff (max_poll_ms, 60s by default), so the budget
+// covers one full poll cycle plus margin; the caller splits it into short
+// attempts. Falls back to the default 60s poll when no config is loaded.
+func ProbeTimeoutMs() int32 {
+	mu.Lock()
+	poll := 60 * time.Second
+	if lastCfg != nil && lastCfg.MaxPollMs > 0 {
+		poll = time.Duration(lastCfg.MaxPollMs) * time.Millisecond
+	}
+	mu.Unlock()
+	ms := poll.Milliseconds() + 12000
+	if ms < 20000 {
+		ms = 20000
+	}
+	if ms > 90000 {
+		ms = 90000
+	}
+	return int32(ms)
 }
 
 func startProxy(appCfg *config.AppConfig, listenAddr string) error {
@@ -273,12 +372,18 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 	}
 
 	logger.SetLevel(appCfg.LogLevel)
-	logEvent("Starting proxy on %s (WebDAV: %s)", listenAddr, appCfg.WebDAV.URL)
+	logEvent("Starting proxy on %s (WebDAV: %s)", listenAddr, redactURL(appCfg.WebDAV.URL))
 	if pendingSocks5User != "" {
 		appCfg.SOCKS5User = pendingSocks5User
 		appCfg.SOCKS5Pass = pendingSocks5Pass
 		pendingSocks5User = ""
 		pendingSocks5Pass = ""
+	}
+	// Re-validate the effective config: pending credentials are overlaid
+	// after the callers' validation, so any bad overlay must be caught here
+	// before the proxy starts.
+	if err := config.ValidateAppConfig(appCfg); err != nil {
+		return coded(ErrInvalidConfig, err)
 	}
 
 	backend, multiBackend, err := storage.NewBackendFromConfig(appCfg.WebDAV, appCfg.TLSFingerprint)
@@ -368,7 +473,13 @@ func StopProxy() {
 	stopLocked()
 }
 
+// stopDrainTimeout bounds the engine drain during StopProxy, mirroring the
+// CLI's graceful shutdown (cancel → Drain → Stop) on a mobile budget.
+const stopDrainTimeout = 2 * time.Second
+
 func stopLocked() {
+	pendingSocks5User = ""
+	pendingSocks5Pass = ""
 	if eng == nil {
 		return
 	}
@@ -376,11 +487,19 @@ func stopLocked() {
 		socksLnr.Close()
 		socksLnr = nil
 	}
-	eng.Stop()
+	// CLI shutdown order: cancel first (worker lifetime binds to stopCh),
+	// then Drain extracts the txBuf tail, then Stop. Without Drain the tail
+	// is silently dropped.
 	if cancel != nil {
 		cancel()
 		cancel = nil
 	}
+	drainCtx, cancelDrain := context.WithTimeout(context.Background(), stopDrainTimeout)
+	defer cancelDrain()
+	if derr := eng.Drain(drainCtx); derr != nil {
+		logEvent("Drain incomplete: %v", derr)
+	}
+	eng.Stop()
 	if lastCfg != nil {
 		config.WipeBytes(lastCfg.EncKeyDecoded)
 		config.WipeBytes(lastCfg.HMacKeyDecoded)
@@ -431,6 +550,8 @@ func StopAndError() string {
 		}
 	}
 	stopLocked()
-	logEvent("Proxy stopped (error: %s)", code)
+	if code != "" {
+		logEvent("Proxy stopped (error: %s)", code)
+	}
 	return string(code)
 }

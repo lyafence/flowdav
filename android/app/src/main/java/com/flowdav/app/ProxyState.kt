@@ -4,10 +4,12 @@ data class ProxyState(
     val running: Boolean = false,
     val sessions: Long = 0L,
     val listenAddr: String = "",
+    val webdavUrl: String = "",
     val logs: String = "",
     val error: ErrorKind = ErrorKind.NONE,
     val status: Status = Status.STOPPED,
-    val startedAt: Long = 0L
+    val startedAt: Long = 0L,
+    val passwordSaved: Boolean = false
 ) {
     enum class Status { STOPPED, CONNECTING, RUNNING, ERROR }
 

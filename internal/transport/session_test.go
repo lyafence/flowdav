@@ -14,7 +14,7 @@ func TestEnqueueTxCtxCancellation(t *testing.T) {
 	cancel()
 
 	// EnqueueTx with canceled context should not block
-	s.EnqueueTxCtx(ctx, []byte("test data"))
+	_ = s.EnqueueTxCtx(ctx, []byte("test data"))
 
 	// Session should not be in a broken state
 	s.mu.Lock()
@@ -129,7 +129,7 @@ func TestEnqueueTxCtxEarlyContextCheck(t *testing.T) {
 	cancel()
 
 	start := time.Now()
-	s.EnqueueTxCtx(ctx, []byte("test"))
+	_ = s.EnqueueTxCtx(ctx, []byte("test"))
 	elapsed := time.Since(start)
 
 	if elapsed > 100*time.Millisecond {
@@ -152,7 +152,7 @@ func TestEnqueueTxCtxCancelDuringBackpressureWait(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		s.EnqueueTxCtx(ctx, []byte("x"))
+		_ = s.EnqueueTxCtx(ctx, []byte("x"))
 		close(done)
 	}()
 
@@ -180,7 +180,7 @@ func TestEnqueueTxCtxWakeupTxUnblocksWriter(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		s.EnqueueTxCtx(context.Background(), []byte("x"))
+		_ = s.EnqueueTxCtx(context.Background(), []byte("x"))
 		close(done)
 	}()
 
@@ -268,6 +268,79 @@ func TestSessionIdleTimeout(t *testing.T) {
 	}
 	if !ok {
 		t.Error("ExtractTxBatch should return ok for closed session")
+	}
+}
+
+// TestExtractTxBatchChunksLargePayload verifies that a payload larger than
+// the chunk limit is split across multiple ordered envelopes, and that the
+// Close flag is only set on the final chunk (otherwise the receiver would
+// tear down the session while payload chunks are still pending).
+func TestExtractTxBatchChunksLargePayload(t *testing.T) {
+	old := MaxMessageSize
+	MaxMessageSize = 1024 * 1024 // safeUploadSize() = 896 KiB
+	t.Cleanup(func() { MaxMessageSize = old })
+
+	s := NewSession("chunk-test")
+	total := 2 * 1024 * 1024
+	s.mu.Lock()
+	s.txBuf = make([]byte, total)
+	s.closed = true
+	s.lastActivity = time.Now() // not idle: close comes from s.closed
+	s.mu.Unlock()
+
+	var got int
+	var wantSeq uint64
+	chunks := 0
+	for {
+		payload, seq, closed, ok := s.ExtractTxBatch(true)
+		if !ok {
+			t.Fatal("ExtractTxBatch stopped before draining txBuf")
+		}
+		if seq != wantSeq {
+			t.Fatalf("sequence gap: got %d, want %d", seq, wantSeq)
+		}
+		wantSeq++
+		if len(payload) > s.maxPayloadChunk() {
+			t.Fatalf("chunk %d exceeds limit: %d > %d", chunks, len(payload), s.maxPayloadChunk())
+		}
+		if !closed && s.TxBufLen() == 0 {
+			t.Fatal("close flag missing on final chunk")
+		}
+		got += len(payload)
+		chunks++
+		if closed {
+			break
+		}
+	}
+	if got != total {
+		t.Fatalf("drained %d bytes, want %d", got, total)
+	}
+	if chunks < 3 {
+		t.Fatalf("expected >=3 chunks for 2x the chunk limit, got %d", chunks)
+	}
+}
+
+// TestReassignBackend verifies backend migration returns false for a single
+// backend and always moves to a different index when several are available.
+func TestReassignBackend(t *testing.T) {
+	s := NewSession("reassign-test")
+	s.BackendIdx = 2
+
+	if s.ReassignBackend(1) {
+		t.Fatal("ReassignBackend(1) must return false")
+	}
+	if s.BackendIdx != 2 {
+		t.Fatalf("single-backend call changed BackendIdx to %d", s.BackendIdx)
+	}
+
+	for i := 0; i < 50; i++ {
+		s.BackendIdx = 0
+		if !s.ReassignBackend(4) {
+			t.Fatal("ReassignBackend(4) failed")
+		}
+		if s.BackendIdx == 0 {
+			t.Fatal("backend index was not changed")
+		}
 	}
 }
 
