@@ -148,7 +148,7 @@ jobs:
 
       - name: Generate checksums
         working-directory: release-assets
-        run: sha256sum *.tar.gz *.apk > SHA256SUMS.txt
+        run: sha256sum -- *.tar.gz *.apk > SHA256SUMS.txt
 
       - name: Create GitHub release
         env:

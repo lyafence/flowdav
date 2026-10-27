@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -100,8 +101,12 @@ type uploadJob struct {
 	data       []byte
 	backendIdx uint8
 	sessions   []*Session // sessions contributing to this mux; used for backend migration on 429
-	numBackend int        // total backends, for ReassignBackend
 }
+
+const (
+	defaultPollInterval    = 500 * time.Millisecond
+	defaultMaxPollInterval = 60 * time.Second
+)
 
 func NewEngine(backend storage.Backend, isClient bool, cryptoCfg *CryptoConfig) *Engine {
 	e := &Engine{
@@ -112,9 +117,9 @@ func NewEngine(backend storage.Backend, isClient bool, cryptoCfg *CryptoConfig) 
 		cryptoCfg:      cryptoCfg,
 		stopCh:         make(chan struct{}),
 		// Default intervals: Poll (RX) and Flush (TX) - safe for cloud rate limits (~1 req/s)
-		pollTicker:      500 * time.Millisecond,
-		minPollInterval: 500 * time.Millisecond,
-		maxPollInterval: 60 * time.Second,
+		pollTicker:      defaultPollInterval,
+		minPollInterval: defaultPollInterval,
+		maxPollInterval: defaultMaxPollInterval,
 		flushTicker:     500 * time.Millisecond,
 		pollActivityCh:  make(chan struct{}, 1),
 		pollJitterMin:   0.25,
@@ -262,18 +267,42 @@ func (e *Engine) Drain(ctx context.Context) error {
 // the once-triplicated setup in main.go/bridge.go so every new config field needs
 // a single edit here instead of three.
 func ApplyConfigToEngine(cfg *config.AppConfig, engine *Engine) {
+	// Reset sticky package-level defaults first: a config without a field must
+	// not inherit values from a previous Android start in the same process.
+	MaxMessageSize = DefaultMaxMessageSize
+	storage.MaxFileSize = DefaultMaxMessageSize
+
+	engine.pollTicker = defaultPollInterval
+	engine.minPollInterval = defaultPollInterval
+	engine.maxPollInterval = defaultMaxPollInterval
+	engine.flushTicker = defaultPollInterval
+	engine.SetMaxSessions(0)
+	engine.SessionIdleTimeout = 0
+	engine.PaddingSize = 0
+	engine.HoldMax = 0
+
 	if cfg.MaxMessageSize > 0 {
 		MaxMessageSize = cfg.MaxMessageSize
 		storage.MaxFileSize = cfg.MaxMessageSize
 	}
+	// RefreshRateMs is the legacy alias for the base poll interval. An explicit
+	// MinPollMs below wins, matching the documented precedence.
 	if cfg.RefreshRateMs > 0 {
 		engine.SetPollRate(cfg.RefreshRateMs)
+		if cfg.MinPollMs == 0 {
+			engine.SetMinPollRate(cfg.RefreshRateMs)
+		}
 	}
 	if cfg.MinPollMs > 0 {
 		engine.SetMinPollRate(cfg.MinPollMs)
 	}
 	if cfg.MaxPollMs > 0 {
 		engine.SetMaxPollRate(cfg.MaxPollMs)
+	}
+	// A base interval above the default ceiling must raise the ceiling;
+	// explicit min > max is rejected by ValidateAppConfig.
+	if engine.maxPollInterval < engine.minPollInterval {
+		engine.maxPollInterval = engine.minPollInterval
 	}
 	if cfg.FlushRateMs > 0 {
 		engine.SetFlushRate(cfg.FlushRateMs)
@@ -410,12 +439,6 @@ func (e *Engine) flushAll(ctx context.Context, gzipWriter *gzip.Writer) {
 		s.wakeupTx()
 	}
 
-	// Count total backends for session migration on 429
-	numBackend := 1
-	if mb, ok := e.backend.(*storage.MultiBackend); ok {
-		numBackend = mb.NumBackends()
-	}
-
 	for key, mux := range muxes {
 		// Split muxed envelopes into chunks that fit within the upload limit
 		// to prevent silent truncation by WebDAV upload limits
@@ -460,7 +483,6 @@ func (e *Engine) flushAll(ctx context.Context, gzipWriter *gzip.Writer) {
 				data:       buf.Bytes(),
 				backendIdx: key.BackendIdx,
 				sessions:   sessList,
-				numBackend: numBackend,
 			}:
 			case <-ctx.Done():
 				return
@@ -742,6 +764,25 @@ func (e *Engine) drainUploadJobs(ctx context.Context) {
 	}
 }
 
+// reassignSession moves a session to a different backend when multiple
+// backends are configured. It is a no-op for single-backend setups and for
+// sessions that have already been removed.
+func (e *Engine) reassignSession(id string) {
+	mb, ok := e.backend.(*storage.MultiBackend)
+	if !ok || mb.NumBackends() < 2 {
+		return
+	}
+	e.sessionMu.RLock()
+	s := e.sessions[id]
+	e.sessionMu.RUnlock()
+	if s == nil {
+		return
+	}
+	if s.ReassignBackend(mb.NumBackends()) {
+		logger.Info("session %s migrated to a different backend", id)
+	}
+}
+
 // processUploadJob uploads a single job, falling back to any healthy backend
 // when the pinned one fails. The payload was already extracted from the
 // session buffer, so dropping it is the last resort.
@@ -771,12 +812,12 @@ func (e *Engine) processUploadJob(ctx context.Context, job uploadJob) {
 		newIdx, fallbackErr := e.backend.UploadAny(ctx, job.filename, bytes.NewReader(job.data))
 		if fallbackErr == nil {
 			logger.Info("upload fallback succeeded %s → backend %d", job.filename, newIdx)
-			if storage.IsRateLimited(err) {
+			if storage.IsRateLimited(err) || errors.Is(err, storage.ErrBackendUnavailable) {
+				// A pinned backend in 429 cooldown or with an open breaker
+				// returns ErrBackendUnavailable, not a raw HTTPError. Migrate
+				// on both signals so a session cannot stay stuck on it.
 				for _, s := range job.sessions {
-					if s.ReassignBackend(job.numBackend) {
-						// Log the target, not the racy session field.
-						logger.Info("session %s migrated to backend %d after 429", s.ID, job.numBackend)
-					}
+					e.reassignSession(s.ID)
 				}
 			}
 			return

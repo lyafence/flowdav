@@ -1,5 +1,6 @@
 #!/bin/sh
-# Generate test config for compose-android (server + client).
+# Generate the host-reachable test config for compose-android (emulator/phone
+# must reach the WebDAV service via the host IP).
 # Usage: scripts/gen-test-configs.sh HOST_IP
 set -eu
 
@@ -23,4 +24,9 @@ cat > configs/flowdav_test.json <<END
   "log_level": "debug",
   "health_port": "127.0.0.1:9190"
 }
+END
+
+# Keep compose env_file in sync; plaintext test stand uses an empty password.
+cat > configs/.env <<END
+FLOWDAV_PASSWORD=
 END

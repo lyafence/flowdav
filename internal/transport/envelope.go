@@ -10,24 +10,24 @@ import (
 // Envelope represents a message exchanged between the client and server.
 type Envelope struct {
 	// SessionID is the unique identifier for the connection (32 hex chars).
-	SessionID string `json:"session_id"`
+	SessionID string
 
 	// Seq is the sequence number for ordering packets.
-	Seq uint64 `json:"seq"`
+	Seq uint64
 
 	// TargetAddr is used by the client on the first sequence to tell the server where to connect.
-	TargetAddr string `json:"target_addr,omitempty"`
+	TargetAddr string
 
 	// Payload contains the actual application data.
-	Payload []byte `json:"payload,omitempty"`
+	Payload []byte
 
 	// Close implies that the sender is closing its write side of the session.
-	Close bool `json:"close,omitempty"`
+	Close bool
 
 	// BackendIdx is the index of the WebDAV backend to use (for multi-backend mode).
 	// On seq=0, the client writes the assigned backend index. The server reads it
 	// and uses the same backend for responses. Range: 0 to numBackends-1.
-	BackendIdx uint8 `json:"backend_idx,omitempty"`
+	BackendIdx uint8
 }
 
 const (

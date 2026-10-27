@@ -96,7 +96,15 @@ openssl rand -base64 32  # hmac_key
 }
 ```
 
-Required: `webdav.url`, `webdav.login`, `webdav.token`, `enc_key`, `hmac_key`. See the [Config Reference](#config-reference) for all optional fields.
+Required: `webdav.url` (or `webdav.backends`), `enc_key`, `hmac_key`. `webdav.login` and `webdav.token` are required only if the WebDAV server needs authentication. See the [Config Reference](#config-reference) for all optional fields.
+
+### Strict config validation
+
+Configs with unknown JSON fields are rejected. This catches typos such as
+`socks5_username` (correct: `socks5_user`) before they can silently disable a setting, but it also means
+extra/legacy keys must be removed when upgrading. The error looks like
+`json: unknown field "socks5_username"`. The same validation runs for `-c`,
+`-s`, and `-e` (before the `.enc` file is written).
 
 ### Multi-backend
 
@@ -141,8 +149,8 @@ docker run --rm -v ./config.json:/app/configs/config.json \
 docker run --rm -v ./config.json:/app/configs/config.json \
   ghcr.io/lyafence/flowdav flowdav -c /app/configs/config.json
 
-# encrypt an existing config
-docker run --rm -v ./config.json:/app/configs/config.json \
+# encrypt an existing config (mount the directory so config.json.enc persists)
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/app/configs" \
   -e FLOWDAV_PASSWORD=secret \
   ghcr.io/lyafence/flowdav flowdav -e /app/configs/config.json
 
@@ -171,11 +179,11 @@ docker run --rm -v ./config.json.enc:/app/configs/config.json.enc \
 | `socks5_user` | string | `""` | ✓ | | SOCKS5 auth username |
 | `socks5_pass` | string | `""` | ✓ | | SOCKS5 auth password |
 | `max_connections` | int | `100` | ✓ | | Max concurrent SOCKS5 conns |
-| `refresh_rate_ms` | int | `500` | ✓ | ✓ | Poll interval |
+| `refresh_rate_ms` | int | `500` | ✓ | ✓ | Legacy base poll interval (alias for `min_poll_ms`; explicit `min_poll_ms` wins) |
 | `min_poll_ms` | int | `500` | ✓ | ✓ | Min poll interval (idle backoff floor) |
-| `max_poll_ms` | int | `60000` | ✓ | ✓ | Max poll jitter ceiling (idle backoff) |
+| `max_poll_ms` | int | `60000` | ✓ | ✓ | Max poll interval (backoff ceiling) |
 | `flush_rate_ms` | int | `500` | ✓ | ✓ | Flush interval |
-| `max_sessions` | int | `0` (∞) | ✓ | ✓ | Max WebDAV sessions |
+| `max_sessions` | int | `0` (∞) | | ✓ | Max concurrent server-side WebDAV sessions (clients use `max_connections`) |
 | `idle_timeout_ms` | int | `10000` | ✓ | ✓ | Session idle timeout (ms); 0 = default 10s |
 | `max_message_size` | int | `16777216` | ✓ | ✓ | Max payload (bytes), capped at 1GB |
 | `tls_fingerprint` | string | `""` (Chrome 133) | ✓ | ✓ | TLS fingerprint profile (`chrome`, `chrome_auto`) |
@@ -225,15 +233,16 @@ Both the client and server support an optional HTTP health endpoint. Set `health
 
 - **First request may take a few seconds** — the client polls WebDAV every 500ms; idle backoff can increase latency on cold start. Run **Test connection** to wake the server: the second run is fast.
 - **HTTPS sites fail but HTTP works** — check DNS resolution from your server machine. The server resolves destination hostnames.
+- **"json: unknown field ..."** — remove the extra/typo key from the config; strict parsing rejects unknown fields for `-c`, `-s`, and `-e`.
 - **"Failed to load config"** — if the file is encrypted, use `-p` flag or `FLOWDAV_PASSWORD` env var. If not, check the JSON syntax.
 - **Connection resets during active browsing** — enable debug logging with `-l debug` to see session-level errors.
 - **Android: proxy stops in the background** — allow the app to ignore battery optimizations (prompted on first start) and enable "Start on boot" in the Advanced section.
 
 ## Android
 
-Download `flowdav-android.apk` from [GitHub Releases](https://github.com/lyafence/flowdav/releases).
+Download `flowdav-android-<tag>.apk` from [GitHub Releases](https://github.com/lyafence/flowdav/releases).
 
-The app accepts a config in three ways: scan a QR code (`./flowdav --qr -e config.json`), import from clipboard or another app's Share menu, or pick a file (`.json` / `.json.enc`) — manual WebDAV and key fields are also available.
+The app accepts a config in three ways: scan a QR code (`./flowdav --qr -e config.json`), import from clipboard or another app's Share menu, or pick a file (`.json` / `.json.enc`) — manual WebDAV and key fields are also available. Manual mode uses an empty `base_path` and default tuning; use a config file/QR for a non-empty `base_path`.
 
 Highlights:
 

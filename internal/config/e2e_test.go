@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -46,8 +47,8 @@ func TestEncryptedConfigEndToEnd(t *testing.T) {
 		FlushRateMs:   500,
 		LogLevel:      "info",
 		HealthPort:    "127.0.0.1:19090",
-		EncKey:        "dGVzdC1rZXktMzItYnl0ZXMtMTIzNDU2Nzg5MDEyMzQ1Njc4OTA=",
-		HMacKey:       "dGVzdC1obWFjLWtleS0zMi1ieXRlcy0xMjM0NTY3ODkwMTIzNDU2Nzg5MA==",
+		EncKey:        base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32)),
+		HMacKey:       base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{2}, 32)),
 	}
 	plaintext, err := json.Marshal(cfg)
 	require.NoError(t, err)
@@ -86,10 +87,13 @@ func TestEncryptedConfigEndToEnd(t *testing.T) {
 		}
 	})
 
-	t.Run("correct password reaches engine initialization", func(t *testing.T) {
+	t.Run("correct password decrypts config and starts server", func(t *testing.T) {
 		out, _ := run("-s", encFile, "-p", password)
-		if !ciFold(out, "start") && !ciFold(out, "poll") && !ciFold(out, "failed") {
-			t.Fatalf("expected engine startup messages, got: %s", out)
+		if !ciFold(out, "starting flowdav server") {
+			t.Fatalf("expected server startup after decryption, got: %s", out)
+		}
+		if ciFold(out, "failed to load config") || ciFold(out, "decrypt") {
+			t.Fatalf("config decryption failed: %s", out)
 		}
 	})
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"io"
 	"runtime/debug"
 	"sync"
@@ -149,6 +150,7 @@ func (p *DownloadWorkerPool) processDownload(ctx context.Context, stopCh <-chan 
 	defer gr.Close()
 
 	var rc io.ReadCloser
+	backendUnavailable := false
 	attempts, err := retryStorage(ctx, stopCh, "download "+job.filename, func() error {
 		var err error
 		rc, err = e.backend.DownloadByIndex(ctx, job.filename, job.backendIdx)
@@ -159,8 +161,9 @@ func (p *DownloadWorkerPool) processDownload(ctx context.Context, stopCh <-chan 
 	}
 	if err != nil {
 		// On 429 rate-limit, try non-indexed download (searches all backends)
-		if storage.IsRateLimited(err) {
-			logger.Info("download 429 %s (backend %d): trying fallback across all backends", job.filename, job.backendIdx)
+		if storage.IsRateLimited(err) || errors.Is(err, storage.ErrBackendUnavailable) {
+			backendUnavailable = true
+			logger.Info("download backend unavailable %s (backend %d): trying fallback across all backends", job.filename, job.backendIdx)
 			if rc != nil {
 				rc.Close()
 			}
@@ -179,11 +182,14 @@ func (p *DownloadWorkerPool) processDownload(ctx context.Context, stopCh <-chan 
 	}
 	defer rc.Close()
 
+	migrateIDs := make(map[string]struct{})
+	var decodeErr error
 	for {
 		var env Envelope
 		if e.cryptoCfg != nil {
 			decodedEnv, err := decodeEnvelopeWithCrypto(rc, e.cryptoCfg, gr)
 			if err != nil {
+				decodeErr = err
 				if err != io.EOF && err != io.ErrUnexpectedEOF {
 					logger.Info("mux crypto decode error %s: %v", job.filename, err)
 				}
@@ -192,11 +198,16 @@ func (p *DownloadWorkerPool) processDownload(ctx context.Context, stopCh <-chan 
 			env = *decodedEnv
 		} else {
 			if err := env.Decode(rc); err != nil {
+				decodeErr = err
 				if err != io.EOF && err != io.ErrUnexpectedEOF {
 					logger.Info("mux decode error %s: %v", job.filename, err)
 				}
 				break
 			}
+		}
+
+		if backendUnavailable {
+			migrateIDs[env.SessionID] = struct{}{}
 		}
 
 		e.closedSessionsMu.Lock()
@@ -251,6 +262,22 @@ func (p *DownloadWorkerPool) processDownload(ctx context.Context, stopCh <-chan 
 			envCopy := env
 			s.ProcessRx(&envCopy)
 		}
+	}
+
+	for id := range migrateIDs {
+		e.reassignSession(id)
+	}
+
+	// A truncated read may be a transient WebDAV/network problem. Keep the
+	// file so the processed-entry TTL can retry it; malformed/foreign files
+	// (auth/format errors) are deleted only after the name filter in
+	// ListQuery has already restricted the set to flowdav payload names.
+	if decodeErr != nil && errors.Is(decodeErr, io.ErrUnexpectedEOF) {
+		logger.Info("download truncated %s: keeping file for retry", job.filename)
+		e.processedMu.Lock()
+		delete(e.processed, job.filename)
+		e.processedMu.Unlock()
+		return
 	}
 
 	if _, err := retryStorage(ctx, stopCh, "delete "+job.filename, func() error {

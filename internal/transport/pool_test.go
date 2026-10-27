@@ -309,7 +309,7 @@ func TestUploadWorkerFallsBackOnNon429Error(t *testing.T) {
 	defer cancel()
 	engine.Start(ctx)
 
-	engine.uploadJobs <- uploadJob{filename: "f.bin", data: []byte("payload"), backendIdx: 0, numBackend: 2}
+	engine.uploadJobs <- uploadJob{filename: "f.bin", data: []byte("payload"), backendIdx: 0}
 
 	deadline := time.Now().Add(5 * time.Second)
 	for {
@@ -380,4 +380,102 @@ func TestPollGCDeletesStaleUnprocessedFile(t *testing.T) {
 		}
 	}
 	t.Error("stale unprocessed file (dead peer) must be GC-deleted")
+}
+
+type rateLimitedOnceBackend struct {
+	mockBackend
+	rateOnce bool
+}
+
+func (b *rateLimitedOnceBackend) Upload(ctx context.Context, name string, r io.Reader) error {
+	if b.rateOnce {
+		b.rateOnce = false
+		return &storage.HTTPError{Code: http.StatusTooManyRequests, Err: errors.New("rate limited")}
+	}
+	return b.mockBackend.Upload(ctx, name, r)
+}
+
+// TestUploadWorkerMigratesSessionAfterCooldown verifies a session is moved off
+// a backend that is already in 429 cooldown (where UploadByIndex returns a
+// generic ErrBackendUnavailable instead of an HTTPError).
+func TestUploadWorkerMigratesSessionAfterCooldown(t *testing.T) {
+	be0 := &rateLimitedOnceBackend{rateOnce: true}
+	be1 := &mockBackend{}
+	multi := storage.NewMultiBackend([]storage.Backend{be0, be1})
+
+	// Trigger a 429 once so backend 0 enters rate-limit cooldown.
+	_ = multi.UploadByIndex(context.Background(), "prime.bin", bytes.NewReader(nil), 0)
+
+	engine := NewEngine(multi, true, nil)
+	session := NewSession("migrate-session")
+	session.BackendIdx = 0
+	engine.sessionMu.Lock()
+	engine.sessions[session.ID] = session
+	engine.sessionMu.Unlock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	engine.Start(ctx)
+	engine.uploadJobs <- uploadJob{filename: "f.bin", data: []byte("payload"), backendIdx: 0, sessions: []*Session{session}}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		session.mu.Lock()
+		idx := session.BackendIdx
+		session.mu.Unlock()
+		if idx != 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			engine.Stop()
+			t.Fatal("session was not migrated off the cooling-down backend")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	engine.Stop()
+}
+
+type downloadRateLimitedBackend struct{ mockBackend }
+
+func (b *downloadRateLimitedBackend) DownloadByIndex(_ context.Context, _ string, _ uint8) (io.ReadCloser, error) {
+	return nil, &storage.HTTPError{Code: http.StatusTooManyRequests, Err: errors.New("rate limited")}
+}
+
+func (b *downloadRateLimitedBackend) Download(_ context.Context, _ string) (io.ReadCloser, error) {
+	return nil, &storage.HTTPError{Code: http.StatusTooManyRequests, Err: errors.New("rate limited")}
+}
+
+type payloadDownloadBackend struct {
+	mockBackend
+	data []byte
+}
+
+func (b *payloadDownloadBackend) Download(_ context.Context, _ string) (io.ReadCloser, error) {
+	return io.NopCloser(bytes.NewReader(b.data)), nil
+}
+
+// TestDownload429MigratesSession verifies a session is moved off a backend
+// after a rate-limited download fallback succeeds on another backend.
+func TestDownload429MigratesSession(t *testing.T) {
+	env := &Envelope{SessionID: "dl-session", Seq: 0, TargetAddr: "example.com:80", Payload: []byte("hello")}
+	payload, err := env.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	be0 := &downloadRateLimitedBackend{}
+	be1 := &payloadDownloadBackend{data: payload}
+	multi := storage.NewMultiBackend([]storage.Backend{be0, be1})
+
+	engine := NewEngine(multi, true, nil)
+	session := NewSession("dl-session")
+	session.BackendIdx = 0
+	engine.sessionMu.Lock()
+	engine.sessions[session.ID] = session
+	engine.sessionMu.Unlock()
+
+	engine.downloadPool.processDownload(context.Background(), engine.stopCh, &downloadJob{filename: "r0123456789abcdef", backendIdx: 0})
+
+	if session.BackendIdx == 0 {
+		t.Fatal("session was not migrated after download 429 fallback")
+	}
 }

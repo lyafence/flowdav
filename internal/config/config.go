@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"strings"
@@ -107,16 +108,17 @@ type AppConfig struct {
 	// HMacKeyDecoded is the decoded HMAC-SHA256 key bytes (populated by Load).
 	HMacKeyDecoded []byte `json:"-"`
 
-	// RefreshRateMs is the polling (RX) interval in milliseconds for the engine.
+	// RefreshRateMs is the legacy polling (RX) interval in milliseconds.
+	// When MinPollMs is not set it is used as the base poll interval.
 	// Lower values = faster response but more API calls. Default 500ms.
 	RefreshRateMs int `json:"refresh_rate_ms,omitempty"`
 
-	// MinPollMs is the minimum polling interval in milliseconds (idle backoff floor).
-	// Default 500ms. Only used when RefreshRateMs is not set.
+	// MinPollMs is the base polling interval in milliseconds (idle backoff floor).
+	// Default 500ms. Takes precedence over RefreshRateMs when both are set.
 	MinPollMs int `json:"min_poll_ms,omitempty"`
 
 	// MaxPollMs is the maximum polling interval in milliseconds (idle backoff ceiling).
-	// Default 60000ms (60s). Only used when RefreshRateMs is not set.
+	// Default 60000ms (60s). Must be >= MinPollMs when both are set.
 	MaxPollMs int `json:"max_poll_ms,omitempty"`
 
 	// FlushRateMs is the gathering (TX) interval in milliseconds for the engine.
@@ -137,7 +139,8 @@ type AppConfig struct {
 	// Default 100 if not specified.
 	MaxConnections int `json:"max_connections,omitempty"`
 
-	// MaxSessions limits concurrent WebDAV sessions. 0 = unlimited (default).
+	// MaxSessions limits concurrent server-side WebDAV sessions.
+	// 0 = unlimited (default). Clients are bounded by MaxConnections instead.
 	MaxSessions int `json:"max_sessions,omitempty"`
 
 	// MaxMessageSize limits the maximum envelope payload size in bytes.
@@ -254,6 +257,14 @@ func ValidateAppConfig(cfg *AppConfig) error {
 		return fmt.Errorf("max_message_size must be at most %d (1GB), got %d", MaxMaxMessageSize, cfg.MaxMessageSize)
 	}
 
+	// Validate poll intervals (if set).
+	if cfg.RefreshRateMs < 0 || cfg.MinPollMs < 0 || cfg.MaxPollMs < 0 {
+		return fmt.Errorf("poll intervals must not be negative")
+	}
+	if cfg.MinPollMs > 0 && cfg.MaxPollMs > 0 && cfg.MinPollMs > cfg.MaxPollMs {
+		return fmt.Errorf("min_poll_ms (%d) must not exceed max_poll_ms (%d)", cfg.MinPollMs, cfg.MaxPollMs)
+	}
+
 	// Validate LogLevel (if set)
 	if cfg.LogLevel != "" {
 		switch cfg.LogLevel {
@@ -305,15 +316,37 @@ func Load(path string) (*AppConfig, error) {
 		return nil, ErrEncryptedConfig
 	}
 
+	return ParseAppConfig(b)
+}
+
+// ParseAppConfig decodes and validates a plaintext config. Unknown fields are
+// rejected so a typo (for example socks5_username) cannot silently disable
+// authentication or another safety setting.
+func ParseAppConfig(data []byte) (*AppConfig, error) {
 	var cfg AppConfig
-	if err := json.Unmarshal(trimLeftWhitespace(b), &cfg); err != nil {
+	if err := decodeStrictJSON(trimLeftWhitespace(data), &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config JSON: %w", err)
 	}
-
 	if err := ValidateAppConfig(&cfg); err != nil {
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+func decodeStrictJSON(data []byte, v any) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(v); err != nil {
+		return err
+	}
+	var extra any
+	if err := dec.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return errors.New("unexpected trailing JSON data")
+		}
+		return err
+	}
+	return nil
 }
 
 // LoadEncrypted reads and decrypts an encrypted config file.
@@ -330,14 +363,7 @@ func LoadEncrypted(path, password string) (*AppConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	var cfg AppConfig
-	if err := json.Unmarshal(plaintext, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse decrypted config JSON: %w", err)
-	}
-	if err := ValidateAppConfig(&cfg); err != nil {
-		return nil, err
-	}
-	return &cfg, nil
+	return ParseAppConfig(plaintext)
 }
 
 // LoadConfig handles config loading with encrypted fallback and

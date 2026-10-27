@@ -57,6 +57,9 @@ In docker-compose, `HEALTHCHECK` is configured for all four services (`flowdav-s
 ```bash
 make android-apk     # → bin/flowdav-android.apk
 adb install -r bin/flowdav-android.apk
+
+# With several connected devices/emulators:
+ANDROID_SERIAL=emulator-5554 make android-deploy
 ```
 
 Requires: Android SDK + NDK + gomobile. Run `make android-init` to set up.
@@ -81,4 +84,4 @@ Requires: Android SDK + NDK + gomobile. Run `make android-init` to set up.
 - Imports: stdlib → third-party → internal, blank-line separated.
 - camelCase, no getters, unexported by default.
 - Errors always checked and wrapped.
-- No global state. Explicit `sync.Mutex`/`Map`/`Once`.
+- No undocumented global state. See the documented exceptions in AGENTS.md. Use explicit `sync.Mutex`/`Map`/`Once`.

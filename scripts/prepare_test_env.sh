@@ -6,12 +6,12 @@
 #   ./scripts/prepare_test_env.sh --encrypted               # encrypted .enc
 #   ./scripts/prepare_test_env.sh --encrypted --password X
 #
-# Generates configs in configs/:
+# Generates configs in configs/ using compose service names (container DNS).
 #   flowdav_test.json       — single-backend (server + client)
 #   flowdav_test_multi.json — multi-backend  (server + client)
 #
-# With --encrypted: overwrites .json with encrypted content and
-# writes .env file with ENC_PASS for docker-compose to pick up.
+# Writes configs/.env with FLOWDAV_PASSWORD (empty for plaintext) so
+# compose.yaml can load it via env_file.
 
 set -euo pipefail
 
@@ -118,9 +118,7 @@ for f in flowdav_test flowdav_test_multi; do
     echo "  $f.json"
 done
 
-if $ENCRYPTED; then
-    cat > "$CONFIG_DIR/.env" <<EOF
+cat > "$CONFIG_DIR/.env" <<EOF
 FLOWDAV_PASSWORD=${ENC_PASS}
 EOF
-    echo "  .env (with FLOWDAV_PASSWORD)"
-fi
+echo "  .env (FLOWDAV_PASSWORD set)"

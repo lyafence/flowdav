@@ -48,8 +48,10 @@ type Session struct {
 	lastActivity time.Time
 	closed       bool
 	rxClosed     bool // Safely tracks if RxChan was successfully closed
-	rxOnce       sync.Once
-	rxDone       chan struct{} // Closed alongside RxChan; select on this in ProcessRx to prevent send on closed channel
+	rxDoneOnce   sync.Once
+	rxChanOnce   sync.Once
+	rxSendMu     sync.RWMutex  // readers of the RX send path; Close takes write lock
+	rxDone       chan struct{} // Closed before RxChan; select on this to stop senders
 	TargetAddr   string
 
 	// Backpressure: blocked when txBuf is too large
@@ -120,11 +122,18 @@ func (s *Session) Close() {
 	s.closed = true
 	s.rxClosed = true
 	s.mu.Unlock()
-	s.rxOnce.Do(func() {
-		close(s.RxChan)
-		close(s.rxDone)
-	})
+	s.closeRx()
 	s.wakeupTx()
+}
+
+// closeRx closes rxDone first to wake blocked senders, then waits for any
+// in-flight ProcessRx send before closing RxChan. This prevents a send on a
+// closed channel without holding the session mutex during a blocking send.
+func (s *Session) closeRx() {
+	s.rxDoneOnce.Do(func() { close(s.rxDone) })
+	s.rxSendMu.Lock()
+	s.rxChanOnce.Do(func() { close(s.RxChan) })
+	s.rxSendMu.Unlock()
 }
 
 func (s *Session) TxBufLen() int {
@@ -305,6 +314,13 @@ func (s *Session) ProcessRx(env *Envelope) {
 	defer timer.Stop()
 	for _, payload := range payloadsToSend {
 		timer.Reset(30 * time.Second)
+		s.rxSendMu.RLock()
+		select {
+		case <-s.rxDone:
+			s.rxSendMu.RUnlock()
+			return
+		default:
+		}
 		select {
 		case s.RxChan <- payload:
 			if !timer.Stop() {
@@ -313,16 +329,16 @@ func (s *Session) ProcessRx(env *Envelope) {
 				default:
 				}
 			}
+			s.rxSendMu.RUnlock()
 		case <-s.rxDone:
+			s.rxSendMu.RUnlock()
 			return
 		case <-timer.C:
 			logger.Warn("Session %s: RxChan blocked for 30s, dropping payload", s.ID)
+			s.rxSendMu.RUnlock()
 		}
 	}
 	if closeChannel {
-		s.rxOnce.Do(func() {
-			close(s.RxChan)
-			close(s.rxDone)
-		})
+		s.closeRx()
 	}
 }

@@ -15,6 +15,10 @@ import (
 	"github.com/lyafence/flowdav/internal/logger"
 )
 
+// ErrBackendUnavailable indicates the pinned backend is temporarily unusable
+// (rate-limit cooldown, open circuit breaker, or no backends configured).
+var ErrBackendUnavailable = errors.New("no backend available for index")
+
 const (
 	cbThreshold       = 3
 	cbCooldown        = 30 * time.Second
@@ -231,7 +235,7 @@ func (m *MultiBackend) UploadByIndex(ctx context.Context, filename string, data 
 	be := m.backendByIndexLocked(idx)
 	if be == nil {
 		m.mu.Unlock()
-		return errors.New("no backend available for index")
+		return ErrBackendUnavailable
 	}
 	resolved := int(idx) % len(m.backends)
 	m.mu.Unlock()
@@ -253,7 +257,7 @@ func (m *MultiBackend) DownloadByIndex(ctx context.Context, filename string, idx
 	be := m.backendByIndexLocked(idx)
 	if be == nil {
 		m.mu.Unlock()
-		return nil, errors.New("no backend available for index")
+		return nil, ErrBackendUnavailable
 	}
 	resolved := int(idx) % len(m.backends)
 	m.mu.Unlock()
@@ -317,7 +321,7 @@ func (m *MultiBackend) Stats() []BackendStat {
 }
 
 // CryptoRandInt returns a uniformly distributed int in [0, n) using crypto/rand.
-// Uses 64-bit rejection sampling (Lemire's method) to avoid modulo bias for any
+// Uses 64-bit rejection sampling to avoid modulo bias for any
 // n; for n | 2^64 (e.g. 2, 4) no values are ever rejected.
 func CryptoRandInt(n int) int {
 	if n <= 0 {

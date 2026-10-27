@@ -138,6 +138,7 @@ func runClient(configPath, password, logLevel string, askInteractive bool) {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
+	logger.SetLevel("info")
 	logger.SetLevel(appCfg.LogLevel)
 	if logLevel != "" {
 		logger.SetLevel(logLevel)
@@ -259,6 +260,7 @@ func runServer(configPath, password, logLevel string, askInteractive bool) {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
+	logger.SetLevel("info")
 	logger.SetLevel(appCfg.LogLevel)
 	if logLevel != "" {
 		logger.SetLevel(logLevel)
@@ -478,15 +480,10 @@ func runEncrypt(configPath, password string, removeSource, qrMode bool) {
 		log.Fatalf("failed to read config: %v", err)
 	}
 
-	var cfg map[string]any
-	if err := json.Unmarshal(plaintext, &cfg); err != nil {
-		log.Fatalf("invalid JSON config: %v", err)
-	}
-	if _, hasKey := cfg["enc_key"]; !hasKey {
-		log.Fatal("config missing enc_key — use -g to generate a config first")
-	}
-	if _, hasKey := cfg["hmac_key"]; !hasKey {
-		log.Fatal("config missing hmac_key — use -g to generate a config first")
+	// Encrypt only configs that will actually load: strict parsing rejects
+	// unknown fields, typos, and invalid key material before we write .enc.
+	if _, err := config.ParseAppConfig(plaintext); err != nil {
+		log.Fatalf("invalid config: %v", err)
 	}
 
 	encrypted, err := config.EncryptConfig(plaintext, password)

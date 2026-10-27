@@ -246,9 +246,10 @@ func TestUploadWorkerDrainsQueueOnCancel(t *testing.T) {
 	waitForUploads(t, backend, total, 5*time.Second)
 }
 
-// TestEngineDrain flushes pending session data to the backend.
+// TestEngineDrain flushes pending session data to the backend. It mirrors the
+// production order: the engine context is canceled before Drain.
 func TestEngineDrain(t *testing.T) {
-	backend := &mockBackend{}
+	backend := &dataTrackingBackend{}
 	engine := NewEngine(backend, true, nil)
 	engine.SetFlushRate(3600000) // prevent spontaneous flushLoop ticks (1 hour in ms)
 
@@ -263,18 +264,28 @@ func TestEngineDrain(t *testing.T) {
 	engine.sessions[session.ID] = session
 	engine.sessionMu.Unlock()
 
+	cancel()
 	drainCtx, cancelDrain := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelDrain()
 	if err := engine.Drain(drainCtx); err != nil {
 		t.Fatalf("Drain failed: %v", err)
 	}
 
-	backend.mu.Lock()
-	uploaded := len(backend.uploaded)
-	backend.mu.Unlock()
-
-	if uploaded == 0 {
-		t.Error("expected backend to receive upload after Drain")
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		backend.mu.Lock()
+		total := int64(0)
+		for _, n := range backend.uploadedData {
+			total += n
+		}
+		backend.mu.Unlock()
+		if total >= int64(len("pending drain data")) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("Drain lost payload: uploaded %d bytes", total)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -658,8 +669,8 @@ func TestHoldDelayRange(t *testing.T) {
 	if maxDelay >= engine.HoldMax+time.Millisecond {
 		t.Errorf("max delay %v exceeds HoldMax %v", maxDelay, engine.HoldMax)
 	}
-	if maxDelay < time.Millisecond {
-		t.Logf("WARNING: maxDelay only %v — may indicate hold delay not spanning full range", maxDelay)
+	if maxDelay < engine.HoldMax/4 {
+		t.Errorf("max delay %v is too small for HoldMax %v — hold delay likely disabled", maxDelay, engine.HoldMax)
 	}
 }
 

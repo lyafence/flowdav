@@ -15,10 +15,11 @@ x-webdav: &webdav
 x-flowdav: &flowdav
   image: localhost/flowdav:latest
   stop_grace_period: 10s
+  # Test stand only: production sizing depends on max_connections/max_message_size.
   mem_limit: 64m
   restart: unless-stopped
-  environment:
-    - FLOWDAV_PASSWORD=${FLOWDAV_PASSWORD:-}
+  env_file:
+    - ./configs/.env
   networks:
     - flow-net
 

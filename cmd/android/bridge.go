@@ -4,7 +4,6 @@ package flowdavmobile
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -197,14 +196,7 @@ func decodeKey(keyB64 string, name string) ([]byte, error) {
 }
 
 func parseConfigJSON(data []byte) (*config.AppConfig, error) {
-	var cfg config.AppConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, err
-	}
-	if err := config.ValidateAppConfig(&cfg); err != nil {
-		return nil, err
-	}
-	return &cfg, nil
+	return config.ParseAppConfig(data)
 }
 
 // StartProxyFromData parses config from raw bytes and starts the proxy.
@@ -371,6 +363,7 @@ func startProxy(appCfg *config.AppConfig, listenAddr string) error {
 		return coded(ErrAlreadyRunning, errors.New("proxy already running"))
 	}
 
+	logger.SetLevel("info")
 	logger.SetLevel(appCfg.LogLevel)
 	logEvent("Starting proxy on %s (WebDAV: %s)", listenAddr, redactURL(appCfg.WebDAV.URL))
 	if pendingSocks5User != "" {

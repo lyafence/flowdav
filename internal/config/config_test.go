@@ -235,3 +235,16 @@ func TestValidateAppConfigRejectsPartialSOCKS5Creds(t *testing.T) {
 		t.Errorf("empty SOCKS5 credentials (no auth) must be accepted, got: %v", err)
 	}
 }
+
+func TestParseAppConfigRejectsUnknownField(t *testing.T) {
+	encKey := base64.StdEncoding.EncodeToString(make([]byte, 32))
+	hmacRaw := make([]byte, 32)
+	for i := range hmacRaw {
+		hmacRaw[i] = 1
+	}
+	hmacKey := base64.StdEncoding.EncodeToString(hmacRaw)
+	raw := `{"webdav":{"url":"https://example.com"},"enc_key":"` + encKey + `","hmac_key":"` + hmacKey + `","socks5_username":"u","socks5_password":"p"}`
+	if _, err := ParseAppConfig([]byte(raw)); err == nil {
+		t.Fatal("expected unknown-field error")
+	}
+}

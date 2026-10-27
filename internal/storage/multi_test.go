@@ -526,3 +526,17 @@ func TestStatsRedactsBackendURL(t *testing.T) {
 	assert.NotContains(t, stats[0].URL, "s3cret", "stats must not expose the password")
 	assert.Contains(t, stats[0].URL, "xxxxx", "stats should use url.Redacted()")
 }
+
+func TestUploadByIndexReturnsUnavailableWhileRateLimited(t *testing.T) {
+	be0 := &mockBackend{}
+	be1 := &mockBackend{}
+	multi := NewMultiBackend([]Backend{be0, be1})
+
+	multi.mu.Lock()
+	multi.health[0].rateLimitedUntil = time.Now().Add(time.Minute)
+	multi.mu.Unlock()
+
+	if err := multi.UploadByIndex(context.Background(), "f.bin", nil, 0); !errors.Is(err, ErrBackendUnavailable) {
+		t.Fatalf("expected ErrBackendUnavailable, got %v", err)
+	}
+}

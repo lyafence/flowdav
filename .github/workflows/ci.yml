@@ -46,9 +46,10 @@ jobs:
 
       - name: Fuzz
         run: |
-          go test -fuzztime=10s -fuzz FuzzEnvelopeUnmarshalBinary ./internal/transport/
-          go test -fuzztime=10s -fuzz FuzzEnvelopeDecode ./internal/transport/
-          go test -fuzztime=10s -fuzz FuzzDecodeEnvelopeWithCryptoNoCrypto ./internal/transport/
+          go test -fuzztime=10s -fuzz '^FuzzEnvelopeUnmarshalBinary$' ./internal/transport/
+          go test -fuzztime=10s -fuzz '^FuzzEnvelopeDecode$' ./internal/transport/
+          go test -fuzztime=10s -fuzz '^FuzzDecodeEnvelopeWithCryptoNoCrypto$' ./internal/transport/
+          go test -fuzztime=10s -fuzz '^FuzzDecodeEnvelopeWithCrypto$' ./internal/transport/
 
       - name: Vulncheck
         run: |

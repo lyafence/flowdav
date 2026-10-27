@@ -38,8 +38,12 @@ func TestUploadAuthHTTPErrorClassified(t *testing.T) {
 			defer srv.Close()
 
 			backend := &WebDAVBackend{
-				client:   gowebdav.NewClient(srv.URL, "test", "test"),
-				basePath: "myapp",
+				client:     gowebdav.NewClient(srv.URL, "test", "test"),
+				httpClient: srv.Client(),
+				rootURL:    srv.URL,
+				login:      "test",
+				token:      "test",
+				basePath:   "myapp",
 			}
 
 			err := backend.Upload(context.Background(), "test-file", bytes.NewReader([]byte("payload")))
@@ -470,5 +474,112 @@ func TestDialerAllowsPrivatePeerWhenLocal(t *testing.T) {
 	_, err = dial(ctx, "tcp", ln.Addr().String())
 	if err != nil && strings.Contains(err.Error(), "refusing connection to private address") {
 		t.Errorf("allowPrivate=true must not trigger the SSRF refusal, got: %v", err)
+	}
+}
+
+func TestIsPayloadName(t *testing.T) {
+	cases := []struct {
+		name string
+		ok   bool
+	}{
+		{"0123456789abcdef", true},
+		{"ABCDEF0123456789", true},
+		{"0123456789abcde", false},
+		{"0123456789abcdef0", false},
+		{"0123456789abcdeg", false},
+		{"..", false},
+	}
+	for _, tc := range cases {
+		if got := isPayloadName(tc.name); got != tc.ok {
+			t.Errorf("isPayloadName(%q) = %v, want %v", tc.name, got, tc.ok)
+		}
+	}
+}
+
+func TestListQueryFiltersDirectoriesAndForeignFiles(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "PROPFIND" {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+		w.WriteHeader(http.StatusMultiStatus)
+		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="utf-8"?>
+<d:multistatus xmlns:d="DAV:">
+  <d:response><d:href>/invoices/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
+  <d:response><d:href>/invoices/0123456789abcdef</d:href><d:propstat><d:prop><d:resourcetype/><d:getlastmodified>Mon, 02 Jan 2006 15:04:05 GMT</d:getlastmodified></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
+  <d:response><d:href>/invoices/not-a-payload</d:href><d:propstat><d:prop><d:resourcetype/></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
+  <d:response><d:href>/invoices/another-dir</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
+</d:multistatus>`))
+	}))
+	defer srv.Close()
+
+	backend := &WebDAVBackend{
+		client:     gowebdav.NewClient(srv.URL, "test", "test"),
+		httpClient: srv.Client(),
+		rootURL:    srv.URL,
+		login:      "test",
+		token:      "test",
+	}
+	files, err := backend.ListQuery(context.Background(), "r")
+	if err != nil {
+		t.Fatalf("ListQuery: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("expected 1 payload file, got %d: %+v", len(files), files)
+	}
+	if files[0].Filename != "r0123456789abcdef" {
+		t.Fatalf("unexpected filename: %q", files[0].Filename)
+	}
+}
+
+func TestWebDAVOperationsHonorContext(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-time.After(500 * time.Millisecond):
+			w.WriteHeader(http.StatusOK)
+		case <-r.Context().Done():
+		}
+	}))
+	defer srv.Close()
+
+	backend := &WebDAVBackend{
+		client:     gowebdav.NewClient(srv.URL, "test", "test"),
+		httpClient: srv.Client(),
+		rootURL:    srv.URL,
+		login:      "test",
+		token:      "test",
+		basePath:   "myapp",
+	}
+
+	operations := []struct {
+		name string
+		call func(context.Context) error
+	}{
+		{"Upload", func(ctx context.Context) error {
+			return backend.Upload(ctx, "r0123456789abcdef", bytes.NewReader([]byte("x")))
+		}},
+		{"Delete", func(ctx context.Context) error {
+			return backend.Delete(ctx, "r0123456789abcdef")
+		}},
+		{"ListQuery", func(ctx context.Context) error {
+			_, err := backend.ListQuery(ctx, "r")
+			return err
+		}},
+	}
+
+	for _, op := range operations {
+		t.Run(op.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+			defer cancel()
+
+			start := time.Now()
+			if err := op.call(ctx); err == nil {
+				t.Fatalf("%s should fail when context expires", op.name)
+			}
+			if elapsed := time.Since(start); elapsed > 300*time.Millisecond {
+				t.Fatalf("%s ignored context: %v", op.name, elapsed)
+			}
+		})
 	}
 }

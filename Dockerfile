@@ -16,5 +16,6 @@ RUN apk --no-cache add ca-certificates curl
 WORKDIR /app
 COPY --link --from=builder /bin/flowdav /usr/local/bin/flowdav
 COPY --link configs/flowdav.json.example /app/
+RUN mkdir -p /app/configs && chown 1000:1000 /app/configs
 USER 1000
 CMD ["flowdav", "--help"]

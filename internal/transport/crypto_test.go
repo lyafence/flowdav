@@ -3,6 +3,11 @@ package transport
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/binary"
 	"io"
 	"testing"
@@ -424,5 +429,34 @@ func TestDecodeWithCryptoReusableGzipReader(t *testing.T) {
 		if !bytes.Equal(decoded.Payload, payload) {
 			t.Fatalf("payload mismatch: got %d bytes, want %d bytes", len(decoded.Payload), len(payload))
 		}
+	}
+}
+
+func TestDecodeEmptyPlaintextNoPanic(t *testing.T) {
+	cfg := &CryptoConfig{EncKey: make([]byte, 32), HMacKey: make([]byte, 32)}
+	block, err := aes.NewCipher(cfg.EncKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		t.Fatal(err)
+	}
+	// Empty plaintext is still a valid AEAD frame: nonce + 16-byte tag.
+	ciphertext := make([]byte, len(nonce), len(nonce)+gcm.Overhead())
+	copy(ciphertext, nonce)
+	ciphertext = gcm.Seal(ciphertext, nonce, nil, nil)
+	mac := hmac.New(sha256.New, cfg.HMacKey)
+	mac.Write(ciphertext)
+	frame := binary.BigEndian.AppendUint32(nil, uint32(len(ciphertext)))
+	frame = append(frame, ciphertext...)
+	frame = append(frame, mac.Sum(nil)...)
+
+	if _, err := DecodeEnvelopeWithCrypto(bytes.NewReader(frame), cfg); err == nil {
+		t.Fatal("expected error for empty plaintext")
 	}
 }

@@ -2,6 +2,8 @@ package transport
 
 import (
 	"context"
+	"errors"
+	"sync"
 	"testing"
 	"time"
 )
@@ -129,11 +131,14 @@ func TestEnqueueTxCtxEarlyContextCheck(t *testing.T) {
 	cancel()
 
 	start := time.Now()
-	_ = s.EnqueueTxCtx(ctx, []byte("test"))
+	err := s.EnqueueTxCtx(ctx, []byte("test"))
 	elapsed := time.Since(start)
 
 	if elapsed > 100*time.Millisecond {
 		t.Fatalf("context check at loop entry failed, took %v", elapsed)
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
 	}
 }
 
@@ -150,10 +155,9 @@ func TestEnqueueTxCtxCancelDuringBackpressureWait(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	done := make(chan struct{})
+	done := make(chan error, 1)
 	go func() {
-		_ = s.EnqueueTxCtx(ctx, []byte("x"))
-		close(done)
+		done <- s.EnqueueTxCtx(ctx, []byte("x"))
 	}()
 
 	time.Sleep(50 * time.Millisecond)
@@ -162,7 +166,10 @@ func TestEnqueueTxCtxCancelDuringBackpressureWait(t *testing.T) {
 	cancel()
 
 	select {
-	case <-done:
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context.Canceled, got %v", err)
+		}
 	case <-time.After(time.Second):
 		t.Fatal("EnqueueTxCtx did not return after context cancellation — goroutine leak")
 	}
@@ -376,5 +383,30 @@ func TestProcessRxTimerReuseNoDeadlock(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timeout waiting for second payload — timer drain deadlock")
+	}
+}
+
+// TestProcessRxConcurrentCloseNoPanic exercises the Close vs ProcessRx send
+// race. A panic here would fail the test; the send lock must serialize the
+// final send with channel closure.
+func TestProcessRxConcurrentCloseNoPanic(t *testing.T) {
+	for i := 0; i < 500; i++ {
+		s := NewSession("race-session")
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("ProcessRx panicked during Close race: %v", r)
+				}
+			}()
+			s.ProcessRx(&Envelope{SessionID: s.ID, Seq: 0, Payload: []byte("payload")})
+		}()
+		go func() {
+			defer wg.Done()
+			s.Close()
+		}()
+		wg.Wait()
 	}
 }

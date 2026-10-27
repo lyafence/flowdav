@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -168,9 +169,12 @@ func (e *Envelope) EncodeWithCrypto(w io.Writer, cfg *CryptoConfig) error {
 	return e.encodeWithCrypto(w, cfg, nil)
 }
 
+// DefaultMaxMessageSize is the default maximum envelope payload size.
+const DefaultMaxMessageSize = 16 * 1024 * 1024
+
 // MaxMessageSize is the maximum envelope payload size (OOM prevention).
 // Set once at startup. Read-only afterwards.
-var MaxMessageSize = 16 * 1024 * 1024 // 16 MB
+var MaxMessageSize = DefaultMaxMessageSize
 
 // decodeEnvelopeWithCrypto reads and decrypts an envelope from the reader.
 // If gr is non-nil, it is reused for gzip decompression; otherwise a fresh
@@ -234,6 +238,9 @@ func decodeEnvelopeWithCrypto(r io.Reader, cfg *CryptoConfig, gr *gzip.Reader) (
 	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
 		return nil, err
+	}
+	if len(plaintext) == 0 {
+		return nil, errors.New("empty plaintext")
 	}
 
 	// Compression flag: 0x00=none, 0x01=gzip, else legacy (no flag).

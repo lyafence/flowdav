@@ -8,7 +8,9 @@
 #   ./scripts/test_e2e.sh --build                  # build image + plaintext
 #   ./scripts/test_e2e.sh --skip-compose           # unit tests only
 #
-# Requirements: podman (or docker), podman-compose (or docker compose)
+# Requirements: podman + podman-compose for make targets. Running the script
+# against an already-built image can use docker-compose/docker compose;
+# --build always uses podman (see Makefile docker-build).
 
 set -euo pipefail
 
@@ -112,6 +114,10 @@ echo ""
 # ── Phase 4: Build image (optional) ────────
 if $BUILD; then
     echo "--- Phase 4: Build Container Image ---"
+    command -v podman >/dev/null 2>&1 || {
+        echo "--build requires podman (Makefile docker-build uses podman)" >&2
+        exit 1
+    }
     podman build -t localhost/flowdav:latest -f "$PROJECT_DIR/Dockerfile" "$PROJECT_DIR"
     echo ""
 else
@@ -125,12 +131,7 @@ echo "--- Phase 5: Start Services ---"
 # -v removes anonymous volumes (rclone /data writable layer), preventing
 # stale WebDAV files with mismatched encryption keys from polluting a new run.
 $COMPOSE -f "$PROJECT_DIR/compose.yaml" down -v 2>/dev/null || true
-if $ENCRYPTED; then
-    export FLOWDAV_PASSWORD=$(grep FLOWDAV_PASSWORD "$PROJECT_DIR/configs/.env" | cut -d= -f2)
-    $COMPOSE -f "$PROJECT_DIR/compose.yaml" up -d 2>&1
-else
-    $COMPOSE -f "$PROJECT_DIR/compose.yaml" up -d 2>&1
-fi
+$COMPOSE -f "$PROJECT_DIR/compose.yaml" up -d 2>&1
 
 log_info "Waiting for services to become healthy..."
 # Parallel health checks — each waits independently with retry

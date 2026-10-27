@@ -4,8 +4,8 @@ import android.content.Context
 import android.net.Uri
 import java.io.ByteArrayOutputStream
 
-class ContentResolverConfigReader(private val context: Context) : ConfigReader {
-    override fun read(uri: Uri): Result<ByteArray> = runCatching {
+class ContentResolverConfigReader(private val context: Context) {
+    fun read(uri: Uri): Result<ByteArray> = runCatching {
         context.contentResolver.openInputStream(uri)?.use { input ->
             val out = ByteArrayOutputStream()
             val buf = ByteArray(DEFAULT_BUFFER_SIZE)

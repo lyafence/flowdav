@@ -38,3 +38,14 @@ func FuzzDecodeEnvelopeWithCryptoNoCrypto(f *testing.F) {
 		}
 	})
 }
+
+func FuzzDecodeEnvelopeWithCrypto(f *testing.F) {
+	cfg := &CryptoConfig{EncKey: make([]byte, 32), HMacKey: make([]byte, 32)}
+	var seed bytes.Buffer
+	env := &Envelope{SessionID: "fuzz-session", Seq: 0, TargetAddr: "example.com:80", Payload: []byte("hello")}
+	_ = env.EncodeWithCrypto(&seed, cfg)
+	f.Add(seed.Bytes())
+	f.Fuzz(func(_ *testing.T, data []byte) {
+		_, _ = DecodeEnvelopeWithCrypto(bytes.NewReader(data), cfg)
+	})
+}

@@ -36,9 +36,10 @@ test-e2e-encrypted: docker-build
 	bash scripts/test_e2e.sh --encrypted
 
 fuzz:
-	go test -fuzztime=30s -fuzz FuzzEnvelopeUnmarshalBinary ./internal/transport/
-	go test -fuzztime=30s -fuzz FuzzEnvelopeDecode ./internal/transport/
-	go test -fuzztime=30s -fuzz FuzzDecodeEnvelopeWithCryptoNoCrypto ./internal/transport/
+	go test -fuzztime=30s -fuzz '^FuzzEnvelopeUnmarshalBinary$' ./internal/transport/
+	go test -fuzztime=30s -fuzz '^FuzzEnvelopeDecode$' ./internal/transport/
+	go test -fuzztime=30s -fuzz '^FuzzDecodeEnvelopeWithCryptoNoCrypto$' ./internal/transport/
+	go test -fuzztime=30s -fuzz '^FuzzDecodeEnvelopeWithCrypto$' ./internal/transport/
 
 # Static analysis
 lint:
@@ -94,7 +95,7 @@ image-to-bin: docker-build
 	chmod +x $(BIN_DIR)/flowdav && \
 	echo "Extracted binary from image to $(BIN_DIR)/flowdav"
 
-# Release archives (matches CI: ./github/workflows/release.yml)
+# Release archives (matches CI: .github/workflows/release.yml)
 release:
 	$(MAKE) build
 	rm -rf $(RELEASE_DIR) && mkdir -p $(RELEASE_DIR)
@@ -103,6 +104,7 @@ release:
 	cp $(BIN_DIR)/flowdav \
 		$(RELEASE_DIR)/$$FOLDER/; \
 	cp README.md $(RELEASE_DIR)/$$FOLDER/; \
+	cp LICENSE $(RELEASE_DIR)/$$FOLDER/; \
 	cp configs/flowdav.json.example $(RELEASE_DIR)/$$FOLDER/; \
 	cd $(RELEASE_DIR) && tar -czf $$FOLDER.tar.gz $$FOLDER && \
 	rm -rf $$FOLDER
@@ -154,15 +156,27 @@ android-deploy: android-apk
 	FLOWDAV_PASSWORD=secret go run ./cmd/flowdav -e configs/client-android.json; \
 	echo "Config: configs/client-android.json.enc (password: secret)"; \
 	ADB=$$(which adb 2>/dev/null || true); \
+	SERIAL="$(ANDROID_SERIAL)"; \
+	if [ -n "$$ADB" ] && [ -z "$$SERIAL" ]; then \
+		devices=$$($$ADB devices | awk 'NR>1 && $$2=="device" {print $$1}'); \
+		count=$$(printf '%s\n' "$$devices" | sed '/^$$/d' | wc -l); \
+		if [ "$$count" -eq 1 ]; then \
+			SERIAL="$$devices"; \
+		elif [ "$$count" -gt 1 ]; then \
+			echo "Multiple adb devices found: $$(echo $$devices); set ANDROID_SERIAL=<serial>"; \
+			ADB=""; \
+		fi; \
+	fi; \
+	if [ -n "$$ADB" ] && [ -n "$$SERIAL" ]; then ADB="$$ADB -s $$SERIAL"; fi; \
 	if [ -n "$$ADB" ] && $$ADB get-state 2>/dev/null | grep -q device; then \
 		$$ADB install -r -d $(BIN_DIR)/flowdav-android.apk && \
 		$$ADB push configs/client-android.json /sdcard/Download/flowdav-config.json && \
 		$$ADB push configs/client-android.json.enc /sdcard/Download/flowdav-config.enc && \
 		$$ADB forward tcp:11082 tcp:1080 && \
-		echo "=== Deployed via adb ==="; \
+		echo "=== Deployed via adb ($$SERIAL) ==="; \
 		echo "=== SOCKS5: adb forward tcp:11082 → emulator:1080 ==="; \
 	else \
-		echo "=== Ready (no adb device) — copy configs/client-android.json or client-android.json.enc manually ==="; \
+		echo "=== Ready (no unambiguous adb device) — copy configs/client-android.json or client-android.json.enc manually ==="; \
 	fi
 
 # Android AAR via gomobile (requires NDK + gomobile)
@@ -171,6 +185,7 @@ android-deploy: android-apk
 #   Then: gomobile init
 ANDROID_SDK_HOME ?= $(HOME)/.android-sdk
 ANDROID_NDK_VERSION ?= 27.3.13750724
+ANDROID_SERIAL ?=
 SDK_TOOLS_URL := https://dl.google.com/android/repository/commandlinetools-linux-16111833_latest.zip
 
 # Single source of truth for the pinned NDK; CI asserts the runner matches it.

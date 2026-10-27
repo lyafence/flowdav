@@ -90,10 +90,6 @@ class ProxyTileService : TileService() {
         }
     }
 
-    private fun updateTile() {
-        scope.launch { refresh() }
-    }
-
     /** Reads the bridge status off-main, then applies the state. */
     private suspend fun refresh() {
         val running = Flowdavmobile.getStatus()?.running == true

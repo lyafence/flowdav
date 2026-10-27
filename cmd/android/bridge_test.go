@@ -88,15 +88,15 @@ func TestParseConfigJSONDefaults(t *testing.T) {
 	require.Equal(t, "debug", cfg.LogLevel)
 }
 
-// TestErrorCodesStable pins the wire values of the bridge ErrorCode constants.
-// These strings are the contract consumed by Android's ProxyState.ErrorKind
-// (android/app/src/main/java/com/flowdav/app/ProxyState.kt); changing a value
-// here without updating the Kotlin side silently breaks UI error mapping.
 func TestIsEncryptedConfig(t *testing.T) {
 	require.False(t, IsEncryptedConfig([]byte(`{"webdav":{}}`)), "plain JSON reported as encrypted")
 	require.True(t, IsEncryptedConfig([]byte{0xff, 0xfe, 0x00}), "invalid UTF-8 not reported as encrypted")
 }
 
+// TestErrorCodesStable pins the wire values of the bridge ErrorCode constants.
+// These strings are the contract consumed by Android's ProxyState.ErrorKind
+// (android/app/src/main/java/com/flowdav/app/ProxyState.kt); changing a value
+// here without updating the Kotlin side silently breaks UI error mapping.
 func TestErrorCodesStable(t *testing.T) {
 	want := []string{
 		"encrypted_no_password",

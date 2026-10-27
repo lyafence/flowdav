@@ -22,7 +22,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class ProxyManager(private val appContext: Context, private val configReader: ConfigReader) : ViewModel() {
+class ProxyManager(private val appContext: Context, private val configReader: ContentResolverConfigReader) : ViewModel() {
 
     private val _state = MutableStateFlow(ProxyState())
     val state: StateFlow<ProxyState> = _state.asStateFlow()
@@ -380,7 +380,8 @@ class ProxyManager(private val appContext: Context, private val configReader: Co
     }
 }
 
-class ProxyManagerFactory(private val appContext: Context, private val configReader: ConfigReader) : ViewModelProvider.Factory {
+class ProxyManagerFactory(private val appContext: Context, private val configReader: ContentResolverConfigReader) :
+    ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T = ProxyManager(appContext, configReader) as T
 }
