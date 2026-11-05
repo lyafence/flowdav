@@ -7,7 +7,7 @@ require (
 	github.com/refraction-networking/utls v1.8.2
 	github.com/stretchr/testify v1.12.1
 	github.com/studio-b12/gowebdav v0.13.0
-	github.com/things-go/go-socks5 v0.1.3
+	github.com/things-go/go-socks5 v0.1.4
 	golang.org/x/mobile v0.0.0-20261011034528-197770444867
 	golang.org/x/term v0.47.0
 )
